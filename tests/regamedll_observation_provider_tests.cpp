@@ -372,8 +372,12 @@ bool testBotEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 	if (notice.count != 9 || notice.event != NativeBotEvent::FlashbangExploded || notice.source != source)
 		return false;
 	api.hooks.weapon.hook(&chain, EVENT_FLASHBANG_GRENADE_EXPLODED, nullptr, nullptr);
+	api.hooks.weapon.hook(&chain, EVENT_PLAYER_FOOTSTEP, source, nullptr);
+	if (notice.count != 10 || notice.event != NativeBotEvent::Footstep || notice.source != source)
+		return false;
+	api.hooks.weapon.hook(&chain, EVENT_PLAYER_FOOTSTEP, nullptr, nullptr);
 	provider.reset();
-	if (chain.count != 13 || notice.count != 9 || api.hooks.weapon.hook)
+	if (chain.count != 15 || notice.count != 10 || api.hooks.weapon.hook)
 		return false;
 
 	provider.probe(factory);
@@ -390,7 +394,7 @@ bool testBotEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 		}, &resetNotice))
 		return false;
 	api.hooks.weapon.hook(&chain, EVENT_WEAPON_RELOADED, source, nullptr);
-	return chain.count == 14 && remainedRegistered && !api.hooks.weapon.hook && !provider.dispatchingEvents();
+	return chain.count == 16 && remainedRegistered && !api.hooks.weapon.hook && !provider.dispatchingEvents();
 }
 
 int main()

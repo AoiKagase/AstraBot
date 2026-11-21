@@ -31,7 +31,7 @@ enum class ReGameDllProbeStatus
 
 enum class NativeBotEvent
 {
-	Fired, FiredOnEmpty, Reloaded, HostageUsed, DefuseStarted, DefuseEnded, PlayerSpawned, FlashbangExploded
+	Fired, FiredOnEmpty, Reloaded, HostageUsed, DefuseStarted, DefuseEnded, PlayerSpawned, FlashbangExploded, Footstep
 };
 
 // This provider never dereferences GameDLL player, weapon or gamerules layouts.

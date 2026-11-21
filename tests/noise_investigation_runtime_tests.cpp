@@ -49,6 +49,8 @@ void setupHeardNoiseGameDll(DLL_FUNCTIONS &dll)
 
 struct HeardTrace : astrabot::compat::IRandomTraceSink
 {
+	std::vector<unsigned> localizationSlots;
+
 	void record(const astrabot::compat::RandomTraceRecord &record) override
 	{
 		if (std::strcmp(record.request.semanticId, "RNG-CSBOT-HEARD-NOISE-REPORT") == 0)
@@ -56,6 +58,8 @@ struct HeardTrace : astrabot::compat::IRandomTraceSink
 		if (std::strcmp(record.request.semanticId, "noise.investigate") == 0)
 			++investigationDraws;
 		const char *site = record.request.semanticId;
+		if (std::strncmp(site, "noise.position.", 15) == 0)
+			localizationSlots.push_back(record.request.actor.slot);
 		if (std::strncmp(site, "noise.position.", 15) == 0 || std::strcmp(site, "noise.investigate") == 0 ||
 			std::strcmp(site, "Vision.Notice") == 0)
 			perceptionDraws.emplace_back(site);
@@ -588,6 +592,9 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	static_cast<metamod::BotObservationServices &>(runtime).behavior_observePlayerBlind(0, managed, frame);
 	perceptionDraws.clear();
 	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	const std::vector<std::string> localizationDraws = {"noise.position.x", "noise.position.y"};
+	if (!check(perceptionDraws == localizationDraws, "a footstep is localized at receipt even while blind"))
+		return false;
 	const auto drawsBeforeRecovery = investigationDraws;
 	step(.25f);
 	if (!check(!investigating() && investigationDraws == drawsBeforeRecovery &&
@@ -656,6 +663,26 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 			compat::RuntimeMode::Enhanced && !investigating() && investigationDraws == previousDraws;
 	gAstrabotModeCvar.string = previousMode;
 	runtime.setCompatibilityString("astrabot_mode", "compatibility");
-	return check(enhancedKeepsItsPolicy, "Enhanced does not read the learned time through CSBot's noise investigation");
+	if (!check(enhancedKeepsItsPolicy, "Enhanced does not read the learned time through CSBot's noise investigation"))
+		return false;
+	runtime.beginRoundGeneration();
+	step(.65f);
+	teammate = {};
+	metamod::FakeClientHandle secondListener{};
+	if (!check(runtime.createFakeClient("Second Listener", &secondListener) == metamod::FakeClientResult::Created &&
+			secondListener.entity == &teammate, "the event receipt fixture starts a second listener"))
+		return false;
+	teammate.v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND;
+	teammate.v.deadflag = DEAD_NO;
+	teammate.v.health = 100;
+	teammate.v.origin = Vector(64, 0, 36);
+	runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+	runtime.onWriteByte(2);
+	runtime.onWriteString("TERRORIST");
+	runtime.onMessageEnd();
+	heardTrace.localizationSlots.clear();
+	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	return check(heardTrace.localizationSlots == std::vector<unsigned>{1, 1, 2, 2},
+		"the shared footstep consumes both localization draws once per listener in ascending slot order");
 }
 }

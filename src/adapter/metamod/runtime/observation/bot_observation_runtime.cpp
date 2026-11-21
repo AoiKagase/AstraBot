@@ -518,7 +518,7 @@ void BotObservationRuntime::onPlaybackEvent(
 }
 
 void BotObservationRuntime::recordSound(world::AudibleEvent event, const edict_t *source, bool fallbackWeapon,
-	const FlashAudience *flashAudience)
+	bool authoritative)
 {
 	if (!std::isfinite(event.timestampSeconds) || event.timestampSeconds < 0 || !std::isfinite(event.origin.x) ||
 		!std::isfinite(event.origin.y) || !std::isfinite(event.origin.z))
@@ -527,7 +527,7 @@ void BotObservationRuntime::recordSound(world::AudibleEvent event, const edict_t
 	// Upgrade incidental weapon samples atomically before per-observer delivery.
 	for (auto &previous : soundEvents_)
 	{
-		if (previous.id == 0 || previous.timestampTick != event.timestampTick ||
+		if (authoritative || previous.id == 0 || previous.timestampTick != event.timestampTick ||
 			previous.timestampSeconds != event.timestampSeconds || previous.kind != event.kind ||
 			!(previous.source == event.source) || previous.origin.x != event.origin.x ||
 			previous.origin.y != event.origin.y || previous.origin.z != event.origin.z)
@@ -564,10 +564,15 @@ void BotObservationRuntime::recordSound(world::AudibleEvent event, const edict_t
 	const auto entry = event.id % soundEvents_.size();
 	soundEvents_[entry] = event;
 	fallbackWeaponSounds_[entry] = fallbackWeapon;
-	soundTeams_[entry] = !flashAudience && event.source.isValid() ? resolvePlayerTeam(source) : 0;
-	if (flashAudience)
-		flashAudiences_[entry] = *flashAudience;
+	soundTeams_[entry] = source && event.source.isValid()
+		? playerTeamAtSlot(*source, static_cast<int>(event.source.slot)) : 0;
+	const bool localizeAtReceipt = source && event.source.isValid() &&
+		(event.kind == world::SoundKind::Footstep || authoritative) &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	soundAudiences_[entry] = {localizeAtReceipt, {}};
 	notifyCloseFootstep(event, source);
+	if (localizeAtReceipt)
+		localizeSoundAtReceipt(event, *source);
 }
 
 void BotObservationRuntime::notifyCloseFootstep(const world::AudibleEvent &event, const edict_t *source)
@@ -645,6 +650,9 @@ void BotObservationRuntime::onEmitSoundAt(edict_t *entity, const char *sample, f
 		return;
 	const bool bombBeep = std::strstr(sample, "c4_beep") != nullptr;
 	const bool footstep = compat::isStandardFootstepSample(sample);
+	if (footstep && (entity->v.flags & FL_CLIENT) != 0 && nativeBotEventsConnected() &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+		return;
 	const bool weaponSample = std::strncmp(sample, "weapons/", kWeaponSoundPrefixLength) == 0;
 	const bool fallbackWeapon =
 		weaponSample && (entity->v.flags & FL_CLIENT) != 0 && isNativeWeaponEventSample(sample);
@@ -1514,9 +1522,22 @@ bool BotObservationRuntime::collectManagedPerception(
 	for (std::uint64_t sequence = firstSound; sequence <= soundSequence_; ++sequence)
 	{
 		const auto &observed = soundEvents_[sequence % soundEvents_.size()];
-		if (observed.id != sequence || observed.source.slot == handle.actor.slot ||
-			(soundTeams_[sequence % soundTeams_.size()] != 0 &&
-				soundTeams_[sequence % soundTeams_.size()] == actors_[index].teamInfoTeams))
+		if (observed.id != sequence || observed.source.slot == handle.actor.slot)
+			continue;
+		const auto &audience = soundAudiences_[sequence % soundEvents_.size()];
+		if (audience.atReceipt)
+		{
+			const auto &ear = audience.listeners[index];
+			if (ear.actorGeneration == observer.generation && ear.lifeRevision == publicObservations_.lifeRevision(observer))
+			{
+				auto audible = observed;
+				audible.distance = ear.distance;
+				(void)input.addSound(audible, true);
+			}
+			continue;
+		}
+		if (soundTeams_[sequence % soundTeams_.size()] != 0 &&
+			soundTeams_[sequence % soundTeams_.size()] == actors_[index].teamInfoTeams)
 		{
 			continue;
 		}
@@ -1527,17 +1548,6 @@ bool BotObservationRuntime::collectManagedPerception(
 			if (!source || source->free ||
 				static_cast<std::uint32_t>(source->serialnumber) + 1U != observed.source.generation)
 				continue;
-		}
-		if (observed.kind == world::SoundKind::Grenade)
-		{
-			const auto &ear = flashAudiences_[sequence % soundEvents_.size()][index];
-			if (ear.actorGeneration == observer.generation && ear.lifeRevision == publicObservations_.lifeRevision(observer))
-			{
-				auto audible = observed;
-				audible.distance = ear.distance;
-				(void)input.addSound(audible);
-			}
-			continue;
 		}
 		const float dx = observed.origin.x - handle.entity->v.origin.x;
 		const float dy = observed.origin.y - handle.entity->v.origin.y;
@@ -1903,12 +1913,12 @@ void BotObservationRuntime::observeGameDllBotEvent(NativeBotEvent kind, const vo
 			return;
 		if (!matches)
 			continue;
-		if (kind == NativeBotEvent::FlashbangExploded)
+		if (kind == NativeBotEvent::FlashbangExploded || kind == NativeBotEvent::Footstep)
 		{
 			if (!source->free && source->serialnumber == serial && source->v.deadflag == DEAD_NO &&
 				source->v.health > 0 && (source->v.flags & (FL_CLIENT | FL_DORMANT | FL_SPECTATOR)) == FL_CLIENT &&
 				life.slotGeneration(static_cast<unsigned>(slot)) == connection)
-				recordNativeFlashSound(*source, {static_cast<unsigned>(slot), static_cast<unsigned>(serial) + 1U},
+				recordNativeNoise(kind, *source, {static_cast<unsigned>(slot), static_cast<unsigned>(serial) + 1U},
 					frame, now);
 			return;
 		}
@@ -1969,7 +1979,7 @@ void BotObservationRuntime::observeGameDllBotEvent(NativeBotEvent kind, const vo
 		event.distance = event.hearingRange = range;
 		event.timestampTick = frame.tick;
 		event.timestampSeconds = now;
-		recordSound(event, source);
+		recordSound(event, source, false, true);
 		if (services_->service_runtimeProfiler().enabled() && gpMetaUtilFuncs != nullptr &&
 			gpMetaUtilFuncs->pfnLogConsole != nullptr && services_->service_pluginId() != nullptr)
 		{
@@ -1981,56 +1991,99 @@ void BotObservationRuntime::observeGameDllBotEvent(NativeBotEvent kind, const vo
 	}
 }
 
-void BotObservationRuntime::recordNativeFlashSound(const edict_t &source, world::ActorKey sourceKey,
+void BotObservationRuntime::recordNativeNoise(NativeBotEvent kind, const edict_t &source, world::ActorKey sourceKey,
 	const world::FrameIdentity &frame, float now)
 {
-	const int sourceTeam = playerTeamAtSlot(source, static_cast<int>(sourceKey.slot));
+	const bool footstep = kind == NativeBotEvent::Footstep;
+	world::AudibleEvent event{};
+	event.kind = footstep ? world::SoundKind::Footstep : world::SoundKind::Grenade;
+	event.priority = world::NoisePriority::Low;
+	event.origin = {source.v.origin.x, source.v.origin.y, source.v.origin.z};
+	event.loudness = 1.0f;
+	event.confidence = {1.0f, 0U};
+	event.source = sourceKey;
+	event.distance = event.hearingRange = footstep ? compat::kStandardFootstepHearingRange : 1000.0f;
+	event.timestampTick = frame.tick;
+	event.timestampSeconds = now;
+	recordSound(event, &source, false, true);
+}
+
+void BotObservationRuntime::localizeSoundAtReceipt(const world::AudibleEvent &event, const edict_t &source)
+{
+	const auto aliveClient = [](const edict_t &entity) {
+		return !entity.free && entity.v.deadflag == DEAD_NO && entity.v.health > 0 &&
+			(entity.v.flags & (FL_CLIENT | FL_DORMANT | FL_SPECTATOR)) == FL_CLIENT;
+	};
+	auto *engine = services_->service_engineFunctions();
+	const auto *globals = services_->service_globals();
+	const auto &life = services_->service_lifecycle();
+	const world::FrameIdentity frame{life.mapGeneration(), life.roundGeneration(), event.timestampTick};
+	const auto connection = life.slotGeneration(event.source.slot);
+	const int sourceSerial = source.serialnumber;
+	const auto entry = event.id % soundEvents_.size();
+	const auto eventCurrent = [&] {
+		return services_->runtimeIsActive() && engine == services_->service_engineFunctions() &&
+			globals == services_->service_globals() && globals->time == event.timestampSeconds &&
+			frame == world::FrameIdentity{life.mapGeneration(), life.roundGeneration(),
+				services_->service_adapterFrameCount()} &&
+			soundEvents_[entry].id == event.id && source.serialnumber == sourceSerial &&
+			static_cast<unsigned>(sourceSerial) + 1U == event.source.generation &&
+			connection == life.slotGeneration(event.source.slot) && aliveClient(source);
+	};
+	if (!globals || !frame.isValid() || !eventCurrent())
+		return;
+	const int sourceTeam = playerTeamAtSlot(source, static_cast<int>(event.source.slot));
 	if (sourceTeam != kTerroristTeam && sourceTeam != kCounterTerroristTeam)
 		return;
-	constexpr float range = 1000.0f;
+
+	const auto navigation = services_->service_navPublisher().snapshot();
 	const auto &handles = services_->service_managedBotHandles();
 	const auto &slots = services_->service_managedBotSlots();
-	FlashAudience audience{};
 	unsigned listeners = 0U;
-	for (std::size_t i = 0; i < handles.size(); ++i)
+	for (std::size_t i = 0; i < handles.size() && eventCurrent(); ++i)
 	{
 		const auto &handle = handles[i];
 		const auto *listener = handle.entity;
 		const world::ActorKey actor{handle.actor.slot, handle.actor.actorGeneration};
-		if (!slots[i] || !actor.isValid() || !listener || listener == &source || listener->free ||
-			listener->v.deadflag != DEAD_NO || listener->v.health <= 0 ||
-			(listener->v.flags & (FL_CLIENT | FL_DORMANT | FL_SPECTATOR)) != FL_CLIENT)
+		if (!slots[i] || !actor.isValid() || !listener || listener == &source || !aliveClient(*listener))
 			continue;
 		const int team = playerTeamAtSlot(*listener, static_cast<int>(actor.slot));
 		if ((team != kTerroristTeam && team != kCounterTerroristTeam) || team == sourceTeam)
 			continue;
-		const auto delta = source.v.origin - listener->v.origin;
-		const float distanceSquared = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
-		if (distanceSquared < range * range)
-		{
-			audience[i] = {publicObservations_.lifeRevision(actor), actor.generation, std::sqrt(distanceSquared)};
-			++listeners;
-		}
+		const world::WorldPosition listenerPosition{listener->v.origin.x, listener->v.origin.y, listener->v.origin.z};
+		const float dx = event.origin.x - listenerPosition.x;
+		const float dy = event.origin.y - listenerPosition.y;
+		const float dz = event.origin.z - listenerPosition.z;
+		const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+		if (!(distance < event.hearingRange))
+			continue;
+
+		const auto revision = publicObservations_.lifeRevision(actor);
+		const int serial = listener->serialnumber;
+		const auto listenerCurrent = [&] {
+			return eventCurrent() && services_->service_navPublisher().isCurrent(navigation) &&
+				slots[i] && handle.entity == listener && handle.actor.slot == actor.slot &&
+				handle.actor.actorGeneration == actor.generation && listener->serialnumber == serial &&
+				aliveClient(*listener) && revision == publicObservations_.lifeRevision(actor);
+		};
+		++listeners;
+		soundAudiences_[entry].listeners[i] = {revision, actor.generation, distance};
+		PublicNavProbe noiseProbe(engine, listenerCurrent);
+		compat::NavNoisePositionResolver resolver(navigation, services_->service_compatibilityRandomSource(),
+			{actor.slot, actor.generation}, {services_->command_managedBotCommandSequences(i), 0U,
+				services_->service_managedBotFullUpdateSequences()[i]}, &noiseProbe);
+		auto audible = event;
+		audible.distance = distance;
+		actors_[i].managedBotPerception.receiveNoise(audible, {{frame, actor, 0U}, event.timestampSeconds,
+			(std::max)(0.0f, services_->behavior_managedProfiles(i).effectiveReactionSeconds(true)),
+			&listenerPosition, &resolver});
 	}
-	if (listeners != 0U)
-	{
-		world::AudibleEvent event{};
-		event.kind = world::SoundKind::Grenade;
-		event.priority = world::NoisePriority::Low;
-		event.origin = {source.v.origin.x, source.v.origin.y, source.v.origin.z};
-		event.loudness = 1.0f;
-		event.confidence = {1.0f, 0U};
-		event.source = sourceKey;
-		event.distance = event.hearingRange = range;
-		event.timestampTick = frame.tick;
-		event.timestampSeconds = now;
-		recordSound(event, &source, false, &audience);
-	}
-	if (services_->service_runtimeProfiler().enabled())
+	if (event.kind == world::SoundKind::Grenade && services_->service_runtimeProfiler().enabled())
 		profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
 			"profile nativeFlashSound source=%u team=%d origin=(%.3f %.3f %.3f) listeners=%u range=1000 priority=LOW time=%.6f",
-			sourceKey.slot, sourceTeam, source.v.origin.x, source.v.origin.y, source.v.origin.z, listeners, now);
+			event.source.slot, sourceTeam, event.origin.x, event.origin.y, event.origin.z, listeners, event.timestampSeconds);
 }
+
 
 std::function<void()> BotObservationRuntime::prepareGameDllBlind(const void *player, float duration,
 	const std::function<const void *(const char *)> &findClientObject)

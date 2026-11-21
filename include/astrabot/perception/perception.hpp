@@ -78,7 +78,7 @@ public:
 
 	PerceptionInputResult addActor(const world::ActorObservation &observation);
 	PerceptionInputResult addEntity(const world::EntityObservation &observation);
-	PerceptionInputResult addSound(const world::AudibleEvent &sound);
+	PerceptionInputResult addSound(const world::AudibleEvent &sound, bool processedAtReceipt = false);
 	PerceptionInputResult addEvent(const PerceptionEvent &event);
 
 	std::size_t actorCount() const;
@@ -91,6 +91,7 @@ public:
 	const PerceptionEvent *eventAt(std::size_t index) const;
 
 private:
+	friend class PerceptionAssembler;
 	INoisePositionResolver *noisePositionResolver_ = nullptr;
 	float hearingTimeSeconds_ = -1.0f;
 	float hearingReactionSeconds_ = 0.0f;
@@ -100,6 +101,7 @@ private:
 	std::array<world::EntityObservation, world::WorldLimits::kMaximumEntities> entities_;
 	std::size_t entityCount_;
 	std::array<world::AudibleEvent, world::WorldLimits::kMaximumSounds> sounds_;
+	std::array<bool, world::WorldLimits::kMaximumSounds> processedAtReceipt_{};
 	std::size_t soundCount_;
 	std::array<PerceptionEvent, world::WorldLimits::kMaximumSounds> events_;
 	std::size_t eventCount_;
@@ -175,10 +177,20 @@ public:
 class PerceptionAssembler
 {
 public:
+	struct NoiseContext
+	{
+		world::SnapshotIdentity identity;
+		float nowSeconds;
+		float reactionSeconds;
+		const world::WorldPosition *listenerPosition;
+		INoisePositionResolver *resolver;
+	};
+
 	PerceptionAssembler();
 	explicit PerceptionAssembler(const PerceptionAssemblerConfig &config);
 
 	PerceptionResult publish(const PerceptionInput &input, world::WorldSnapshot *snapshot);
+	void receiveNoise(const world::AudibleEvent &sound, const NoiseContext &context);
 	PerceptionResult invalidateActor(const world::ActorKey &actor);
 	bool consumeNoise(const world::NoiseMemory &expected);
 
@@ -225,8 +237,9 @@ private:
 		std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory, const world::FrameIdentity &frame) const;
 	void updateMemory(std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
 		const world::ActorObservation &observation, const world::FrameIdentity &frame) const;
-	void advanceNoise(world::NoiseMemory *noise, const PerceptionInput &input) const;
-	void updateNoise(world::NoiseMemory *noise, const world::AudibleEvent &sound, const PerceptionInput &input) const;
+	void advanceNoise(world::NoiseMemory *noise, const NoiseContext &context) const;
+	bool updateNoise(world::NoiseMemory *noise, const world::AudibleEvent &sound, const NoiseContext &context) const;
+	bool hasNoiseIdentity(const world::SnapshotIdentity &identity) const;
 	void applyEvent(std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory, world::NoiseMemory *noise,
 		const PerceptionEvent &event, const world::FrameIdentity &frame) const;
 	void emit(const PerceptionTraceRecord &record) const;
@@ -235,6 +248,8 @@ private:
 	std::array<MemoryRecord, world::WorldLimits::kMaximumActors> memory_;
 	world::WorldSnapshot snapshot_;
 	world::SnapshotIdentity lastIdentity_;
+	world::SnapshotIdentity noiseIdentity_{};
+	std::uint64_t noiseRevision_ = 0U;
 	IPerceptionTraceSink *traceSink_;
 	mutable std::uint64_t traceSequence_;
 	bool hasPublished_;

@@ -166,6 +166,33 @@ bool testMovementSounds(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 	if (!check(belief.soundCount() == 1 && belief.soundAt(0)->origin.x == 500,
 			"scoped EmitSound duplicate shares movement origin and one receipt"))
 		return false;
+
+	round();
+	prepareMove();
+	emitMove(TRUE);
+	move.origin[0] = 600;
+	emitMove(TRUE);
+	self.v.origin.x = -601;
+	++source.serialnumber;
+	step(.2f);
+	self.v.origin.x = 0;
+	--source.serialnumber;
+	if (!check(belief.noise().active && belief.noise().position.x == 500 &&
+			belief.soundCount() == 2 && belief.soundAt(0)->distance == 500 && belief.soundAt(1)->distance == 600,
+			"the nearer same-frame receipt wins even if the listener moves away and the source edict changes"))
+		return false;
+
+	round();
+	prepareMove();
+	move.origin[0] = 1100;
+	emitMove(TRUE);
+	self.v.origin.x = 500;
+	step(.2f);
+	self.v.origin.x = 0;
+	if (!check(!belief.noise().active && belief.soundCount() == 0,
+			"a listener entering range later cannot hear a past footstep at the strict distance boundary"))
+		return false;
+
 	for (unsigned variant = 0; variant < 14; ++variant)
 	{
 		round();

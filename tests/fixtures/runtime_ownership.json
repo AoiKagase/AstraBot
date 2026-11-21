@@ -462,7 +462,7 @@
   {
     "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
-    "member": "flashAudiences_"
+    "member": "soundAudiences_"
   },
   {
     "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",

@@ -348,6 +348,28 @@ bool testNativeBotEvents(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	};
 	const auto low = world::NoisePriority::Low;
 	const auto high = world::NoisePriority::High;
+	{
+		auto observer = std::make_unique<metamod::BotObservationRuntime>();
+		observer->bindServices(runtime);
+		observer->configureEngine();
+		observer->notifyTeamInfo(1, "TERRORIST");
+		observer->notifyTeamInfo(5, "CT");
+		nativeActiveWeapon = 22;
+		const float firedAt = globals.time;
+		observer->observeGameDllBotEvent(NativeBotEvent::Fired, &enemy);
+		globals.time += .01f;
+		enemy.v.origin.y = 250.0f;
+		observer->observeGameDllBotEvent(NativeBotEvent::Footstep, &enemy);
+		world::WorldSnapshot snapshot;
+		metamod::ThreatObservation threats;
+		const bool collected = observer->collectManagedPerception(0, &snapshot, &threats);
+		enemy.v.origin.y = 500.0f;
+		if (!check(collected && snapshot.soundCount() == 2 && snapshot.noise().active &&
+				snapshot.noise().kind == world::SoundKind::WeaponFire && snapshot.noise().priority == high &&
+				snapshot.noise().timestampSeconds == firedAt,
+				"an authoritative shot received before a nearer footstep retains its high-priority memory"))
+			return false;
+	}
 	const auto testFlash = [&](float distance, bool friendly, bool dead, bool ownerKnown, bool heard) {
 		auto observer = std::make_unique<metamod::BotObservationRuntime>();
 		observer->bindServices(runtime);
