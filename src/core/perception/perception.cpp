@@ -572,6 +572,17 @@ void PerceptionAssembler::receiveNoise(const world::AudibleEvent &sound, const N
 	}
 }
 
+void PerceptionAssembler::expireNativeNoise(const world::SnapshotIdentity &identity, float nowSeconds)
+{
+	const auto &noise = snapshot_.noise_;
+	if (hasNoiseIdentity(identity) && noise.active && noise.navArea != 0U && noise.timestampSeconds > 0.0f &&
+		std::isfinite(nowSeconds) && nowSeconds - noise.timestampSeconds > 20.0f)
+	{
+		clearNoise(&snapshot_.noise_);
+		++noiseRevision_;
+	}
+}
+
 bool PerceptionAssembler::consumeNoise(const world::NoiseMemory &expected)
 {
 	const auto &current = snapshot_.noise_;

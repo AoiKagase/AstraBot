@@ -1821,6 +1821,10 @@ void PluginRuntime::updateManagedBots()
 			++managedBotFullUpdateSequences_[index];
 		}
 		navigation_.observeFullUpdateMotion(index, handle, before, configuration);
+		if (!lifecycle_.isCurrent(token) || !handle.entity)
+			continue;
+		if (configuration.mode == compat::RuntimeMode::Compatibility && !stateUpdatePaused && !before.dead)
+			observation_.expireNativeNoise(index, handle);
 		if (!behavior_.refreshHuntApproaches(index, before, navigation))
 			continue;
 		auto blind = behavior_.blindCommand(index, retainBlindCommand);

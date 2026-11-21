@@ -186,6 +186,9 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	using namespace astrabot;
 	engine.pfnTraceLine = &investigationTrace;
 	engine.pfnRandomFloat = &heardRandom;
+	engine.pfnCVarGetFloat = [](const char *name) {
+		return std::strcmp(name, "bot_stop") == 0 ? gBotStopCvar.value : getCvarFloat(name);
+	};
 	setupHeardNoise(engine, globals);
 	runtime.giveEnginePointers(&engine, &globals);
 	gObjectiveEntitiesAvailable = false;
@@ -241,14 +244,14 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	if (!check(loadInvestigationNav(runtime), "investigation runtime loads real NAV"))
 		return false;
 	runtime.beginRoundGeneration();
+	step(12.0f);
 	emit();
 	step(.2f);
 	if (!check(
 			belief.noise().active && !investigating(), "safe time hears sound but does not leave task to investigate"))
 		return false;
-	// Safe time can outlast the old twenty-second memory cutoff. The
-	// original receipt must still trigger investigation without a new sound.
-	step(30);
+	// Cross the safe-time threshold while the original receipt is still fresh enough to investigate.
+	step(15.0f);
 	for (int i = 0; i < 6 && !investigating(); ++i)
 		step(.1f);
 	if (!check(
@@ -273,6 +276,13 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	step(.3f);
 	if (!check(navigation.behavior_buildManagedObjectiveTarget(0, &target, nullptr) && target.y == 500,
 			"slightly closer sound does not redirect current investigation"))
+		return false;
+	if (!check(belief.noise().active, "the redundant sound remains in hearing memory"))
+		return false;
+	step(20.25f);
+	if (!check(!belief.noise().active && investigating() &&
+			navigation.behavior_buildManagedObjectiveTarget(0, &target, nullptr) && target.y == 500,
+			"expiring hearing memory leaves the existing investigation destination intact"))
 		return false;
 	source.v.origin.y = 250;
 	emit();
@@ -665,6 +675,36 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	runtime.setCompatibilityString("astrabot_mode", "compatibility");
 	if (!check(enhancedKeepsItsPolicy, "Enhanced does not read the learned time through CSBot's noise investigation"))
 		return false;
+	runtime.beginRoundGeneration();
+	step(.65f);
+	step(std::ceil(globals.time) + 1.0f - globals.time);
+	const float heardAt = globals.time;
+	const auto blindFrame = belief.identity().frame;
+	if (!check(observations.gameDllBlind(managed, blindFrame, heardAt + 25.0f),
+			"the expiry fixture can keep the listener blind through the deadline"))
+		return false;
+	static_cast<metamod::BotObservationServices &>(runtime).behavior_observePlayerBlind(0, managed, blindFrame);
+	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	step(20.0f);
+	if (!check(belief.noise().active && belief.noise().timestampSeconds == heardAt,
+			"an unpaused full update at exactly twenty seconds retains the sound"))
+		return false;
+	gBotStopCvar.value = 1.0f;
+	step(.25f);
+	const auto pausedUpdate = behavior.service_managedBotFullUpdateSequences()[0];
+	if (!check(behavior.service_compatibilitySurface().configuration().botStop == 1.0f && belief.noise().active,
+			"an overdue sound persists during stopped full updates"))
+		return false;
+	gBotStopCvar.value = 0.0f;
+	step(.04f);
+	if (!check(behavior.service_managedBotFullUpdateSequences()[0] == pausedUpdate && belief.noise().active,
+			"the first light update after resuming does not expire the sound"))
+		return false;
+	step(.11f);
+	if (!check(behavior.service_managedBotFullUpdateSequences()[0] != pausedUpdate && !belief.noise().active,
+			"the first resumed full update expires the overdue sound while still blind"))
+		return false;
+
 	runtime.beginRoundGeneration();
 	step(.65f);
 	teammate = {};

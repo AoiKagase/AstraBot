@@ -191,6 +191,7 @@ public:
 
 	PerceptionResult publish(const PerceptionInput &input, world::WorldSnapshot *snapshot);
 	void receiveNoise(const world::AudibleEvent &sound, const NoiseContext &context);
+	void expireNativeNoise(const world::SnapshotIdentity &identity, float nowSeconds);
 	PerceptionResult invalidateActor(const world::ActorKey &actor);
 	bool consumeNoise(const world::NoiseMemory &expected);
 

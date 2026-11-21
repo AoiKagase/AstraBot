@@ -149,6 +149,10 @@ int main()
 				startleBelief.noise().hasLocalizedZeroTime() && !startleBelief.noise().active && !startleBelief.noise().ready,
 			"time-zero localization is available only for startle"))
 		return 1;
+	startleAssembler.expireNativeNoise(atZero.identity(), .25f);
+	if (!check(startleAssembler.snapshot().noise().hasLocalizedZeroTime(),
+			"full-update expiration preserves the separate time-zero startle receipt"))
+		return 1;
 	perception::PerceptionInput noResolver({{1, 1, 4}, {1, 11}, 0});
 	noResolver.setHearingTime(.25f, .125f);
 	if (!check(startleAssembler.publish(noResolver, &startleBelief) == perception::PerceptionResult::Published &&
@@ -166,7 +170,7 @@ int main()
 	sound.timestampTick = 4;
 	sound.timestampSeconds = 10.4f;
 	if (!check(publish(4, &sound) && publish(205, nullptr) && belief.noise().active && belief.noise().ready,
-			"CSBot memory retains localized enemy noise past twenty seconds"))
+			"publication alone retains localized enemy noise past twenty seconds"))
 		return 1;
 	sound.id = 5;
 	sound.timestampTick = 5;
@@ -174,6 +178,14 @@ int main()
 	before = rng.draws;
 	if (!check(publish(206, &sound) && belief.noise().timestampTick == 4 && rng.draws == before,
 			"an old queued receipt cannot create a new localization"))
+		return 1;
+	auto nextRound = belief.identity();
+	++nextRound.frame.roundGeneration;
+	assembler.expireNativeNoise(nextRound, 31.0f);
+	if (!check(assembler.snapshot().noise().active, "another round cannot expire this hearing memory"))
+		return 1;
+	assembler.expireNativeNoise(belief.identity(), 31.0f);
+	if (!check(!assembler.snapshot().noise().active, "full-update expiration forgets the overdue native receipt"))
 		return 1;
 	nav::NavDocument routeDoc;
 	routeDoc.setSourceIdentity({1, 0, 0});

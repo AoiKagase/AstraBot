@@ -31,7 +31,7 @@ fixture. State-machine, command and path fields outside the measured callbacks
 are unknown.
 
 This fixture covers hearing and composed startle at time zero, the three-second overwrite boundary,
-retention past twenty seconds, quarter-second investigation cadence, and
+retention past twenty seconds when no full update runs, quarter-second investigation cadence, and
 startle at 1,000 units with obscured and out-of-range controls. It does not run
 the GameDLL, engine event classification, native NAV search, or an HLDS match.
 The startle excerpt measures the resulting look and inhibition after the

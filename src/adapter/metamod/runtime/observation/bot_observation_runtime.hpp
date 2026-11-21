@@ -19,6 +19,7 @@ public:
 	void appendPublicMessageInteger(int value);
 	bool collectManagedPerception(std::size_t index, world::WorldSnapshot *snapshot, ThreatObservation *threats);
 	bool readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const;
+	void expireNativeNoise(std::size_t index, const FakeClientHandle &handle);
 	bool consumeNoise(std::size_t index, const world::NoiseMemory &expected)
 	{
 		return index < actors_.size() && actors_[index].managedBotPerception.consumeNoise(expected);

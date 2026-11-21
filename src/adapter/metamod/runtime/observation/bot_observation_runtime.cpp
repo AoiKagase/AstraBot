@@ -1302,6 +1302,15 @@ runtime::MovementPhysicsState BotObservationRuntime::captureMovementPhysicsState
 	return state;
 }
 
+void BotObservationRuntime::expireNativeNoise(std::size_t index, const FakeClientHandle &handle)
+{
+	const auto &lifecycle = services_->service_lifecycle();
+	actors_[index].managedBotPerception.expireNativeNoise(
+		{{lifecycle.mapGeneration(), lifecycle.roundGeneration(), services_->service_adapterFrameCount()},
+			{handle.actor.slot, handle.actor.actorGeneration}, 0U},
+		services_->service_globals()->time);
+}
+
 bool BotObservationRuntime::readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const
 {
 	if (index >= actors_.size() || snapshot == nullptr || !actors_[index].managedBotPerception.snapshot().isValid())

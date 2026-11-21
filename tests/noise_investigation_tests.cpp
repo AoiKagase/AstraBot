@@ -220,7 +220,7 @@ int main()
 	p.reset();
 	i = input();
 	i.noise.timestampSeconds = 79.75f;
-	if (!check(p.evaluate(i, random) == Result::Attend, "a remembered noise older than twenty seconds can be investigated"))
+	if (!check(p.evaluate(i, random) == Result::Attend, "the investigation planner leaves expiration to the full update"))
 		return 1;
 	return 0;
 }
