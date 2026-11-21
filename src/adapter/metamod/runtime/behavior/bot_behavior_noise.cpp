@@ -96,11 +96,10 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 			input.clearLine = trace.flFraction >= 1.0f && !trace.fStartSolid && !trace.fAllSolid;
 			const auto kind = compat::noiseLookKind(input, look.inhibitedUntil());
 			world::WorldPosition point = target;
-			const auto &last = actor.lastVisibleEnemyPositions;
-			const float ex = last.x - self->v.origin.x, ey = last.y - self->v.origin.y, ez = last.z - self->v.origin.z;
-			const bool nearbyThreat = !input.hiding && actor.lastVisibleEnemyTimes > 0 &&
-				input.now - actor.lastVisibleEnemyTimes < 5.0f && ex * ex + ey * ey + ez * ez < 750.0f * 750.0f;
-			bool havePoint = input.clearLine || nearbyThreat;
+			const bool atHidingSpot = actor.managedBotStateMachines.state() == compat::CompatibilityStateId::Hide &&
+				actor.scenarioPlanners.atDefenseSpot();
+			bool havePoint = actor.noiseEnemyContact.allowsDirectLook(input.clearLine, atHidingSpot, input.now,
+				{self->v.origin.x, self->v.origin.y, self->v.origin.z});
 			const auto nav = services_->service_navPublisher().snapshot();
 			if (!havePoint && kind != compat::NoiseLookKind::None)
 			{

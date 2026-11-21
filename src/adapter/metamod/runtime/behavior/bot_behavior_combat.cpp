@@ -466,6 +466,14 @@ bool BotBehaviorRuntime::retaliateAgainstRecentAttacker(const ManagedActionConte
 	if (visible && (contact->relation == world::TeamRelation::Hostile || freeForAll))
 	{
 		memory.rememberVisible(receipt, candidate, attacker, contact->position);
+		auto &noiseContact = actor.noiseEnemyContact;
+		noiseContact.enemy = candidate;
+		noiseContact.source = attacker;
+		if (ctx.snapshot.identity().frame == receipt.frame)
+		{
+			noiseContact.position = contact->position;
+			noiseContact.seenAt = receipt.now;
+		}
 		actor.enemyWeaponSource = attacker;
 		observeRecognizedTargetChange(ctx.index, receipt.now);
 		actor.managedBotCombat.clearAim();
@@ -672,6 +680,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 				// CSBot seeds its last enemy position on Attack entry, before this decision aims.
 				memory.rememberVisible(receipt, targetActor, acquisition.source, {point.x, point.y, point.z});
 				targetPosition = memory.position(receipt);
+				combatActor.noiseEnemyContact = {targetActor, acquisition.source, targetPosition, receipt.now};
 			}
 		}
 	}
@@ -804,7 +813,41 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	if ((combatVisible || delayedRecognition) && !reactionIgnoring(index))
 	{
 		if (!handledOccludedEntry)
-			(void)actors_[index].managedBotStateMachines.beginAttack(stateContext);
+		{
+			const auto receipt = reactionContext(index);
+			const auto execution = combatActor.executionRevision;
+			const auto normalEpoch = state.normalStateEpoch();
+			const auto source = combatActor.enemyReaction.source(receipt);
+			const auto entered = combatActor.managedBotStateMachines.beginAttack(stateContext);
+			if (compatibility && state.attackOverlayActive() && source.isValid() &&
+				(entered == compat::StateResult::Transitioned || entered == compat::StateResult::NoOp) &&
+				executionCurrent(index, receipt, execution) && state.normalStateEpoch() == normalEpoch &&
+				reactionEnemyCurrent(targetActor) && combatActor.enemyReaction.enemy(receipt) == targetActor &&
+				combatActor.enemyReaction.source(receipt) == source && !combatActor.enemyReaction.enemyDead(receipt))
+			{
+				auto &contact = combatActor.noiseEnemyContact;
+				contact.enemy = targetActor;
+				contact.source = source;
+				if (combatVisible && snapshot.identity().frame == receipt.frame)
+				{
+					contact.position = currentEnemy->position;
+					contact.seenAt = receipt.now;
+				}
+				else if (!combatVisible && entered == compat::StateResult::Transitioned)
+				{
+					const auto &acquisition = combatActor.occludedRecognition;
+					const auto *enemy = acquisition.entity;
+					if (acquisition.frame == frame.tick && acquisition.source == source && enemy && !enemy->free &&
+						enemy->serialnumber >= 0 && static_cast<std::uint32_t>(enemy->serialnumber) + 1U == source.generation &&
+						enemy->v.deadflag == DEAD_NO && enemy->v.health > 0.0f)
+					{
+						const auto &origin = enemy->v.origin;
+						contact.position = {origin.x, origin.y, origin.z};
+						contact.seenAt = receipt.now;
+					}
+				}
+			}
+		}
 	}
 	else if (actors_[index].managedBotStateMachines.attackOverlayActive() &&
 		(services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility ||

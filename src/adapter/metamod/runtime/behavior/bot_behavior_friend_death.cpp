@@ -281,7 +281,10 @@ void BotBehaviorRuntime::observeFriendDeath(std::size_t index, const edict_t *vi
 		actor.enemyReaction.seedRetaliation(context, target, source, point);
 		actor.enemyWeaponSource = source;
 		observeRecognizedTargetChange(index, context.now);
-		(void)actor.managedBotStateMachines.beginAttack(makeManagedBotStateContext(index, before));
+		if (actor.managedBotStateMachines.beginAttack(makeManagedBotStateContext(index, before)) ==
+				compat::StateResult::Transitioned && current() && actor.managedBotStateMachines.attackOverlayActive() &&
+			actor.enemyReaction.source(context) == source)
+			actor.noiseEnemyContact = {target, source, point, context.now};
 		services_->applyNavigationRequest({index, NavigationRequestKind::DestroyPath});
 		services_->applyNavigationRequest({index, NavigationRequestKind::ResetProgress});
 		return;

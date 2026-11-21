@@ -121,6 +121,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].closeFootstep = {};
 	actors_[index].knifeRun.reset();
 	actors_[index].enemyReaction.reset();
+	actors_[index].noiseEnemyContact = {};
 	actors_[index].combatRetreat = {};
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseBend = {};
@@ -182,6 +183,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	actors_[index].closeFootstep = {};
 	actors_[index].knifeRun.reset();
 	actors_[index].enemyReaction.reset();
+	actors_[index].noiseEnemyContact = {};
 	actors_[index].combatRetreat = {};
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseBend = {};
@@ -226,6 +228,7 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 		actor.confirmedSpeech.reset();
 		actor.knifeRun.reset();
 		actor.enemyReaction.resetForLife();
+		actor.noiseEnemyContact = {};
 		actor.enemyWeaponSource = {};
 	}
 	updateVoiceFeedback(true);
@@ -261,6 +264,7 @@ void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 	actors_[index].closeFootstep = {};
 	actors_[index].knifeRun.reset();
 	actors_[index].enemyReaction.resetForLife();
+		actors_[index].noiseEnemyContact = {};
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;

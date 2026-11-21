@@ -65,6 +65,7 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		actor.enemyWeaponSource = {};
 		actor.recognizedTargets = {};
 		actor.occludedRecognition = {};
+		actor.noiseEnemyContact.forgetEnemy();
 	}
 	ThreatObservation threats{};
 	if (!services_->observation_collectManagedPerception(index, snapshot, &threats))
@@ -147,10 +148,7 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 					candidates[candidateCount++] = candidates[entry];
 		}
 		if (!blinded && candidateCount != 0U && services_->service_globals() != nullptr)
-		{
 			actors_[index].lastVisibleEnemyTimes = services_->service_globals()->time;
-			actors_[index].lastVisibleEnemyPositions = candidates[0].visiblePoint;
-		}
 		const float delay = actors_[index].managedProfiles.effectiveReactionSeconds(compatibility);
 		const bool sampled = services_->service_globals() != nullptr &&
 			actors_[index].reactionQueues.update(observer, belief.identity().frame, services_->service_globals()->time,
@@ -174,6 +172,12 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		}
 		if (recognized)
 		{
+			// CSBot can retain a delayed threat without entering the attack overlay.
+			if (compatibility && reactionIgnoring(index))
+			{
+				actor.noiseEnemyContact.enemy = threat.actor;
+				actor.noiseEnemyContact.source = threat.sourceEntity;
+			}
 			const auto recentAttacker = memory.recentAttacker(reaction, 3.0f);
 			const bool alreadyRetaliating = recentAttacker.isValid() && memory.source(reaction) == recentAttacker &&
 				memory.enemy(reaction) == threat.actor;
@@ -217,6 +221,13 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		currentEnemy->visible)
 	{
 		memory.rememberVisible(reaction, currentEnemy->actor, memory.source(reaction), currentEnemy->position);
+		auto &contact = actor.noiseEnemyContact;
+		if (compatibility && belief.identity().frame == reaction.frame && contact.enemy == currentEnemy->actor &&
+			contact.source == memory.source(reaction) && !memory.enemyDead(reaction))
+		{
+			contact.position = currentEnemy->position;
+			contact.seenAt = reaction.now;
+		}
 	}
 	if (actors_[index].recognizedTargets.isValid() && !blinded)
 	{
@@ -342,6 +353,7 @@ void BotBehaviorRuntime::resetRoundRecognition(bool endingRound)
 		actor.outgoingRadioSchedulers.discardPending(chatterAdmission(index), endingRound);
 		actor.knifeRun.reset();
 		actor.enemyReaction.resetForLife();
+		actor.noiseEnemyContact = {};
 		actor.enemyWeaponSource = {};
 		actor.noiseReport = {};
 		actor.investigationWalking = false;
@@ -383,6 +395,8 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::Fram
 		{
 			actor.enemyWeaponSource = {};
 		}
+		if (actor.noiseEnemyContact.source.id == index + 1U)
+			actor.noiseEnemyContact.forgetEnemy();
 	}
 	actors_[index].outgoingRadioSchedulers.discardNoiseReport(actors_[index].noiseReport);
 	actors_[index].confirmedSpeech.reset();
@@ -392,6 +406,7 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::Fram
 	actors_[index].noiseReportPolicy = {};
 	actors_[index].knifeRun.reset();
 	actors_[index].enemyReaction.resetForLife();
+	actors_[index].noiseEnemyContact = {};
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseReport = {};
 	actors_[index].investigationWalking = false;

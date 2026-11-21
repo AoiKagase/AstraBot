@@ -23,6 +23,33 @@ struct NoiseLookInput
 	bool hasNoise = false, highPriority = false, visibleEnemy = false, hiding = false, clearLine = false;
 	int enemiesRemaining = 0;
 };
+
+struct NoiseEnemyContact
+{
+	world::ActorKey enemy{};
+	world::EntityKey source{};
+	world::WorldPosition position{};
+	float seenAt = -1.0f;
+
+	void forgetEnemy()
+	{
+		enemy = {};
+		source = {};
+	}
+
+	bool allowsDirectLook(bool clearLine, bool atHidingSpot, float now, world::WorldPosition origin) const
+	{
+		if (clearLine)
+			return true;
+		constexpr float recentSeconds = 5.0f;
+		constexpr float closeRange = 750.0f;
+		const float age = now - seenAt;
+		const float x = position.x - origin.x, y = position.y - origin.y, z = position.z - origin.z;
+		return !atHidingSpot && seenAt >= 0.0f && age >= 0.0f && age < recentSeconds &&
+			x * x + y * y + z * z < closeRange * closeRange;
+	}
+};
+
 inline bool hasNoiseLookPosition(const world::NoiseMemory &noise)
 {
 	return (noise.active || noise.hasLocalizedZeroTime()) && noise.kind != world::SoundKind::Objective &&

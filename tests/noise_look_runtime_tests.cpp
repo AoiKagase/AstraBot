@@ -12,12 +12,15 @@ namespace
 {
 bool noiseRayBlocked = false;
 bool noiseApproachVisible = false;
+bool noiseEnemyVisible = false;
 unsigned noiseApproachRays = 0;
 unsigned noiseGlassIgnoringRays = 0;
 void noiseLookTrace(const float *start, const float *end, int flags, edict_t *, TraceResult *trace)
 {
 	*trace = {};
 	trace->flFraction = noiseRayBlocked && !(noiseApproachVisible && flags != 0x101) ? 0.0f : 1.0f;
+	if (noiseEnemyVisible && flags == 0x101 && end[1] > 100.0f)
+		trace->flFraction = 1.0f;
 	if (noiseApproachVisible && flags == 1 && std::fabs(start[0] - 32) < .01f && std::fabs(start[1] - 32) < .01f &&
 		std::fabs(end[0] - 192) < .01f && std::fabs(end[1] - 32) < .01f && std::fabs(end[2] - 36) < .01f)
 		++noiseApproachRays;
@@ -282,6 +285,96 @@ bool testNoiseLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &eng
 			"occluded sound uses the nearest visible NAV approach instead of aiming through the wall"))
 		return false;
 	step(.16f);
-	return check(noiseApproachRays == 1, "unchanged sound, pose and NAV reuse the validated bend result");
+	if (!check(noiseApproachRays == 1, "unchanged sound, pose and NAV reuse the validated bend result"))
+		return false;
+
+	round();
+	self.v.v_angle = Vector(0, 90, 0);
+	self.v.angles = self.v.v_angle;
+	auto &navigation = static_cast<astrabot::metamod::BotNavigationServices &>(runtime);
+	auto &profile = const_cast<astrabot::compat::ProfileRecord &>(navigation.behavior_managedProfiles(0));
+	profile.csbotReactionSeconds = .3f;
+	step(.12f);
+	enemy.v.origin = Vector(32, 150, 36);
+	enemy.v.velocity = Vector(0, 230, 0);
+	enemy.v.deadflag = DEAD_NO;
+	enemy.v.health = 100;
+	noiseEnemyVisible = true;
+	noiseApproachRays = 0;
+	emit("player/pl_step1.wav");
+	step(.18f);
+	auto &views = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime);
+	auto &observations = static_cast<astrabot::metamod::BotObservationServices &>(runtime);
+	const auto &snapshot = views.observation_managedBotPerception(0).snapshot();
+	const astrabot::world::ActorObservation *visibleEnemy = nullptr;
+	if (!check(snapshot.findActor({2U, 1U}, &visibleEnemy) == astrabot::world::ContactLookupResult::Found &&
+			visibleEnemy && visibleEnemy->visible && !observations.behavior_currentEnemySource(0).isValid(),
+			"one visible enemy sample precedes delayed acquisition"))
+		return false;
+	noiseEnemyVisible = false;
+	step(.14f);
+	visibleEnemy = nullptr;
+	if (!check(snapshot.findActor({2U, 1U}, &visibleEnemy) == astrabot::world::ContactLookupResult::Found &&
+			visibleEnemy && !visibleEnemy->visible && !observations.behavior_currentEnemySource(0).isValid(),
+			"the candidate is occluded and remains unacquired at the first eligible noise update"))
+		return false;
+	if (!check(noiseApproachRays == 1, "an unacquired vision candidate cannot bypass the occluded footstep approach"))
+		return false;
+
+	using namespace astrabot;
+	const compat::NoiseEnemyContact unseen{};
+	const compat::NoiseEnemyContact atTimeZero{{2U, 1U}, {2U, 3U}, {0, 0, 750}, 0.0f};
+	if (!check(!unseen.allowsDirectLook(false, false, 0.0f, {}) &&
+			atTimeZero.allowsDirectLook(false, false, 4.999f, {0, 0, 1}) &&
+			!atTimeZero.allowsDirectLook(false, false, 4.999f, {}) &&
+			!atTimeZero.allowsDirectLook(false, false, 5.0f, {0, 0, 1}) &&
+			!atTimeZero.allowsDirectLook(false, true, 1.0f, {0, 0, 1}) &&
+			unseen.allowsDirectLook(true, true, 5.0f, {}),
+			"recent contact distinguishes time zero, strict 3D range and age, arrival at Hide, and clear LOS"))
+		return false;
+
+	runtime.onMessageBegin(MSG_ONE, 94, nullptr, &self);
+	runtime.onWriteByte(1);
+	runtime.onWriteByte(22);
+	runtime.onWriteByte(30);
+	runtime.onMessageEnd();
+	noiseEnemyVisible = true;
+	auto &machine = const_cast<compat::CompatibilityStateMachine &>(navigation.behavior_managedBotStateMachines(0));
+	for (int frame = 0; frame < 4 && !machine.attackOverlayActive(); ++frame)
+	{
+		self.v.angles = Vector(0, 90, 0);
+		self.v.v_angle = self.v.angles;
+		step(.125f);
+	}
+	if (!check(machine.attackOverlayActive() && observations.behavior_currentEnemySource(0).id == 2U,
+			"positive control actually enters Attack against the visible enemy"))
+		return false;
+
+	enemy.v.deadflag = DEAD_DEAD;
+	enemy.v.health = 0;
+	noiseEnemyVisible = false;
+	const auto &life = observations.service_lifecycle();
+	compat::StateUpdateContext attackContext{};
+	attackContext.actor = machine.actor();
+	attackContext.frame = {life.mapGeneration(), life.roundGeneration(), observations.service_adapterFrameCount()};
+	attackContext.timestamp = globals.time;
+	attackContext.fullUpdateSequence = observations.service_managedBotFullUpdateSequences()[0];
+	attackContext.fullUpdate = true;
+	attackContext.lifeAvailability = attackContext.roundAvailability = compat::ObservationAvailability::Available;
+	attackContext.attackObservation = compat::ObservationAvailability::Available;
+	attackContext.alive = attackContext.roundActive = true;
+	if (!check(machine.stopAttack(attackContext) == compat::StateResult::Transitioned,
+			"normal noise look resumes after Attack stops"))
+		return false;
+	step(.125f);
+	profile.csbotReactionSeconds = .125f;
+	self.v.angles = Vector(0, 90, 0);
+	self.v.v_angle = self.v.angles;
+	noiseApproachRays = 0;
+	emit("player/pl_step1.wav");
+	step(.2f);
+	return check(noiseApproachRays == 0 && self.v.v_angle.y < 90.0f &&
+			!machine.attackOverlayActive() && (gLastRunPlayerMoveButtons & (IN_ATTACK | IN_ATTACK2)) == 0,
+			"recent acquired contact looks directly at the occluded footstep after combat stops");
 }
 }

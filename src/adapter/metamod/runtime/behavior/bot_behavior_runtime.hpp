@@ -674,7 +674,7 @@ private:
 		OccludedRecognition occludedRecognition{};
 		std::uint32_t recognitionSequences{};
 		float lastVisibleEnemyTimes{};
-		world::WorldPosition lastVisibleEnemyPositions{};
+		compat::NoiseEnemyContact noiseEnemyContact{};
 		compat::NoiseLookPlanner noiseLook{};
 		NoiseBendCache noiseBend{};
 		std::uint32_t noiseLookUpdate = 0U;

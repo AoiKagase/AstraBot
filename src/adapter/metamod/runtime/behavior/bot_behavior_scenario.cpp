@@ -190,6 +190,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 		actors_[index].investigationWalking = false;
 		actors_[index].knifeRun.reset();
 		actors_[index].enemyReaction.resetForLife();
+		actors_[index].noiseEnemyContact = {};
 		actors_[index].enemyWeaponSource = {};
 		actors_[index].equipment.reset();
 		actors_[index].scenarioPlanners.reset();
