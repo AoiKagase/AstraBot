@@ -328,9 +328,21 @@ private:
 	std::array<world::AudibleEvent, kMaximumSoundEvents> soundEvents_{};
 	std::array<int, kMaximumSoundEvents> soundTeams_{};
 	std::array<bool, kMaximumSoundEvents> fallbackWeaponSounds_{};
+	struct FlashHearing
+	{
+		std::uint64_t lifeRevision = 0U;
+		std::uint32_t actorGeneration = 0U;
+		float distance = 0.0f;
+	};
+	using FlashAudience = std::array<FlashHearing, NativeBotObservation::kClientSlotCount>;
+	std::array<FlashAudience, kMaximumSoundEvents> flashAudiences_{};
 	std::uint32_t soundSequence_ = 0U;
 	compat::GunshotEventCatalog gunshotEvents_{};
-	void recordSound(world::AudibleEvent event, const edict_t *source, bool fallbackWeapon = false);
+	int playerTeamAtSlot(const edict_t &entity, int slot) const;
+	void recordNativeFlashSound(const edict_t &source, world::ActorKey sourceKey,
+		const world::FrameIdentity &frame, float now);
+	void recordSound(world::AudibleEvent event, const edict_t *source, bool fallbackWeapon = false,
+		const FlashAudience *flashAudience = nullptr);
 	void observePlantedBombAnnouncement(world::WorldVector origin, world::FrameIdentity frame);
 	void rememberPlantedBomb(world::EntityKey bomb, world::WorldVector origin, float now, bool announcement);
 	bool hasNativeWeaponEvents(const edict_t *source, int slot) const;

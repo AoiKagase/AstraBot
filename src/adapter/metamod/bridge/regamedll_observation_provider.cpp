@@ -210,6 +210,9 @@ void ReGameDllObservationProvider::onBotEvent(
 		case EVENT_PLAYER_SPAWNED:
 			listener(context, NativeBotEvent::PlayerSpawned, source);
 			break;
+		case EVENT_FLASHBANG_GRENADE_EXPLODED:
+			listener(context, NativeBotEvent::FlashbangExploded, source);
+			break;
 		default:
 			break;
 		}

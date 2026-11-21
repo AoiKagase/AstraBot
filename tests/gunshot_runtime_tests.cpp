@@ -348,6 +348,61 @@ bool testNativeBotEvents(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	};
 	const auto low = world::NoisePriority::Low;
 	const auto high = world::NoisePriority::High;
+	const auto testFlash = [&](float distance, bool friendly, bool dead, bool ownerKnown, bool heard) {
+		auto observer = std::make_unique<metamod::BotObservationRuntime>();
+		observer->bindServices(runtime);
+		observer->configureEngine();
+		observer->notifyTeamInfo(1, "TERRORIST");
+		observer->notifyTeamInfo(5, friendly ? "TERRORIST" : "CT");
+		const auto origin = Vector(0, distance, 36);
+		enemy.v.origin = origin;
+		const auto health = enemy.v.health;
+		const auto deadflag = enemy.v.deadflag;
+		if (dead)
+		{
+			enemy.v.health = 0;
+			enemy.v.deadflag = DEAD_DEAD;
+		}
+		observer->observeGameDllBotEvent(NativeBotEvent::FlashbangExploded, ownerKnown ? &enemy : nullptr);
+		enemy.v.health = health;
+		enemy.v.deadflag = deadflag;
+		// Neither the later source movement nor the later ear position
+		// should change which listener received the explosion event.
+		enemy.v.origin = Vector(0, 500, 36);
+		self.v.origin = Vector(0.0f, heard ? -1200.0f : 800.0f, 36.0f);
+		world::WorldSnapshot snapshot;
+		metamod::ThreatObservation threats;
+		const bool collected = observer->collectManagedPerception(0, &snapshot, &threats);
+		self.v.origin = Vector(0, 0, 36);
+		if (!collected || snapshot.soundCount() != (heard ? 1U : 0U))
+			return false;
+		const auto *sound = snapshot.soundAt(0);
+		return !heard || (sound && sound->kind == world::SoundKind::Grenade && sound->priority == low &&
+			sound->source.slot == 5 && sound->distance == distance && sound->hearingRange == 1000.0f &&
+			sound->origin.y == origin.y && sound->timestampSeconds == globals.time);
+	};
+	if (!check(testFlash(999, false, false, true, true), "native flash uses the live enemy's event-time position") ||
+		!check(testFlash(1000, false, false, true, false), "native flash has a strict 1000 unit hearing limit") ||
+		!check(testFlash(500, true, false, true, false), "native flash ignores a teammate's throw") ||
+		!check(testFlash(500, false, true, true, false), "native flash ignores a dead thrower") ||
+		!check(testFlash(500, false, false, false, false), "native flash with no thrower gives no hearing receipt"))
+		return false;
+	{
+		auto observer = std::make_unique<metamod::BotObservationRuntime>();
+		observer->bindServices(runtime);
+		observer->configureEngine();
+		observer->notifyTeamInfo(1, "TERRORIST");
+		edict_t grenade{};
+		grenade.v.origin = Vector(0, 90, 36);
+		observer->onEmitSound(&grenade, "weapons/flashbang-1.wav", .55f, 1.0f);
+		world::WorldSnapshot snapshot;
+		metamod::ThreatObservation threats;
+		if (!check(observer->collectManagedPerception(0, &snapshot, &threats) && snapshot.soundCount() == 1 &&
+				snapshot.soundAt(0)->priority == world::NoisePriority::Medium &&
+				snapshot.soundAt(0)->origin.y == 90.0f,
+			"stock GameDLL fallback hears the public sample at its emitter"))
+			return false;
+	}
 	if (!check(test(NativeBotEvent::Reloaded, 28, 1100, low), "native reload has the low-priority CSBot radius") ||
 		!check(test(NativeBotEvent::FiredOnEmpty, 28, 1100, low), "native dry fire has the low-priority radius") ||
 		!check(test(NativeBotEvent::Fired, 29, 1000, high), "native knife attack has the short high-priority radius") ||
