@@ -1192,6 +1192,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/csbot-defuse-attack-correction.json.gz"
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/csbot-plant-combat-${characterization_platform}.json.gz"
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/csbot-combat-range-init-${characterization_platform}.json.gz"
+      --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/csbot-plant-terminal-${characterization_platform}.json.gz"
       --platform "${characterization_platform}"
       --output "${CMAKE_CURRENT_BINARY_DIR}/runtime-characterization.txt")
   add_test(NAME astrabot_runtime_characterization_checker
@@ -1223,6 +1224,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   add_test(NAME astrabot_combat_self_defense COMMAND astrabot_combat_target_log --target-log)
   add_test(NAME astrabot_combat_shield COMMAND astrabot_combat_target_log --target-log)
   add_test(NAME astrabot_combat_best_equipment COMMAND astrabot_combat_target_log --target-log)
+    add_test(NAME astrabot_plant_terminal_order COMMAND astrabot_combat_target_log --target-log)
   add_test(NAME astrabot_combat_threat_notice COMMAND astrabot_combat_target_log --target-log)
   add_executable(astrabot_bomb_guard_look tests/bomb_guard_look_tests.cpp ${combat_target_log_sources})
   target_include_directories(astrabot_bomb_guard_look PRIVATE ${combat_target_log_includes})
@@ -1258,10 +1260,11 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   set_tests_properties(astrabot_combat_self_defense PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=self-defense")
   set_tests_properties(astrabot_combat_shield PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=shield")
   set_tests_properties(astrabot_combat_best_equipment PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=equip-best")
+    set_tests_properties(astrabot_plant_terminal_order PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=plant-tail")
   set_tests_properties(astrabot_combat_threat_notice PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=notice")
   set_tests_properties(astrabot_combat_target_log astrabot_combat_threatening_gunfire astrabot_combat_reacquire_delay
     astrabot_combat_threat_notice astrabot_combat_occluded_acquisition astrabot_combat_self_defense astrabot_combat_shield
-    astrabot_combat_best_equipment PROPERTIES
+    astrabot_combat_best_equipment astrabot_plant_terminal_order PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_obstacle_interaction_runtime tests/obstacle_interaction_runtime_tests.cpp ${combat_target_log_sources})

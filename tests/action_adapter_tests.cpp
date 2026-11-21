@@ -95,8 +95,16 @@ bool testLiveFireRequiresWeaponBoundary()
 		return false;
 	}
 	const auto ready = ActionAdapter::forLiveDispatch(fire, true, movementAngles);
-	return check(
-		ready.kind == ActionKind::Fire, "live Fire remains available when an active weapon boundary is present");
+	if (!check(
+		ready.kind == ActionKind::Fire, "live Fire remains available when an active weapon boundary is present"))
+		return false;
+	ActionProposal plantTail{ActionKind::Fire, {8.0f, 67.0f, 0.0f}, 0U};
+	plantTail.stopForWeapon = plantTail.preserveUpkeepView = plantTail.plantPrimaryInput = true;
+	const auto retained = ActionAdapter::forLiveDispatch(plantTail, false, movementAngles);
+	const auto dispatch = ActionAdapter::translate(retained);
+	return check(retained.preserveUpkeepView && retained.stopForWeapon && dispatch.buttons == ActionAdapter::kAttackButton &&
+		dispatch.clientCommand == nullptr && dispatch.viewAngles.pitch == 8.0f && dispatch.viewAngles.yaw == 67.0f,
+		"a current native Plant input survives delayed CurWeapon without reselecting C4 or changing upkeep view");
 }
 
 bool testActionStopsMovementForObjectiveUse()

@@ -86,7 +86,7 @@ ActionDispatch ActionAdapter::translate(const ActionProposal &proposal)
 ActionProposal ActionAdapter::forLiveDispatch(
 	const ActionProposal &proposal, bool activeWeaponAvailable, const runtime::ViewAngles &movementViewAngles)
 {
-	if ((proposal.kind == ActionKind::Fire || proposal.secondaryAttack) && !activeWeaponAvailable)
+	if (((proposal.kind == ActionKind::Fire && !proposal.plantPrimaryInput) || proposal.secondaryAttack) && !activeWeaponAvailable)
 	{
 		return {ActionKind::None, movementViewAngles, proposal.movementButtons};
 	}

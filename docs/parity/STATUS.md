@@ -1,3 +1,17 @@
+## PlantBomb末尾入力と退出処理（2026-11-21）
+
+固定 `b088984` の `states/cs_bot_plant_bomb.cpp:45–83` は、C4装備中ならPrimaryAttackのbitを立て、それ以外は即時SelectC4を行い、その後で所持喪失、最後にstrictな5秒超を判定する。所持喪失でHideへ移るとstate timestampが更新されるので、古いPlant ageによる二度目のIdle移行は起こらない。退出はEquipBest→StandUp→ResetStuck→Engage→ClearLookの順。
+
+互換runtimeに同一Actor・edict serial・フレーム・時刻・full-update番号・実行revision・normal/Attack epochで検証する末尾入力を接続した。未装備のSelectC4はその場で送り、コールバック後に所持を再観測する。退出前のEquipBestと順序を逆転させず、後段でC4を再選択しない。C4装備中のPrimaryAttackは退出後もcommand bitとして残し、起立した姿勢で次の全体更新まで軽更新へ保持する。設置区域外や古い経路の失敗でPlantの末尾更新を先取りしない。実activeは既存の公開GameDLL predictionで確認し、取得できない場合だけCurWeaponへfallbackする。current Plant入力の証拠を後段へ伝え、predictionで確認済みのC4を未公開CurWeaponが否定しない。一般Fireの安全ガードは維持する。coreの任意Plant実行口を使わない旧呼出しとEnhancedの契約は維持する。
+
+新コールバックで更新・退出が失効したときはInvalidContextを呼出元へ返し、旧OnEnter・state公開・timestamp更新を続けない。同ActorのSelectC4中に所持が失われるケース、round reset、edict置換、同フレームのfull-update番号進行、5秒一致/超過、喪失と古いage超過の同時成立を回帰で分けた。入力が実際に作られたUpdatedだけを受理し、Duplicate/Blocked等から未実行の入力を作らない。
+
+実機証拠は `C:/Temp/astrabot-plant-terminal-order`、最終DLL/PDBと索引は `artifacts/local/debug/csbot-plant-terminal-20261121`。最終v2 DLL SHA-256は `fcdd52c9ee91c64404d7cd4ff8013d5c9f263f29f223fb48ac9c24dd9e20e42c`。通常GameDLLの設置開始後、区域外へ一度移動する対照では、旧版は15.522994の移動直後15.648941にMoveToへ早期退出し、AK/buttons0。固定版は5秒超までPlantを保ち、Idleへ移った13.784047から3コマンド、AK/buttons1・IN_DUCKなしを出す。最終v2はPlant age5.022の25.335514にIdleへ移り、25.335514/25.381092/25.426647の3コマンドでAK/buttons1、次の全体更新25.474037で0となった。通常設置成功と実C4ドロップでは、C4が未装備になった最初のPlant更新がSelectC4→退出時EquipBestとなり、末尾に新しいPrimaryAttackは追加しない。参照・最終v2双方の読取専用CDBでこの即時2コマンド順を採録した。
+
+初期候補 `4597335e…` は末尾のyawをnavigation draftの180°へ変え、実active AKに対して遅れたCurWeapon C4からPrimaryAttackを作る境界もあった。最終v2は退出full限定の明示保持契約を追加し、Upkeep直後の実角pitch1.225865/yaw97.783432を末尾へ保持する。実command回帰はNAV draft180°・末尾67°で実RunPlayerMoveを検証し、次のdecisionでは保持を解除する。一方、次lightの通常視線ばねは独立残件。参照は98.221519→94.888183→88.221519と旋回し、v2はpriority floorを取消した後97.783432を保持する。通常look-goal/springの再開、同更新の経路準備、Hide地点と後続経路・RNG列全体の一致は主張しない。Plant初回未装備の直接実機、実水没、独自複数武器スロットも未完のまま保持する。
+
+最終オフラインはWindows x86 169/169・PE公開7関数、終了後の単独Linux x86 168/168・ELF公開7関数が合格。ELF SHA-256は `1ef241017b39b9ba8b540e8826f9e54141456df365504d72dc5359821a1c05f9`。両OSの履歴は固定baselineを保ち、同じ35ブロック・24削除11移動だけの限定補正で153,394→153,320行を全行照合した。Windows補正後SHAは `79270824a2708423424bcfc551729b20a82b5fec21eba39e1cc0c51b15623a04`、Linuxは `ce88e9bced91a27bb0a86f99c8abae587378d8f8f193e52c421c41437082653e`。許可されたcallback文字列以外の差はなく、RNG記録は不変。実機12試行は実ゲーム終了0・forced=falseを各manifestで確認し、最終v2の4試行は同一DLL SHAである。
+
 ## C4処理の武器選択と装備時計（2026-11-21）
 
 固定CSBot `b0889847fe6d03898be88acc9e366660efb40ab5` の `cs_bot_weapon.cpp:411–470` と比較した。互換モードのC4装備中Attack、PlantBomb退出、既存の手榴弾・逃走後の持替えで、在庫ビットだけから主武器を選ぶ代わりに、公開 `UpdateClientData` / `GetWeaponData` の所持武器別clip・reserve、WeaponListのflags、武器クラス許可、完全水没時のskill条件を使う。標準の主武器→拳銃→ナイフの順。公開弾薬が不明な主武器は空と推定して拳銃へ落とさない。Enhancedの既存選択は維持する。

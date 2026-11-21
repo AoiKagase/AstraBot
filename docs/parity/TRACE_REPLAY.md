@@ -1,5 +1,17 @@
 # P11 differential trace comparison
 
+## Plant terminal input / exit ordering, 2026-11-21
+
+Base `d83a6d6`; fixed native `b0889847fe6d03898be88acc9e366660efb40ab5`. Evidence: `C:/Temp/astrabot-plant-terminal-order`, frozen modules and summary under `artifacts/local/debug/csbot-plant-terminal-20261121`. Final-v2 DLL SHA-256 `fcdd52c9ee91c64404d7cd4ff8013d5c9f263f29f223fb48ac9c24dd9e20e42c`. Prior candidate `4597335e…` is preserved separately and is not final acceptance.
+
+`equipment.amxx` SHA-256 `8c9fdaf946a47cb97b693dddbeee8c3e92ed4ded759d9e4f4969b5463a545a07`. Modes0/7/8 use actual GameDLL planting: normal completion, one position change outside the planting zone after real arming, and actual `rg_drop_item("weapon_c4")` after arming. Require BarTime3/arming before intervention, genuine zone-signal loss for7 and a positive dropped entity plus hasC4=0 for8. CmdStart records every actual input's sequence, active weapon, ownership, signals, flags and angles without rewriting buttons. The old conditional C4 inventory-mask synchronization remains fixture-only and is logged; do not count it as natural acquisition acceptance.
+
+Run reference0/7/8, before0/7/8 and release-v2-0/7/8 strictly serially using `run.py`. Require each real game PID exit0 and forced=false before the next launch. Baseline7 exits early toMoveTo after leaving the zone; native and final instead remainPlant until strict>5, then enterIdle while retainingPrimaryAttack after switching toAK and standing. Final age5.022 emitsAttack on commands378/379/380 and clears it at the next full decision381. Completion/drop selects absentC4 before exit's best weapon and emits no freshPrimaryAttack.
+
+Read-only `reference-order-debug` BPs are function entries `PlantBombState::OnUpdate`, `PlantBombState::OnExit`, `CBasePlayer::SelectItem`; `release-order-v2-debug` reads `PluginRuntime::command_dispatchClientCommand`'s real string argument. Debug8 confirms SelectC4→exit→AK at one update, with final actual activeAK/buttons0 even when CurWeapon's previous C4 sample is stale. Offline regressions include inverse-cache prediction, unavailable fallback, missing CurWeapon, serial/round/full-sequence reentry, failed outer publication and real command dispatch with NAV180° versus a retained terminal67°.
+
+The final full command preserves its own Upkeep angle instead of snapping toNAV180°. The following light updates still lack the normal Idle look-goal/spring resumption: native7 yaw98.221519→94.888183→88.221519, final97.783432 held. Track this separately from the matching three-command Attack retention and first command's view preservation. General view/Hide/NAV/RNG parity is not asserted.
+
 ## C4 equipment / native equip clock, 2026-11-21
 
 Evidence root: `C:/Temp/astrabot-c4-equipment`; frozen modules and acceptance notes: `artifacts/local/debug/csbot-c4-equipment-20261121/README.md`. Base `c78b4c0`, fixed CSBot `b0889847fe6d03898be88acc9e366660efb40ab5`. Final Windows module SHA-256 `b46033d043ff2493712e8df14b60e73c5c20f662ae4443d0281a0b607218e5d6`.

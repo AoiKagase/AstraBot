@@ -403,6 +403,113 @@ bool testReferenceIdleAndHuntOwnTheirLifecycle()
 		"reference Hunt returns to Idle after thirty seconds for task selection");
 }
 
+bool testNativePlantTerminalOrder()
+{
+	for (bool carrying : {true, false})
+	{
+		TraceCollector trace;
+		CompatibilityStateMachine machine({1U, 7U});
+		auto tick = context(1U, 1.0f, 1U);
+		initialize(&machine, &trace, tick);
+		machine.transition(CompatibilityStateId::PlantBomb, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, tick);
+		struct Execution : IPlantStateExecution
+		{
+			CompatibilityStateMachine &machine;
+			std::vector<int> calls;
+			explicit Execution(CompatibilityStateMachine &value) : machine(value) {}
+			bool update() override { calls.push_back(1); return true; }
+			bool exit() override
+			{
+				calls.push_back(machine.state() == CompatibilityStateId::PlantBomb ? 2 : -2);
+				return true;
+			}
+		} execution(machine);
+		StateBehaviorInput input{};
+		input.navigationOwned = true;
+		input.plantCarryingKnown = true;
+		input.plantCarrying = carrying;
+		input.objectiveActive = false; // Neither geometry nor scenario completion may preempt the input.
+		input.pathFailed = true;
+		tick = context(2U, carrying ? 6.0f : 6.125f, 2U);
+		tick.behavior = &input;
+		tick.plantExecution = &execution;
+		tick.requestTransition = true;
+		tick.requestedState = CompatibilityStateId::Hunt;
+		machine.update(tick);
+		if (carrying)
+		{
+			if (!check(machine.state() == CompatibilityStateId::PlantBomb && execution.calls == std::vector<int>{1},
+				"native Plant emits its input at exactly five seconds despite stale geometry"))
+				return false;
+			execution.calls.clear();
+			tick = context(3U, 6.125f, 3U);
+			tick.behavior = &input;
+			tick.plantExecution = &execution;
+			machine.update(tick);
+		}
+		if (!check(execution.calls == std::vector<int>{1, 2},
+			"Plant update input precedes exit effects while the old state is still published"))
+			return false;
+		if (!check(machine.state() == (carrying ? CompatibilityStateId::Idle : CompatibilityStateId::Hide) &&
+			machine.task() == (carrying ? CompatibilityTaskId::SeekAndDestroy : CompatibilityTaskId::GuardTickingBomb),
+			"timeout keeps Idle task while lost C4 enters bomb guard before the old timeout"))
+			return false;
+		if (!carrying)
+		{
+			// A simultaneous old-state timeout must not replace the new Hide timestamp.
+			if (!check(machine.stateTimestamp() == tick.timestamp, "lost C4 publishes the new Hide timestamp"))
+				return false;
+		}
+	}
+	return true;
+}
+
+bool testPlantCallbackInvalidation()
+{
+	for (int cancelAt : {1, 2})
+	{
+		TraceCollector trace;
+		CompatibilityStateMachine machine({1U, 7U});
+		auto tick = context(1U, 1.0f, 1U);
+		initialize(&machine, &trace, tick);
+		machine.transition(CompatibilityStateId::PlantBomb, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, tick);
+		tick = context(2U, 7.0f, 2U);
+		struct Execution : IPlantStateExecution
+		{
+			CompatibilityStateMachine &machine;
+			StateUpdateContext tick;
+			int cancelAt, calls = 0;
+			Execution(CompatibilityStateMachine &m, StateUpdateContext t, int where) : machine(m), tick(t), cancelAt(where) {}
+			bool next()
+			{
+				if (++calls != cancelAt) return true;
+				machine.onRoundReset(tick);
+				return false;
+			}
+			bool update() override { return next(); }
+			bool exit() override { return next(); }
+		} execution(machine, tick, cancelAt);
+		StateBehaviorInput input{};
+		input.navigationOwned = true;
+		input.plantCarryingKnown = input.plantCarrying = true;
+		tick.behavior = &input;
+		tick.plantExecution = &execution;
+		tick.requestTransition = true;
+		tick.requestedState = CompatibilityStateId::Hunt;
+		trace.records.clear();
+		if (!check(machine.update(tick) == StateResult::InvalidContext && machine.state() == CompatibilityStateId::Idle &&
+			machine.stateTimestamp() == tick.timestamp, "reentrant Plant callback aborts the outer update and transition"))
+			return false;
+		for (const auto &record : trace.records)
+			if (!check(record.currentState != CompatibilityStateId::Hunt,
+				"a rejected Plant callback cannot publish the old requested state or timestamp"))
+				return false;
+	}
+	return true;
+}
+
 bool testPlantTimeoutDoesNotAssignBombGuard()
 {
 	TraceCollector trace;
@@ -608,7 +715,7 @@ int main()
 	return testNavigationCannotUpdateIdleTwice() && testRetainedTaskCompletion() &&
 			testNormalEntryEpochAndRetainedMoveTask() && testNoiseInvestigationNavigationCompletion() &&
 			testFetchBombNavigationCompletion() &&
-			testPlantTimeoutDoesNotAssignBombGuard() && testReferenceIdleAndHuntOwnTheirLifecycle() &&
+			testPlantCallbackInvalidation() && testNativePlantTerminalOrder() && testPlantTimeoutDoesNotAssignBombGuard() && testReferenceIdleAndHuntOwnTheirLifecycle() &&
 			testStateOwnsNavigationOutcome() &&
 			testStateOwnedBehavior() && testInitialStateAndOwnership() && testReferenceSetStateOrderingAndSameState() &&
 			testFullUpdateAndTransitionTrace() && testAttackOverlayLifecycleAndInteraction() &&

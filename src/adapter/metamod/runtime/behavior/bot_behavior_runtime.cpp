@@ -53,6 +53,17 @@ bool BotBehaviorRuntime::executionCurrent(
 		receipt.entityGeneration == now.entityGeneration && receipt.now == now.now && receipt.alive == now.alive;
 }
 
+bool BotBehaviorRuntime::plantCommandCurrent(std::size_t index) const
+{
+	const auto &actor = actors_[index];
+	const auto &command = actor.plantCommand;
+	return command.active && command.receipt.alive && executionCurrent(index, command.receipt, command.revision) &&
+		services_->service_managedBotFullUpdateSequences()[index] == command.fullUpdate &&
+		actor.managedBotStateMachines.normalStateEpoch() == command.stateEpoch &&
+		actor.managedBotStateMachines.attackEntryEpoch() == command.attackEpoch &&
+		!actor.managedBotStateMachines.attackOverlayActive();
+}
+
 BlindCommand BotBehaviorRuntime::blindCommand(std::size_t index, bool retainUntilFullUpdate) const
 {
 	const auto &bot = actors_[index];
@@ -93,6 +104,7 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 	actors_[index].noiseReport = {};
 		actors_[index].investigationWalking = false;
 	}
+	actors_[index].plantCommand = {};
 	compat::StateBehaviorInput stateBehavior = {};
 	compat::StateUpdateContext context = makeManagedBotStateContext(index, before, &stateBehavior);
 

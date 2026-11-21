@@ -1336,6 +1336,25 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::prepareManagedAction
 	}
 	auto &actorState = actors_[index];
 	const auto &machine = actorState.managedBotStateMachines;
+	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		actorState.plantCommand.receipt.actor == ctx.actor && actorState.plantCommand.receipt.frame == ctx.frame)
+	{
+		if (!plantCommandCurrent(index))
+			return BehaviorPhaseResult::Complete;
+		const auto &command = actorState.plantCommand;
+		// PrimaryAttack is only a command bit. Do not re-select C4 after OnExit
+		// has already equipped the best weapon in this same update.
+		proposal.kind = command.primary ? ActionKind::Fire : ActionKind::None;
+		proposal.plantPrimaryInput = command.primary;
+		proposal.stopForWeapon = true;
+		proposal.movementButtons = command.exited ? 0 : IN_DUCK;
+		proposal.hasUseEntityLook = !command.exited;
+		proposal.useEntityLookTarget = actorState.plantFloorLook;
+		proposal.preserveUpkeepView = command.exited;
+		if (command.exited)
+			proposal.viewAngles = command.upkeepView;
+		return BehaviorPhaseResult::Complete;
+	}
 	const bool nativePlant = services_->service_compatibilitySurface().configuration().mode ==
 			compat::RuntimeMode::Compatibility &&
 		machine.state() == compat::CompatibilityStateId::PlantBomb;

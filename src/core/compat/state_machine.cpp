@@ -351,7 +351,11 @@ StateResult CompatibilityStateMachine::update(const StateUpdateContext &context)
 
 	lastFullUpdateSequence_ = context.fullUpdateSequence;
 	hasLastFullUpdate_ = true;
-	invokeUpdate(context);
+	const bool nativePlantUpdate = state_ == CompatibilityStateId::PlantBomb && context.plantExecution;
+	if (!invokeUpdate(context))
+		return StateResult::InvalidContext;
+	if (nativePlantUpdate)
+		return StateResult::Updated;
 	if (!context.requestTransition)
 	{
 		return StateResult::Updated;
@@ -528,7 +532,8 @@ StateResult CompatibilityStateMachine::transitionInternal(CompatibilityStateId n
 	}
 	if (previousState != CompatibilityStateId::None)
 	{
-		invokeExit(previousState, nextState, reason, transitionId, context);
+		if (!invokeExit(previousState, nextState, reason, transitionId, context))
+			return StateResult::InvalidContext;
 	}
 	invokeEnter(nextState, previousState, reason, transitionId, context);
 	state_ = nextState;
@@ -555,14 +560,17 @@ void CompatibilityStateMachine::invokeEnter(CompatibilityStateId state, Compatib
 	applyEnterEffects(state, previousState, reason, transitionId, context);
 }
 
-void CompatibilityStateMachine::invokeUpdate(const StateUpdateContext &context)
+bool CompatibilityStateMachine::invokeUpdate(const StateUpdateContext &context)
 {
+	const auto epoch = normalStateEpoch_;
+	const auto attack = attackEntryEpoch_;
 	if (attackOverlayActive_)
 	{
-		updateBehavior(context);
+		if (!updateBehavior(context))
+			return false;
 		emit(StateTraceEvent::AttackOnUpdate, CompatibilityStateId::AttackOverlay, state_, state_,
 			StateTransitionReason::AttackStarted, StateTransitionId::AttackOverlayStart, context);
-		return;
+		return true;
 	}
 	StateInstance *instance = instanceFor(state_);
 	if (instance != nullptr)
@@ -571,24 +579,26 @@ void CompatibilityStateMachine::invokeUpdate(const StateUpdateContext &context)
 	}
 	emit(StateTraceEvent::OnUpdate, state_, state_, state_, StateTransitionReason::None, StateTransitionId::None,
 		context);
-	updateBehavior(context);
+	if (context.plantExecution && (normalStateEpoch_ != epoch || attackEntryEpoch_ != attack || attackOverlayActive_))
+		return false;
+	return updateBehavior(context);
 }
 
-void CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context)
+bool CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context)
 {
 	constexpr float kDefuseReceiptTimeoutSeconds = 1.0f;
 	if (!context.behavior)
-		return;
+		return true;
 	const StateBehaviorInput &input = *context.behavior;
 	if (!context.alive || !context.roundActive)
 	{
 		behaviorDecision_.clearMovement = true;
-		return;
+		return true;
 	}
 	if (attackOverlayActive_)
 	{
 		behaviorDecision_.action = StateAction::Attack;
-		return;
+		return true;
 	}
 	CompatibilityStateId next = state_;
 	switch (state_)
@@ -662,6 +672,29 @@ void CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context
 		// Legacy geometry-only callers retain their original interaction contract.
 		// fall through
 	case CompatibilityStateId::PlantBomb:
+		if (state_ == CompatibilityStateId::PlantBomb && input.navigationOwned && context.plantExecution)
+		{
+			const auto epoch = normalStateEpoch_;
+			const auto attack = attackEntryEpoch_;
+			if (!context.plantExecution->update() || normalStateEpoch_ != epoch ||
+				attackEntryEpoch_ != attack || attackOverlayActive_)
+				return false;
+			behaviorDecision_ = {StateAction::Plant, false, true};
+			if (input.plantCarryingKnown && !input.plantCarrying)
+			{
+				auto guard = context;
+				guard.requestTransition = false;
+				guard.hideTask = CompatibilityTaskId::GuardTickingBomb;
+				// Hide publishes a new timestamp, so the following native timeout
+				// check no longer uses the old Plant residence time.
+				return transitionInternal(CompatibilityStateId::Hide, StateTransitionReason::ObjectiveChanged,
+					StateTransitionId::ExplicitStateChange, guard, false) == StateResult::Transitioned;
+			}
+			if (context.timestamp - stateTimestamp_ > kPlantStateTimeoutSeconds)
+				return transitionInternal(CompatibilityStateId::Idle, StateTransitionReason::ObjectiveChanged,
+					StateTransitionId::ExplicitStateChange, context, false) == StateResult::Transitioned;
+			break;
+		}
 		if (state_ == CompatibilityStateId::PlantBomb && input.navigationOwned &&
 			context.timestamp - stateTimestamp_ > kPlantStateTimeoutSeconds)
 		{
@@ -694,6 +727,7 @@ void CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context
 			input.pathFailed ? StateTransitionReason::PathFailure : StateTransitionReason::ObjectiveChanged,
 			StateTransitionId::ExplicitStateChange, context, false);
 	}
+	return true;
 }
 
 bool CompatibilityStateMachine::huntExpired(float now) const
@@ -701,7 +735,7 @@ bool CompatibilityStateMachine::huntExpired(float now) const
 	return state_ == CompatibilityStateId::Hunt && now - stateTimestamp_ > 30.0f;
 }
 
-void CompatibilityStateMachine::invokeExit(CompatibilityStateId state, CompatibilityStateId nextState,
+bool CompatibilityStateMachine::invokeExit(CompatibilityStateId state, CompatibilityStateId nextState,
 	StateTransitionReason reason, StateTransitionId transitionId, const StateUpdateContext &context)
 {
 	StateInstance *instance = instanceFor(state);
@@ -709,8 +743,15 @@ void CompatibilityStateMachine::invokeExit(CompatibilityStateId state, Compatibi
 	{
 		++instance->exitCount;
 	}
+	const auto epoch = normalStateEpoch_;
+	const auto attack = attackEntryEpoch_;
 	emit(StateTraceEvent::OnExit, state, state, nextState, reason, transitionId, context);
+	if (state == CompatibilityStateId::PlantBomb && context.plantExecution &&
+		(normalStateEpoch_ != epoch || attackEntryEpoch_ != attack ||
+			!context.plantExecution->exit() || normalStateEpoch_ != epoch || attackEntryEpoch_ != attack || attackOverlayActive_))
+		return false;
 	applyExitEffects(state, nextState, reason, transitionId, context);
+	return true;
 }
 
 void CompatibilityStateMachine::emit(StateTraceEvent event, CompatibilityStateId callbackState,

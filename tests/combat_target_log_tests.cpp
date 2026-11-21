@@ -48,6 +48,9 @@ struct EquipmentFixture
 	int active = 6, primaryClip = 0, pistolClip = 20;
 	bool refuseSwitch = false, replaceEntity = false;
 	bool primaryUnknown = false;
+	bool plantTail = false, dropOnC4 = false;
+	bool predictionUnavailable = false, replaceOnActiveRead = false;
+	Vector predictionView{};
 	int attackMutation = 0;
 	astrabot::compat::CompatibilityStateMachine *machine = nullptr;
 	astrabot::compat::StateUpdateContext context{};
@@ -115,17 +118,20 @@ void combatGameClientCommand(edict_t *entity)
 		const auto *name = astrabot::metamod::HookCommandArgv(0);
 		unsigned id = std::strcmp(name, "weapon_ak47") == 0 ? 28U
 			: std::strcmp(name, "weapon_glock18") == 0 ? 17U
+			: equipmentFixture->plantTail && std::strcmp(name, "weapon_c4") == 0 ? 6U
 			: std::strcmp(name, "weapon_knife") == 0 ? 29U : 0U;
 		if (id)
 		{
 			equipmentFixture->commands.push_back(id);
+			if (id == 6 && equipmentFixture->dropOnC4)
+				entity->v.weapons &= ~(1 << 6);
 			if (equipmentFixture->attackMutation && equipmentFixture->machine)
 			{
 				(void)equipmentFixture->machine->stopAttack(equipmentFixture->context);
 				if (equipmentFixture->attackMutation == 2)
 					(void)equipmentFixture->machine->beginAttack(equipmentFixture->context);
 			}
-			if (!equipmentFixture->refuseSwitch)
+			if (!equipmentFixture->refuseSwitch && (id != 6 || (entity->v.weapons & (1 << 6)) != 0))
 			{
 				equipmentFixture->active = static_cast<int>(id);
 				auto &runtime = astrabot::metamod::PluginRuntime::instance();
@@ -243,9 +249,166 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool selfDefenseFixture = scenario && std::strcmp(scenario, "self-defense") == 0;
 	const bool shieldFixture = scenario && std::strcmp(scenario, "shield") == 0;
 	const bool bestEquipmentFixture = scenario && std::strcmp(scenario, "equip-best") == 0;
+	const bool plantTailFixture = scenario && std::strcmp(scenario, "plant-tail") == 0;
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
+	if (plantTailFixture)
+	{
+		using namespace astrabot;
+		using namespace astrabot::compat;
+		auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+		EquipmentFixture fixture{};
+		equipmentFixture = &fixture;
+		combatGameDll->pfnUpdateClientData = [](const edict_t *entity, int, clientdata_t *data) {
+			data->m_iId = equipmentFixture->predictionUnavailable ? 0 : equipmentFixture->active;
+			equipmentFixture->predictionView = entity->v.v_angle;
+			if (equipmentFixture->replaceOnActiveRead) ++gEntities[0].serialnumber;
+		};
+		combatGameDll->pfnGetWeaponData = [](edict_t *entity, weapon_data_t *data) {
+			data[6].m_iId = 6; data[6].m_iClip = 1;
+			data[28].m_iId = 28; data[28].m_iClip = 30;
+			data[17].m_iId = 17; data[17].m_iClip = 20;
+			if (equipmentFixture->replaceEntity) ++entity->serialnumber;
+			return 1;
+		};
+		metamod::ActionProposal exitProposal{};
+		const auto run = [&](int active, bool carrying, float age, bool dropOnSelect, bool replace, bool staleFull,
+			int actual = -1, bool unavailable = false, bool activeReentry = false, bool unpublished = false) {
+			fixture = {};
+			fixture.plantTail = true;
+			fixture.primaryClip = 30;
+			fixture.active = active;
+			gEntities[0].v.weapons = (1 << 28) | (1 << 17) | (1 << 29) | (carrying ? 1 << 6 : 0);
+			runtime.beginRoundGeneration();
+			stepRifle(active == 6 ? 1 : 30, 0, active);
+			auto behavior = std::make_unique<metamod::BotBehaviorRuntime>();
+			behavior->bindServices(ports);
+			const auto &handle = ports.service_managedBotHandles()[0];
+			behavior->onActorRemembered(0, handle);
+			auto &machine = const_cast<CompatibilityStateMachine &>(behavior->managedBotStateMachines(0));
+			const auto &life = ports.service_lifecycle();
+			StateUpdateContext start{};
+			start.actor = {handle.actor.slot, handle.actor.actorGeneration};
+			start.frame = {life.mapGeneration(), life.roundGeneration(), ports.service_adapterFrameCount()};
+			start.timestamp = globals.time - age;
+			start.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0] - 1U;
+			start.fullUpdate = start.alive = start.roundActive = true;
+			start.lifeAvailability = start.roundAvailability = start.attackObservation = ObservationAvailability::Available;
+			machine.initialize(start);
+			machine.transition(CompatibilityStateId::PlantBomb, StateTransitionReason::ExplicitRequest,
+				StateTransitionId::ExplicitStateChange, start);
+			fixture.commands.clear();
+			fixture.dropOnC4 = dropOnSelect;
+			fixture.replaceEntity = replace;
+			fixture.predictionUnavailable = unavailable;
+			fixture.replaceOnActiveRead = activeReentry;
+			if (actual >= 0) fixture.active = actual;
+			if (unpublished)
+			{
+				const_cast<PublicObservationStore &>(ports.observation_publicObservations()).resetHud(start.actor, start.frame);
+				fixture.refuseSwitch = true;
+			}
+			gEntities[0].v.v_angle = Vector(8, 67, 0);
+			if (unpublished)
+				globals.time += .05f; // A fresh dispatch opportunity after stepRifle consumed the previous one.
+			runtime::MovementPhysicsState before{};
+			before.grounded = before.ducked = true;
+			before.origin = {gEntities[0].v.origin.x, gEntities[0].v.origin.y, gEntities[0].v.origin.z};
+			const auto originalSerial = gEntities[0].serialnumber;
+			behavior->updateManagedBotCompatibilityState(0, before, false);
+			auto &sequence = const_cast<std::uint32_t &>(ports.service_managedBotFullUpdateSequences()[0]);
+			if (staleFull) ++sequence;
+			const auto proposal = behavior->decideManagedBotAction(0, before, {-30, 180, 0}, IN_DUCK);
+			if (staleFull) --sequence;
+			const bool lost = !carrying || dropOnSelect;
+			const bool exited = lost || age > 5;
+			const bool invalid = replace || activeReentry;
+			const int effective = unavailable || actual < 0 ? active : actual;
+			const auto expected = invalid ? CompatibilityStateId::PlantBomb : lost ? CompatibilityStateId::Hide
+				: exited ? CompatibilityStateId::Idle : CompatibilityStateId::PlantBomb;
+			const bool attack = proposal.kind == metamod::ActionKind::Fire;
+			const bool result = check(machine.state() == expected &&
+				(invalid || staleFull ? !attack : attack == (effective == 6)) &&
+				(invalid || staleFull || ((proposal.movementButtons & IN_DUCK) != 0) == !exited) &&
+				(!exited || invalid || !proposal.hasUseEntityLook) &&
+				(invalid || staleFull || (proposal.preserveUpkeepView == exited &&
+					(!exited || (proposal.viewAngles.pitch == 8 && proposal.viewAngles.yaw == 67)))),
+				"Plant terminal input, standing posture and floor-look cancellation use the same valid full update");
+			if (!result) return false;
+			if (unpublished)
+			{
+				exitProposal = proposal;
+				const auto &commands = static_cast<metamod::BotCommandServices &>(runtime);
+				if (!check(!commands.observation_hasObservedActiveWeapon(0) && proposal.plantPrimaryInput,
+					"current prediction supplies native PrimaryAttack while CurWeapon remains unpublished"))
+					return false;
+			}
+			if (!invalid && !staleFull)
+			{
+				std::vector<unsigned> expectedCommands;
+				if (effective != 6) expectedCommands.push_back(6);
+				if (exited) expectedCommands.push_back(28);
+				if (!check(fixture.commands == expectedCommands, "SelectC4 precedes OnExit EquipBest and is never replayed after it"))
+					return false;
+			}
+			gEntities[0].serialnumber = originalSerial;
+			return true;
+		};
+		const bool result = run(6, true, 5.0f, false, false, false) && run(6, true, 5.125f, false, false, false) &&
+			run(6, false, 5.125f, false, false, false) && run(28, true, 5.125f, false, false, false) &&
+			run(28, true, 2.0f, true, false, false) && run(6, true, 5.125f, false, true, false) &&
+			run(6, true, 5.125f, false, false, true) &&
+			run(6, false, 5.125f, false, false, false, 28) &&
+			run(28, true, 5.125f, false, false, false, 6) &&
+			run(6, true, 5.125f, false, false, false, 28, true) &&
+			run(6, true, 5.125f, false, false, false, 6, false, true) &&
+			run(6, true, 5.125f, false, false, false, 6, false, false, true);
+		if (result)
+		{
+			auto command = std::make_unique<metamod::BotCommandRuntime>();
+			auto &commandPorts = static_cast<metamod::BotCommandServices &>(runtime);
+			command->bindServices(commandPorts);
+			auto handle = ports.service_managedBotHandles()[0];
+			const auto token = ports.service_lifecycle().tokenForSlot(handle.actor.slot);
+			auto &machine = const_cast<CompatibilityStateMachine &>(commandPorts.behavior_managedBotStateMachines(0));
+			StateUpdateContext context{};
+			context.actor = {handle.actor.slot, handle.actor.actorGeneration};
+			context.frame = {ports.service_lifecycle().mapGeneration(), ports.service_lifecycle().roundGeneration(), ports.service_adapterFrameCount()};
+			context.timestamp = globals.time;
+			context.fullUpdate = context.alive = context.roundActive = true;
+			context.lifeAvailability = context.roundAvailability = ObservationAvailability::Available;
+			machine.transition(CompatibilityStateId::Hide, StateTransitionReason::ExplicitRequest,
+				StateTransitionId::ExplicitStateChange, context);
+			const_cast<std::uint32_t &>(command->managedBotCommandSequences(0)) = ports.command_managedBotCommandSequences(0);
+			runtime::MovementPhysicsState before{};
+			before.grounded = true;
+			metamod::NavigationUpdate movement{};
+			movement.locomotionIntent.speed = 221;
+			movement.locomotionIntent.direction = {-1, 0, 0};
+			movement.roamResult = runtime::NavRoamResult::IntentReady;
+			for (bool terminal : {true, false})
+			{
+				if (!terminal)
+				{
+					globals.time += .125f;
+					++const_cast<std::uint32_t &>(ports.service_managedBotFullUpdateSequences()[0]);
+				}
+				const auto sentBefore = combatSentInputs.size();
+				auto draft = command->beginMovementCommand(0, handle, token, before, movement);
+				draft.command.viewAngles = {0, 180, 0};
+				draft.command.synchronizeCombatView = true;
+				metamod::ActionProposal proposal = terminal ? exitProposal : metamod::ActionProposal{metamod::ActionKind::None, {0, 180, 0}, 0};
+				command->finishMovementCommand(0, handle, token, before, movement, draft, proposal);
+				if (!check(combatSentInputs.size() == sentBefore + 1U && combatCommandYaw == (terminal ? 67.0f : 180.0f) &&
+						(!terminal || combatCommandPitch == 8.0f),
+					"actual command dispatch preserves terminal upkeep yaw over NAV180 and releases it for the next decision"))
+					return false;
+			}
+		}
+		equipmentFixture = nullptr;
+		return result;
+	}
 	if (bestEquipmentFixture)
 	{
 		using namespace astrabot;

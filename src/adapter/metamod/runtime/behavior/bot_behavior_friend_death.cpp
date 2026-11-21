@@ -95,6 +95,8 @@ compat::ReactionDisposition BotBehaviorRuntime::reactionDisposition(std::size_t 
 	}
 	const auto &actor = actors_[index];
 	const auto state = actor.managedBotStateMachines.state();
+	if (state == compat::CompatibilityStateId::PlantBomb && actor.plantCommand.engage && plantCommandCurrent(index))
+		return compat::ReactionDisposition::Engage;
 	if (state == compat::CompatibilityStateId::DefuseBomb || state == compat::CompatibilityStateId::PlantBomb ||
 		(state == compat::CompatibilityStateId::MoveTo &&
 			(actor.scenarioDecisions.escortInferred ||

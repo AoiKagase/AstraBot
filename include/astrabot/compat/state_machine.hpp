@@ -172,12 +172,21 @@ struct StateBehaviorInput
 	bool guardObjectiveEnded = false;
 	bool noisePathRequested = false;
 	bool noiseTargetCleared = false;
+	bool plantCarryingKnown = false;
+	bool plantCarrying = false;
 };
 struct StateBehaviorDecision
 {
 	StateAction action;
 	bool clearPath;
 	bool clearMovement;
+};
+class IPlantStateExecution
+{
+public:
+	virtual ~IPlantStateExecution() = default;
+	virtual bool update() = 0;
+	virtual bool exit() = 0;
 };
 struct StateUpdateContext
 {
@@ -201,6 +210,7 @@ struct StateUpdateContext
 	CompatibilityTaskId moveToTask = CompatibilityTaskId::None;
 	bool preserveMoveToTask = false;
 	CompatibilityTaskId hideTask = CompatibilityTaskId::None;
+	IPlantStateExecution *plantExecution = nullptr;
 
 	bool isValid() const;
 };
@@ -313,9 +323,9 @@ private:
 	StateResult stopAttackInternal(const StateUpdateContext &context);
 	void invokeEnter(CompatibilityStateId state, CompatibilityStateId previousState, StateTransitionReason reason,
 		StateTransitionId transition, const StateUpdateContext &context);
-	void invokeUpdate(const StateUpdateContext &context);
-	void updateBehavior(const StateUpdateContext &context);
-	void invokeExit(CompatibilityStateId state, CompatibilityStateId nextState, StateTransitionReason reason,
+	bool invokeUpdate(const StateUpdateContext &context);
+	bool updateBehavior(const StateUpdateContext &context);
+	bool invokeExit(CompatibilityStateId state, CompatibilityStateId nextState, StateTransitionReason reason,
 		StateTransitionId transition, const StateUpdateContext &context);
 	void emit(StateTraceEvent event, CompatibilityStateId callbackState, CompatibilityStateId previousState,
 		CompatibilityStateId currentState, StateTransitionReason reason, StateTransitionId transition,

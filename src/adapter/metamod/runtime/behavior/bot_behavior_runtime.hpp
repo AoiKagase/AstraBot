@@ -360,6 +360,7 @@ private:
 	void updateGuardLook(ManagedActionContext &ctx);
 	bool decideEquipmentAction(ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking);
 	bool equipBestWeapon(std::size_t index, bool mustEquip = false);
+	bool plantCommandCurrent(std::size_t index) const;
 	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles, ActionProposal &proposal);
 	BehaviorPhaseResult updateBehaviorLifecycle(
 		std::size_t index, const runtime::MovementPhysicsState &before, compat::StateUpdateContext &context);
@@ -714,6 +715,15 @@ private:
 		};
 		BombObjectiveAimDecision bombObjectiveAimDecision{};
 		world::WorldPosition plantFloorLook{};
+		struct PlantCommand
+		{
+			compat::ReactionContext receipt{};
+			std::uint64_t revision = 0, stateEpoch = 0, attackEpoch = 0;
+			std::uint32_t fullUpdate = 0;
+			runtime::ViewAngles upkeepView{};
+			bool active = false, primary = false, exited = false, engage = false;
+		};
+		PlantCommand plantCommand{};
 		float desiredLookYaw{};
 		std::uint32_t recognitionSequences{};
 		float lastVisibleEnemyTimes{};

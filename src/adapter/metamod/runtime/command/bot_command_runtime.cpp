@@ -591,7 +591,8 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
-	command.synchronizeCombatView = actionProposal.hasCombatAim || actionProposal.hasGuardLook || actor.defusePathLook;
+	command.synchronizeCombatView = actionProposal.hasCombatAim || actionProposal.hasGuardLook || actor.defusePathLook ||
+		actionProposal.preserveUpkeepView;
 	applyUseEntityLook(index, *handle.entity, actionProposal, command);
 	command.movement.buttons = actionDispatch.buttons;
 	ActionAdapter::applyCombatMovement(command, actionProposal, handle.entity->v.maxspeed);
@@ -1008,7 +1009,7 @@ runtime::CommandReceipt BotCommandRuntime::finishDirectNeutralCommand(std::size_
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
-	command.synchronizeCombatView = actionProposal.hasCombatAim || actionProposal.hasGuardLook;
+	command.synchronizeCombatView = actionProposal.hasCombatAim || actionProposal.hasGuardLook || actionProposal.preserveUpkeepView;
 	applyUseEntityLook(index, *handle.entity, actionProposal, command);
 	command.movement.buttons = actionDispatch.buttons;
 	ActionAdapter::applyCombatMovement(command, actionProposal, handle.entity->v.maxspeed);
@@ -1239,14 +1240,15 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), draft.command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
-	if (navigationLook)
+	if (navigationLook && !actionProposal.preserveUpkeepView)
 	{
 		const auto &view = handle.entity->v.v_angle;
 		command.viewAngles = draft.command.synchronizeCombatView ? draft.command.viewAngles
 															  : runtime::ViewAngles{view.x, view.y, view.z};
 	}
 	command.synchronizeCombatView =
-		actionProposal.hasCombatAim || actionProposal.hasGuardLook || locomotionIntent.nativeLadderControl || navigationLook;
+		actionProposal.hasCombatAim || actionProposal.hasGuardLook || locomotionIntent.nativeLadderControl || navigationLook ||
+		actionProposal.preserveUpkeepView;
 	applyUseEntityLook(index, *handle.entity, actionProposal, command);
 	command.movement.buttons = actionDispatch.buttons;
 	actors_[index].nativeLadderControl = locomotionIntent.nativeLadderControl;

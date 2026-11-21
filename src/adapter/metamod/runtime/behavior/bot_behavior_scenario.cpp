@@ -1975,6 +1975,13 @@ void BotBehaviorRuntime::observeHostageUseDispatched(
 void BotBehaviorRuntime::commitBehaviorState(
 	std::size_t index, compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior)
 {
+	struct PlantExecution final : compat::IPlantStateExecution
+	{
+		std::function<bool()> current, onUpdate, onExit;
+		bool updated = false;
+		bool update() override { return onUpdate(); }
+		bool exit() override { return onExit(); }
+	} plantExecution;
 	auto &machine = actors_[index].managedBotStateMachines;
 	const auto previousState = machine.state();
 	if (stateBehavior.navigationOwned && (previousState == compat::CompatibilityStateId::DefuseBomb ||
@@ -1990,12 +1997,102 @@ void BotBehaviorRuntime::commitBehaviorState(
 		if (machine.attackOverlayActive())
 			context.requestTransition = false;
 	}
+	const bool nativePlant = previousState == compat::CompatibilityStateId::PlantBomb &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		!machine.attackOverlayActive();
+	if (nativePlant)
+	{
+		auto &actor = actors_[index];
+		auto &command = actor.plantCommand;
+		command = {reactionContext(index), actor.executionRevision, machine.normalStateEpoch(),
+			machine.attackEntryEpoch(), context.fullUpdateSequence, {}, true, false, false, false};
+		plantExecution.current = [&, receipt = command.receipt, revision = command.revision,
+			epoch = command.stateEpoch, attack = command.attackEpoch, full = command.fullUpdate] {
+			return executionCurrent(index, receipt, revision) && machine.normalStateEpoch() == epoch &&
+				machine.attackEntryEpoch() == attack && !machine.attackOverlayActive() &&
+				services_->service_managedBotFullUpdateSequences()[index] == full;
+		};
+		plantExecution.onUpdate = [&] {
+			if (!plantExecution.current())
+				return false;
+			const auto &weapon = services_->observation_managedBotCurrentWeapons(index);
+			int activeWeapon = 0;
+			bool silenced = false;
+			const bool predicted = services_->readGameDllActiveWeapon(
+				services_->service_managedBotHandles()[index].entity, activeWeapon, silenced);
+			if (!plantExecution.current())
+				return false;
+			command.primary = predicted ? activeWeapon == ActionAdapter::kC4WeaponId
+				: weapon.available && weapon.active && weapon.actorGeneration == context.actor.generation &&
+				weapon.mapGeneration == context.frame.mapGeneration && weapon.roundGeneration == context.frame.roundGeneration &&
+				weapon.weaponId == ActionAdapter::kC4WeaponId;
+			const auto &view = services_->service_managedBotHandles()[index].entity->v.v_angle;
+			command.upkeepView = {view.x, view.y, view.z};
+			if (!command.primary)
+			{
+				(void)services_->command_dispatchClientCommand(
+					services_->service_managedBotHandles()[index].entity, ActionAdapter::kSelectC4Command, "");
+				if (!plantExecution.current())
+					return false;
+			}
+			// Native IsCarryingBomb runs after SelectItem. Refresh the public
+			// ownership here, rather than freezing the pre-command scenario value.
+			compat::CompatibilityObservation observed{};
+			const compat::ObservationTimingContext timing{services_->command_managedBotCommandSequences(index), 0U,
+				context.fullUpdateSequence};
+			if (services_->observation_observationAdapter().collectActor(services_->service_managedBotHandles()[index].entity,
+					context.actor, context.frame, timing, &observed) != ObservationAdapterResult::Accepted || !plantExecution.current())
+				return false;
+			stateBehavior.plantCarryingKnown = observed.objective.carryingC4.isAvailable();
+			stateBehavior.plantCarrying = stateBehavior.plantCarryingKnown && observed.objective.carryingC4.value;
+			plantExecution.updated = true;
+			return true;
+		};
+		plantExecution.onExit = [&] {
+			if (!plantExecution.current())
+				return false;
+			(void)equipBestWeapon(index);
+			if (!plantExecution.current())
+				return false;
+			command.exited = true; // StandUp affects this update's final command.
+			services_->applyNavigationRequest({index, NavigationRequestKind::ResetProgress});
+			if (!plantExecution.current())
+				return false;
+			command.engage = true;
+			actor.plantFloorLook = {};
+			return true;
+		};
+		context.plantExecution = &plantExecution;
+		// Plant's own OnUpdate owns completion and timeout; scenario/range
+		// changes cannot preempt its final PrimaryAttack or SelectItem.
+		context.requestTransition = false;
+	}
 	const float previousStateTimestamp = machine.stateTimestamp();
+	const auto plantCommandBefore = actors_[index].plantCommand;
 	stateBehavior.navigation.actor = context.actor;
 	stateBehavior.navigation.frame = context.frame;
 	stateBehavior.navigation.fullUpdateSequence = context.fullUpdateSequence;
 	actors_[index].managedStateInputs = stateBehavior;
-	(void)machine.update(context);
+	const auto stateResult = machine.update(context);
+	context.plantExecution = nullptr;
+	if (nativePlant)
+	{
+		auto &command = actors_[index].plantCommand;
+		if (!(command.receipt.actor == plantCommandBefore.receipt.actor) ||
+			command.revision != plantCommandBefore.revision || command.fullUpdate != plantCommandBefore.fullUpdate ||
+			command.stateEpoch != plantCommandBefore.stateEpoch || command.attackEpoch != plantCommandBefore.attackEpoch)
+			return;
+		const auto nextEpoch = command.stateEpoch + 1U == 0 ? 1U : command.stateEpoch + 1U;
+		const bool valid = stateResult == compat::StateResult::Updated && plantExecution.updated &&
+			executionCurrent(index, command.receipt, command.revision) &&
+			services_->service_managedBotFullUpdateSequences()[index] == command.fullUpdate &&
+			machine.attackEntryEpoch() == command.attackEpoch && !machine.attackOverlayActive() &&
+			(machine.normalStateEpoch() == command.stateEpoch || machine.normalStateEpoch() == nextEpoch);
+		command.active = valid;
+		if (!valid)
+			return;
+		command.stateEpoch = machine.normalStateEpoch();
+	}
 	auto &noisePathPending = actors_[index].noisePathPending;
 	if (machine.state() == compat::CompatibilityStateId::InvestigateNoise)
 		noisePathPending = noisePathPending || stateBehavior.noisePathRequested;
@@ -2008,19 +2105,6 @@ void BotBehaviorRuntime::commitBehaviorState(
 	}
 	if (previousState != machine.state())
 	{
-		if (previousState == compat::CompatibilityStateId::PlantBomb &&
-			services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
-		{
-			const auto receipt = reactionContext(index);
-			const auto revision = actors_[index].executionRevision;
-			const auto epoch = machine.normalStateEpoch();
-			const auto attack = machine.attackEntryEpoch();
-			const auto attacking = machine.attackOverlayActive();
-			(void)equipBestWeapon(index);
-			if (!executionCurrent(index, receipt, revision) || machine.normalStateEpoch() != epoch ||
-				machine.attackEntryEpoch() != attack || machine.attackOverlayActive() != attacking)
-				return;
-		}
 		if (stateBehavior.navigationOwned && machine.state() == compat::CompatibilityStateId::PlantBomb)
 		{
 			const auto &entity = services_->service_managedBotHandles()[index].entity->v;
@@ -2046,7 +2130,7 @@ void BotBehaviorRuntime::commitBehaviorState(
 			return;
 		if (previousState == compat::CompatibilityStateId::Buy ||
 			previousState == compat::CompatibilityStateId::DefuseBomb ||
-			previousState == compat::CompatibilityStateId::PlantBomb ||
+			(previousState == compat::CompatibilityStateId::PlantBomb && !nativePlant) ||
 			previousState == compat::CompatibilityStateId::Hide || previousState == compat::CompatibilityStateId::UseEntity)
 			services_->applyNavigationRequest({index, NavigationRequestKind::ResetProgress});
 		if (machine.state() == compat::CompatibilityStateId::Idle &&
