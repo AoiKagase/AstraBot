@@ -1358,7 +1358,7 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		constexpr float kGoalSlowdownDistance = 200.0f;
 #define ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR 0.4f
 		const bool following = machine.state() == compat::CompatibilityStateId::Follow && !machine.attackOverlayActive();
-		const bool shouldWalk = !following && (huntEndpoint ? locomotionIntent.walkingToHuntEndpoint
+		const bool shouldWalk = !actionProposal.runAfterPlantTimeout && !following && (huntEndpoint ? locomotionIntent.walkingToHuntEndpoint
 			: (approachingDefuseEndpoint || (goal.valid && finalArea)) &&
 				x * x + y * y + z * z < kGoalSlowdownDistance * kGoalSlowdownDistance);
 		actor.navigationWalking = !locomotionIntent.nativeLadderControl && shouldWalk &&

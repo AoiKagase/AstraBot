@@ -2285,7 +2285,7 @@ bool testFriendWaitRepathsAroundCrowding(
 		"repath selects a cheaper branch but keeps the only valid occupied corridor legal");
 }
 
-bool testCompatibilityCorridorWithoutProgressExpires(bool airborne = false, bool lateArrival = false)
+bool testCompatibilityCorridorWithoutProgressExpires(bool airborne = false, bool lateArrival = false, bool plantApproach = false)
 {
 	using namespace astrabot;
 	nav::NavDocument document;
@@ -2312,6 +2312,7 @@ bool testCompatibilityCorridorWithoutProgressExpires(bool airborne = false, bool
 	observation.locomotion.timingAvailable = true;
 	observation.hasObjectiveTarget = true;
 	observation.objectiveTarget = {300.0f, 32.0f, 0.0f};
+	observation.plantApproach = plantApproach;
 	nav::LocomotionIntent intent = {};
 	runtime::NavRoamDecision decision = {};
 	for (std::uint32_t tick = 1U; tick <= 51U; ++tick)
@@ -2349,7 +2350,8 @@ bool testCompatibilityCorridorWithoutProgressExpires(bool airborne = false, bool
 				intent.speed == 0.0f && decision.failureReason == runtime::NavFailureReason::MovementNotProduced,
 			"landing without route progress cannot renew the stuck deadline");
 	}
-	if (!check(result == runtime::NavRoamResult::ReplanRequired && intent.speed == 0.0f &&
+	if (!check(result == runtime::NavRoamResult::ReplanRequired &&
+				(plantApproach ? intent.speed > 0 && intent.direction.x > .9f : intent.speed == 0.0f) &&
 				decision.failureReason == runtime::NavFailureReason::MovementNotProduced &&
 				decision.linkFromArea == 1U && decision.linkToArea == 2U,
 			"moving without corridor progress fails the directed segment after five seconds"))
@@ -4446,6 +4448,7 @@ int main()
 		!testFriendWaitRepathsAroundCrowding(false, false, 3) || !testCompatibilityCorridorWithoutProgressExpires() ||
 		!testCompatibilityCorridorWithoutProgressExpires(true) ||
 		!testCompatibilityCorridorWithoutProgressExpires(false, true) ||
+		!testCompatibilityCorridorWithoutProgressExpires(false, false, true) ||
 		!testCompatibilityStuckJumpIsScheduledWithoutAPath() ||
 		!testCompatibilityWiggleUsesRandomDirectionAndDuration() ||
 		!testCompatibilityWiggleUsesRandomDirectionAndDuration(true) ||

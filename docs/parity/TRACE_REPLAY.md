@@ -1,5 +1,39 @@
 # P11 differential trace comparison
 
+## Plant入場更新のNAV入力・Runとcallback失効（2026-11-22）
+
+基点 `6546606`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。参照の経路進捗5秒期限切れは移動入力を作った後にRun/StandUp/DestroyPathを行いPATH_FAILUREを返す。続くPlant OnEnterはしゃがみ・自己防衛・床視線を設定し、既存の移動/ジャンプを消さない。C4選択・PrimaryAttack・通常の移動停止は次のPlant OnUpdateに属する。
+
+互換MoveTo/Plant taskに限定して期限切れで既に作ったNAV intentを保持する。Actor/edict serial・frame/time・full-update・revision・normal/Attack epochが一致するNAV入場receiptだけ、plugin終端中立分岐を通さずmovement commandへ渡す。入場更新は既存入力にDuckと床視線を加え、C4選択・手榴弾取消しを先行しない。期限切れRunは近い最終areaの余分な0.4倍歩行を抑止し、次fullでreceiptとともに消える。EndOfPathで入力がゼロなら前のコマンドは捏造しない。draft作成前に入場epochを保存し、draft後・action準備後に保存epochと完全なreceiptを再検査して、callback後の旧NAV入力を破棄する。
+
+実onStartFrame回帰は4area内の局所移動で速度stuckを避け、strict >5秒の経路期限切れ→PathFailure→Plant→実RunPlayerMoveの移動+Duck、入場C4選択なし、次fullの停止/C4選択1回を確認する。別の実コマンド対照でJumpと最終areaのRun速度を確認する。追加回帰はpost-entry collectActorのtrace callbackで同じActorをPlant→Huntへ正規遷移させ、古いNAVコマンドが送られないことを確認する。修正前 `red-entry-callback.log` はcallback発火の前提合格後に旧コマンド送信だけ失敗し、`green-entry-callback-isolated.log` は重点3/3合格。旧fixtureの時刻使切り・2area/区域外site・後続goalcache汚染を含む試行は合格証拠から除外した。
+
+最終v2オフライン：Windows x86 **171/171・PE7**、Linux x86 **170/170・ELF7**。全targetをビルド後、CTestはWindows→Linuxの直列。DLL SHA-256 `1db9c898ad18a8adfce9f9e2594fc4b76347f8b0311c5aae87a0d6edb54322e0`、PDB `3960ba34acd4b34cfde2836f2c55269f983653894ff23cd14c5716d5c842b2e3`、ELF `ef0852bf37f0aa0a8a6adf077516adeea9f555d2b52531ebc6229869ce85eee5`。v1候補はcallback対策前として別保存し、最終合格に流用していない。初回v2 ELFの改行不備とリンク途中の読取りは除外し、完了製品を独立検証した。
+
+固定DLL/PDBの隔離実機0/7/8/11と読取りCDB11は、次の起動前に実PID終了0・forced=falseを逐次確認した。
+
+- final-v2-natural-0: PID36436 exit0/forced=false; plant-fixture planted time=14.653230; plant-fixture complete mode=0 planted=1
+- final-v2-natural-7: PID39116 exit0/forced=false; terminal-fixture leave-zone now=11.544034 has=1; plant-fixture complete mode=7 planted=0
+- final-v2-natural-8: PID2300 exit0/forced=false; terminal-fixture actual-drop now=11.745628 entity=99 has=0; plant-fixture complete mode=8 planted=0
+- final-v2-natural-11: PID43620 exit0/forced=false; plant-fixture planted time=63.578010; plant-fixture complete mode=11 planted=1
+- final-v2-route-debug-11: PID35256 exit0/forced=false; plant-fixture planted time=63.467300; plant-fixture complete mode=11 planted=1
+
+CDBはDLL module-loadを待ってBPを設定。最初のPlantは `59.37293243` 秒/full `0x1d3`、MoveTo→EndOfPath2→Plant。生成NAV入力ゼロのためDuck4/AKで入り、その後C4へ移る。固定nativeのPATH_FAILURE時buttons14とは終端結果が異なり、同条件14対4比較とは主張しない。タイムアウト入力保持・callback失効は実フレームのオフライン回帰、実機は到着/区域外/実drop/設置の受入れとして区別する。fixtureの明示的C4在庫bit同期は残る。
+
+固定baseline・既存補正を再生成せず、両OSとも親の152258行と全byte一致。RNG510行も各OSの親と順序・値まで一致し、新規補正なし。既存のOS間丸め差は残る。証拠と指紋は `artifacts/local/debug/csbot-plant-entry-nav-input-20261122/evidence-final-v2/acceptance.json`、製品は同root `final-v2/`、raw試行は `C:/Temp/astrabot-plant-entry-nav-input`。push・実環境配布なし。
+
+最初のCDB入場後の実コマンド：
+
+```text
+terminal-command seq=584 time=59.372932 buttons=4 active=28 carrying=1 signal=2 state=2 flags=8712 pitch=0.000000 yaw=51.126491
+terminal-command seq=585 time=59.407981 buttons=4 active=28 carrying=1 signal=2 state=2 flags=8712 pitch=3.333333 yaw=50.853363
+terminal-command seq=586 time=59.450000 buttons=4 active=28 carrying=1 signal=2 state=2 flags=8712 pitch=10.000000 yaw=50.997581
+terminal-command seq=587 time=59.487377 buttons=4 active=6 carrying=1 signal=2 state=2 flags=8712 pitch=20.000003 yaw=51.612396
+terminal-command seq=588 time=59.523590 buttons=4 active=6 carrying=1 signal=2 state=2 flags=8712 pitch=33.333339 yaw=53.824722
+terminal-command seq=589 time=59.565559 buttons=4 active=6 carrying=1 signal=2 state=2 flags=8712 pitch=50.000007 yaw=59.370376
+```
+
+
 ## MoveTo terminal navigation before Plant, 2026-11-22
 
 Base95aec579, fixed native b088984. Final DLL `f176ab5079cc2e6b4debbe27c64e95c76d73b3675c727ee30bbb5661d1dbc003`, ELF `609201ff9e46859d202be10691f3f6bf4d6cfdf513949f7461480e1093860aef`. Windows171/171+PE7, then Linux170/170+ELF7 passed serially. See STATUS's latest section and `artifacts/local/debug/csbot-move-plant-order-20261122/README.md` for source/fixture limits and evidence identity.

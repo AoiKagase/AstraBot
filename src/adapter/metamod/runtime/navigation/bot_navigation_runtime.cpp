@@ -1131,6 +1131,8 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	}
 	const bool compatibility =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	observation.plantApproach = compatibility && currentMachine.state() == compat::CompatibilityStateId::MoveTo &&
+		currentMachine.task() == compat::CompatibilityTaskId::PlantBomb && !currentMachine.attackOverlayActive();
 	observation.fetchBombPath = compatibility && currentMachine.state() == compat::CompatibilityStateId::FetchBomb &&
 		!currentMachine.attackOverlayActive() && observation.hasObjectiveTarget;
 	if (observation.fetchBombPath)

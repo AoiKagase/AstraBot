@@ -1011,7 +1011,10 @@ bool NavRoamController::expireGroundRoute(
 		decision->goalSelectionStrategy = roamGoalState().goalSelectionStrategy;
 		decision->stage = NavRoamStage::Failed;
 	}
-	*intent = {};
+	// MoveTo may enter Plant after this failure. CSBot retains the input it
+	// already produced before the timeout; Plant::OnEnter only adds crouch.
+	if (!observation.plantApproach)
+		*intent = {};
 	return true;
 }
 

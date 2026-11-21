@@ -29,6 +29,8 @@ int combatUserMessageId(plid_t id, const char *name, int *size)
 unsigned combatAttackCommands = 0U;
 float combatCommandYaw = 0.0f;
 float combatCommandPitch = 0.0f;
+float combatCommandForward = 0.0f, combatCommandSide = 0.0f;
+unsigned combatC4Selections = 0;
 unsigned combatMovingFireCommands = 0U;
 bool combatPistolSelected = false;
 bool humanFriendlyBlocks = false;
@@ -115,6 +117,8 @@ void traceCombatVisibility(const float *start, const float *end, int ignoreMonst
 
 void combatGameClientCommand(edict_t *entity)
 {
+	if (entity == &gEntities[0] && std::strcmp(astrabot::metamod::HookCommandArgv(0), "weapon_c4") == 0)
+		++combatC4Selections;
 	if (equipmentFixture && entity == &gEntities[0])
 	{
 		const auto *name = astrabot::metamod::HookCommandArgv(0);
@@ -167,6 +171,8 @@ void runCombatPlayerMove(edict_t *entity, const float *angles, float forward, fl
 	if (entity == &gEntities[0])
 	{
 		combatCommandPitch = angles[0];
+		combatCommandForward = forward;
+		combatCommandSide = side;
 		if ((buttons & IN_ATTACK) != 0U && std::hypot(forward, side) > .01f)
 			++combatMovingFireCommands;
 	}
@@ -533,6 +539,131 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		};
 		if (!contactControl(false) || !contactControl(true)) return false;
 		enemy.v.flags |= FL_NOTARGET;
+		const auto timeoutEntryControl = [&](bool invalidateEntry) {
+			const bool savedProfile = gProfileEnabled;
+			gProfileEnabled = true;
+			const auto savedBody = gEntities[0].v;
+			const auto savedSite = gBombSite;
+			gEntities[0].v.origin = Vector(112, 32, 36);
+			gEntities[0].v.velocity = Vector(0, 0, 0);
+			gEntities[0].v.absmin = gEntities[0].v.origin + gEntities[0].v.mins;
+			gEntities[0].v.absmax = gEntities[0].v.origin + gEntities[0].v.maxs;
+			gEntities[0].v.weapons = (1 << 6) | (1 << 28);
+			gBombSite.v.origin = Vector(224, 32, 0);
+			gBombSite.v.mins = Vector(-8, -8, -4);
+			gBombSite.v.maxs = Vector(8, 8, 4);
+			gBombSite.v.absmin = Vector(216, 24, -4);
+			gBombSite.v.absmax = Vector(232, 40, 4);
+			const char *path = "astrabot_plant_timeout.nav";
+			if (!check(writeTwoSiteNavigation(path, true), "Plant timeout has a real four-area site route")) return false;
+			const metamod::NavLoadRequest request{path, "astrabot_plant_timeout", runtime.snapshot().mapGeneration,
+				false, 0U, false, 0U};
+			const auto loaded = runtime.loadNavigationFile(&request);
+			std::remove(path);
+			if (!check(loaded == metamod::NavLoadResult::Loaded, "Plant timeout NAV is loaded")) return false;
+			plantZonePrediction = 0;
+			combatGameDll->pfnUpdateClientData = [](const edict_t *, int, clientdata_t *data) {
+				data->m_iId = 28;
+				data->iuser3 = plantZonePrediction ? 1 << 2 : 0;
+			};
+			globals.time += 31;
+			auto &liveState = const_cast<CompatibilityStateMachine &>(
+				static_cast<metamod::BotCommandServices &>(runtime).behavior_managedBotStateMachines(0));
+			auto context = start;
+			context.frame.tick = ports.service_adapterFrameCount();
+			context.timestamp = globals.time;
+			context.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0];
+			context.moveToTask = CompatibilityTaskId::PlantBomb;
+			(void)liveState.stopAttack(context);
+			(void)liveState.transition(CompatibilityStateId::Idle, StateTransitionReason::ExplicitRequest,
+				StateTransitionId::ExplicitStateChange, context);
+			(void)liveState.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+				StateTransitionId::ExplicitStateChange, context);
+			for (auto kind : {metamod::NavigationRequestKind::ResetMovement, metamod::NavigationRequestKind::ClearStep})
+				ports.applyNavigationRequest({0, kind});
+			struct EntryObservationTrace final : IObservationTraceSink
+			{
+				CompatibilityStateMachine *machine = nullptr;
+				metamod::BotBehaviorServices *ports = nullptr;
+				StateUpdateContext context{};
+				bool enabled = false, fired = false;
+				void record(const ObservationTraceRecord &) override
+				{
+					if (!enabled || fired || machine->state() != CompatibilityStateId::PlantBomb) return;
+					fired = true;
+					context.timestamp = ports->service_globals()->time;
+					context.frame.tick = ports->service_adapterFrameCount();
+					context.fullUpdateSequence = ports->service_managedBotFullUpdateSequences()[0];
+					machine->transition(CompatibilityStateId::Hunt, StateTransitionReason::ExplicitRequest,
+						StateTransitionId::ExplicitStateChange, context);
+				}
+			} actionTrace;
+			actionTrace.machine = &liveState;
+			actionTrace.ports = &ports;
+			actionTrace.context = context;
+			actionTrace.enabled = invalidateEntry;
+			auto &observation = const_cast<metamod::ObservationAdapter &>(ports.observation_observationAdapter());
+			observation.setTraceSink(&actionTrace);
+			const float began = globals.time;
+			bool sawProgress = false, entered = false, timedFailure = false, keptInput = false, nextStopped = false;
+			bool invalidatedInputDropped = false;
+			for (unsigned tick = 0; tick < 80; ++tick)
+			{
+				// Local motion prevents the velocity-stuck monitor from ending the path;
+				// remaining within area2 leaves the independent corridor deadline running.
+				gEntities[0].v.origin.x = 112.0f + static_cast<float>(tick % 2U) * 10.0f;
+				gEntities[0].v.absmin = gEntities[0].v.origin + gEntities[0].v.mins;
+				gEntities[0].v.absmax = gEntities[0].v.origin + gEntities[0].v.maxs;
+				plantZonePrediction = globals.time - began >= 4.5f;
+				const auto previous = liveState.state();
+				const auto selectedBefore = combatC4Selections;
+				const auto sentBefore = combatSentInputs.size();
+				stepRifle(1, 30, 28);
+				sawProgress |= liveState.state() == CompatibilityStateId::MoveTo;
+				if (actionTrace.fired)
+				{
+					invalidatedInputDropped = liveState.state() == CompatibilityStateId::Hunt &&
+						combatSentInputs.size() == sentBefore;
+					break;
+				}
+				if (previous == CompatibilityStateId::MoveTo && liveState.state() == CompatibilityStateId::PlantBomb)
+				{
+					entered = true;
+					const auto &steps = static_cast<metamod::BotCommandServices &>(runtime).navigation_managedNavigationSteps(0);
+					const auto prefix = std::string("profile navigationStep bot_id=1 frame=") +
+						std::to_string(ports.service_adapterFrameCount()) + " ";
+					const auto reason = std::string(" failure_reason=") +
+						std::to_string(static_cast<unsigned>(runtime::NavFailureReason::MovementNotProduced)) + " ";
+					timedFailure = steps.outcome == NavigationStepOutcome::PathFailure && globals.time - began > 5 &&
+						std::any_of(gMovementLogs.begin(), gMovementLogs.end(), [&](const std::string &log) {
+							return log.find(prefix) == 0 && log.find(reason) != std::string::npos;
+						});
+					keptInput =
+						combatSentInputs.size() == sentBefore + 1 &&
+						std::hypot(combatCommandForward, combatCommandSide) > 10 &&
+						(combatSentInputs.back().second & (IN_DUCK | IN_ATTACK)) == IN_DUCK &&
+						combatC4Selections == selectedBefore;
+					stepRifle(1, 30, 28);
+					nextStopped = std::hypot(combatCommandForward, combatCommandSide) == 0 &&
+						(combatSentInputs.back().second & (IN_DUCK | IN_JUMP)) == IN_DUCK &&
+						combatC4Selections == selectedBefore + 1;
+					break;
+				}
+			}
+			observation.setTraceSink(nullptr);
+			combatGameDll->pfnUpdateClientData = nullptr;
+			gEntities[0].v = savedBody;
+			gBombSite = savedSite;
+			gProfileEnabled = savedProfile;
+			if (invalidateEntry)
+				return check(sawProgress && actionTrace.fired, "the Plant action observation callback changes the same actor's normal state") &&
+					check(invalidatedInputDropped, "a callback-invalidated Plant entry does not dispatch its stale NAV command");
+			return check(sawProgress && entered, "the full runtime reaches Plant only after a stationary MoveTo path times out") &&
+				check(timedFailure, "the entry follows a real path failure after the strict five-second timeout") &&
+				check(keptInput, "full-frame timeout Plant entry dispatches its produced NAV input plus crouch before selecting C4") &&
+				check(nextStopped, "the next full runtime Plant update stops and selects C4 exactly once");
+		};
+		if (!timeoutEntryControl(false)) return false;
 		const auto moveControl = [&](int mutation) {
 		stepRifle(1, 0, 6);
 		auto moving = std::make_unique<metamod::BotBehaviorRuntime>();
@@ -563,6 +694,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			!check(moveState.state() == CompatibilityStateId::MoveTo && intent.speed == 240,
 				"a progressing path retains MoveTo and its movement inside the bomb zone")) return false;
 		stepRifle(1, 0, 6);
+		globals.time += .01f; // Reserve command time after the runtime fixture's own dispatch.
 		moving->updateManagedBotCompatibilityState(0, before, false);
 		const auto serial = gEntities[0].serialnumber;
 		const auto weapons = gEntities[0].v.weapons;
@@ -574,7 +706,8 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				if (plantZonePrediction == 1) ++gEntities[0].serialnumber;
 				else gEntities[0].v.weapons &= ~(1 << 6);
 			};
-		const bool accepted = moving->finishManagedBotNavigation(0, before, runtime::NavRoamResult::TargetReached, path, &intent, {});
+		path.failureReason = runtime::NavFailureReason::MovementNotProduced;
+		const bool accepted = moving->finishManagedBotNavigation(0, before, runtime::NavRoamResult::ReplanRequired, path, &intent, {});
 		combatGameDll->pfnUpdateClientData = nullptr;
 		gEntities[0].serialnumber = serial;
 		gEntities[0].v.weapons = weapons;
@@ -585,7 +718,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			return check(accepted && moveState.state() == CompatibilityStateId::Idle,
 				"post-path possession is read after the zone callback can drop C4 on the same actor");
 		if (!accepted) return false;
-		const auto plantEntryAction = moving->decideManagedBotAction(0, before, {}, 0);
+		const auto plantEntryAction = moving->decideManagedBotAction(0, before, {}, IN_FORWARD | IN_JUMP);
 		const auto yaw = gEntities[0].v.v_angle.y * 0.017453292519943295f;
 		if (!check(plantEntryAction.kind == metamod::ActionKind::None && moveTrace.plantEntries == 1U &&
 			moveTrace.plantUpdates == 0U && plantEntryAction.hasUseEntityLook &&
@@ -593,11 +726,49 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			std::fabs(plantEntryAction.useEntityLookTarget.y - (before.origin.y + 10 * std::sin(yaw))) < .0001f &&
 			plantEntryAction.useEntityLookTarget.z == before.origin.z - 18,
 			"navigation-owned Plant entry constructs the crouched floor look before the next upkeep")) return false;
-		return check(moveState.state() == CompatibilityStateId::PlantBomb && moveState.stateTimestamp() == globals.time &&
+		auto commands = std::make_unique<metamod::BotCommandRuntime>();
+		auto &commandPorts = static_cast<metamod::BotCommandServices &>(runtime);
+		commands->bindServices(commandPorts);
+		const_cast<std::uint32_t &>(commands->managedBotCommandSequences(0)) = ports.command_managedBotCommandSequences(0);
+		auto commandHandle = handle;
+		const auto token = ports.service_lifecycle().tokenForSlot(handle.actor.slot);
+		metamod::NavigationUpdate movement{};
+		movement.locomotionIntent = intent;
+		movement.locomotionIntent.direction = {1, 0, 0};
+		movement.locomotionIntent.traversal = nav::TraversalAction::Jump;
+		movement.observation.plantApproach = true;
+		movement.roamResult = runtime::NavRoamResult::ReplanRequired;
+		movement.roamDecision = path;
+		movement.roamDecision.currentArea = movement.roamDecision.goalArea = 1;
+		const auto &nearGoal = commandPorts.behavior_managedBotObjectiveTargets(0);
+		const float goalDx = nearGoal.target.x - before.origin.x, goalDy = nearGoal.target.y - before.origin.y;
+		if (!check(nearGoal.valid && goalDx * goalDx + goalDy * goalDy < 200.0f * 200.0f,
+			"the final-area command control has a valid nearby goal which normally reduces walking speed")) return false;
+		auto draft = commands->beginMovementCommand(0, commandHandle, token, before, movement);
+		const auto count = combatSentInputs.size();
+		commands->finishMovementCommand(0, commandHandle, token, before, movement, draft, plantEntryAction);
+		if (!check(combatSentInputs.size() == count + 1U,
+			"the terminal-entry command fixture actually dispatches one RunPlayerMove")) return false;
+		if (!check((gLastRunPlayerMoveButtons & (IN_JUMP | IN_DUCK)) == (IN_JUMP | IN_DUCK) &&
+			(gLastRunPlayerMoveButtons & IN_ATTACK) == 0 &&
+			std::hypot(gLastRunPlayerMoveForward, gLastRunPlayerMoveSide) > 10,
+			"MoveTo terminal Plant entry adds crouch while its existing NAV movement and jump reach actual RunPlayerMove"))
+			return false;
+		if (!check(std::fabs(std::hypot(gLastRunPlayerMoveForward, gLastRunPlayerMoveSide) - commandHandle.entity->v.maxspeed) < .01f,
+			"Plant entry after the path deadline retains native Run even in the old goal's final area")) return false;
+		if (!check(moveState.state() == CompatibilityStateId::PlantBomb && moveState.stateTimestamp() == globals.time &&
 			intent.speed == 240,
-			"the evaluated terminal path enters Plant with a completed timestamp without erasing its existing navigation intent");
+			"the evaluated terminal path enters Plant with a completed timestamp without erasing its existing navigation intent"))
+			return false;
+		stepRifle(1, 0, 6);
+		moving->updateManagedBotCompatibilityState(0, before, false);
+		const auto plantUpdateAction = moving->decideManagedBotAction(0, before, {}, IN_FORWARD | IN_JUMP);
+		return check(plantUpdateAction.stopForWeapon && !plantUpdateAction.runAfterPlantTimeout &&
+			(plantUpdateAction.movementButtons & (IN_FORWARD | IN_JUMP)) == 0 &&
+			(plantUpdateAction.movementButtons & IN_DUCK) != 0 && moveTrace.plantUpdates == 1,
+			"the following Plant full update consumes the NAV-entry receipt and stops forward/jump while crouching");
 		};
-		return moveControl(2) && moveControl(1) && moveControl(0);
+		return moveControl(2) && moveControl(1) && moveControl(0) && timeoutEntryControl(true);
 	}
 	if (clearLookFixture)
 	{

@@ -18,7 +18,7 @@ CSBot側のファイルは `regamedll/dlls/bot/states/cs_bot_<略称>.cpp`。Ast
 | Hunt | `hunt` 32、47、219行 | 状態の30秒境界とローミング。参照版の巡回先とC4分岐の網羅照合は残件。 |
 | Idle | `idle` 37、52行 | 状態のリセット、Huntへの遷移、シナリオの優先順位。狙撃地点の割り当ては残件。 |
 | InvestigateNoise | `investigate_noise` 52、58、135行 | 音源の接地判定とNAV距離を修正。記憶の消費、接近、再選択は既存実行時テストで確認。 |
-| MoveTo | `move_to` 32、66、317行 | Plant発話→経路更新→非PROGRESSING時のzone/C4再確認→Plant入場を照合。互換旧PlantAttemptの先行装備/停止を除去。入場更新のNAV末尾入力と全タスク遷移順は残件。 |
+| MoveTo | `move_to` 32、66、317行 | Plant発話→経路更新→非PROGRESSING時のzone/C4再確認→Plant入場を照合。互換旧PlantAttemptの先行装備/停止を除去。Plant入場の期限切れNAV入力/Duck/Runとcallback失効は入場receiptで検証済み。全タスク遷移順とHunt/NAV全体は残件。 |
 | PlantBomb | `plant_bomb` 32、45、75行、`cs_bot_weapon.cpp:411–470` | 公開弾薬・許可クラス・水没条件と共通5秒装備時計を使用。末尾はPrimaryAttack/即時SelectC4→所持喪失→strict5秒超、退出前EquipBest→起立→ResetStuck→Engage→注視取消の順へ接続した。喪失による新Hide timestampを古いPlant ageで上書きしない。通常設置・区域外timeout・実C4ドロップでAKに残る最終Attackと次fullまでの保持、退出fullのUpkeep実角保持を確認。次lightの通常look-goal/spring再開と後段NAV供給、私有複数スロット先頭、Plant初回C4未装備の直接実機は残件。 |
 | UseEntity | `use_entity` 33、38、69行、`player.cpp:9415` | 状態に入ったときの人質を保持する。コマンド更新ごとに視線を動かし、現在のyawとpitchが両方とも許容角20度未満のときにUSEを送る。コマンドが受理されると試行を記録してIdleへ移る。ネイティブの人質護送カウンターと追従者の照合は残件。 |
 
@@ -61,3 +61,25 @@ Windows170/170・Linux169/169、PE/ELF公開7関数と直列隔離実機11試行
 最終DLLの隔離HLDS0/7/8/11と読取専用CDB11は全て実PID終了0・forced=false。0は14.546655秒、自然NAV11は74.637466秒に実設置成功。7は11.629729秒に区域外へ移動、8は11.489011秒に実drop entity99・hasC4=0。CDB11はmodule-load後にBPを置き、60.29094315秒・full0x1d9でNAV終端outcome2→旧MoveToからPlantの順を直接採録した。固定nativeは実UpdatePathMovementのPATH_FAILURE=2→Plantを58.207436秒に採録。旧95aec579は64.39331818秒に経路評価前のPlant入場を採録した。軌跡や絶対時刻を同値とは主張しない。fixtureの明示的C4在庫bit同期は残り、自然拾得や標準GameDLL全体の受入れではない。
 
 固定履歴baselineは再生成せず、両OS同じ19か所のoffset/前後hash限定補正で152248→152258行を全行照合。終端後の公開zone再観測で32行増え、旧PlantAttemptの重複geometry走査を除去して22行減る。RNG510行は各OSの親履歴と順序・値とも全一致。途中候補・失敗CDBは最終合格に流用せず保持する。
+
+## Plant入場更新のNAV入力・Runとcallback失効（2026-11-22）
+
+基点 `6546606`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。参照の経路進捗5秒期限切れは移動入力を作った後にRun/StandUp/DestroyPathを行いPATH_FAILUREを返す。続くPlant OnEnterはしゃがみ・自己防衛・床視線を設定し、既存の移動/ジャンプを消さない。C4選択・PrimaryAttack・通常の移動停止は次のPlant OnUpdateに属する。
+
+互換MoveTo/Plant taskに限定して期限切れで既に作ったNAV intentを保持する。Actor/edict serial・frame/time・full-update・revision・normal/Attack epochが一致するNAV入場receiptだけ、plugin終端中立分岐を通さずmovement commandへ渡す。入場更新は既存入力にDuckと床視線を加え、C4選択・手榴弾取消しを先行しない。期限切れRunは近い最終areaの余分な0.4倍歩行を抑止し、次fullでreceiptとともに消える。EndOfPathで入力がゼロなら前のコマンドは捏造しない。draft作成前に入場epochを保存し、draft後・action準備後に保存epochと完全なreceiptを再検査して、callback後の旧NAV入力を破棄する。
+
+実onStartFrame回帰は4area内の局所移動で速度stuckを避け、strict >5秒の経路期限切れ→PathFailure→Plant→実RunPlayerMoveの移動+Duck、入場C4選択なし、次fullの停止/C4選択1回を確認する。別の実コマンド対照でJumpと最終areaのRun速度を確認する。追加回帰はpost-entry collectActorのtrace callbackで同じActorをPlant→Huntへ正規遷移させ、古いNAVコマンドが送られないことを確認する。修正前 `red-entry-callback.log` はcallback発火の前提合格後に旧コマンド送信だけ失敗し、`green-entry-callback-isolated.log` は重点3/3合格。旧fixtureの時刻使切り・2area/区域外site・後続goalcache汚染を含む試行は合格証拠から除外した。
+
+最終v2オフライン：Windows x86 **171/171・PE7**、Linux x86 **170/170・ELF7**。全targetをビルド後、CTestはWindows→Linuxの直列。DLL SHA-256 `1db9c898ad18a8adfce9f9e2594fc4b76347f8b0311c5aae87a0d6edb54322e0`、PDB `3960ba34acd4b34cfde2836f2c55269f983653894ff23cd14c5716d5c842b2e3`、ELF `ef0852bf37f0aa0a8a6adf077516adeea9f555d2b52531ebc6229869ce85eee5`。v1候補はcallback対策前として別保存し、最終合格に流用していない。初回v2 ELFの改行不備とリンク途中の読取りは除外し、完了製品を独立検証した。
+
+固定DLL/PDBの隔離実機0/7/8/11と読取りCDB11は、次の起動前に実PID終了0・forced=falseを逐次確認した。
+
+- final-v2-natural-0: PID36436 exit0/forced=false; plant-fixture planted time=14.653230; plant-fixture complete mode=0 planted=1
+- final-v2-natural-7: PID39116 exit0/forced=false; terminal-fixture leave-zone now=11.544034 has=1; plant-fixture complete mode=7 planted=0
+- final-v2-natural-8: PID2300 exit0/forced=false; terminal-fixture actual-drop now=11.745628 entity=99 has=0; plant-fixture complete mode=8 planted=0
+- final-v2-natural-11: PID43620 exit0/forced=false; plant-fixture planted time=63.578010; plant-fixture complete mode=11 planted=1
+- final-v2-route-debug-11: PID35256 exit0/forced=false; plant-fixture planted time=63.467300; plant-fixture complete mode=11 planted=1
+
+CDBはDLL module-loadを待ってBPを設定。最初のPlantは `59.37293243` 秒/full `0x1d3`、MoveTo→EndOfPath2→Plant。生成NAV入力ゼロのためDuck4/AKで入り、その後C4へ移る。固定nativeのPATH_FAILURE時buttons14とは終端結果が異なり、同条件14対4比較とは主張しない。タイムアウト入力保持・callback失効は実フレームのオフライン回帰、実機は到着/区域外/実drop/設置の受入れとして区別する。fixtureの明示的C4在庫bit同期は残る。
+
+固定baseline・既存補正を再生成せず、両OSとも親の152258行と全byte一致。RNG510行も各OSの親と順序・値まで一致し、新規補正なし。既存のOS間丸め差は残る。証拠と指紋は `artifacts/local/debug/csbot-plant-entry-nav-input-20261122/evidence-final-v2/acceptance.json`、製品は同root `final-v2/`、raw試行は `C:/Temp/astrabot-plant-entry-nav-input`。push・実環境配布なし。

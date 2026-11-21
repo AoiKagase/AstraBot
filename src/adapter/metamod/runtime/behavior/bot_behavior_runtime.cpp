@@ -87,12 +87,23 @@ BlindCommand BotBehaviorRuntime::blindCommand(std::size_t index, bool retainUnti
 
 bool BotBehaviorRuntime::nativePlantEntryStopsMovement(std::size_t index) const
 {
+	return nativePlantEntryCurrent(index, false);
+}
+
+bool BotBehaviorRuntime::nativePlantEntryPreservesNavigation(std::size_t index) const
+{
+	return nativePlantEntryCurrent(index, true);
+}
+
+bool BotBehaviorRuntime::nativePlantEntryCurrent(std::size_t index, bool fromNavigation) const
+{
 	if (index >= actors_.size() || services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
 		return false;
 	const auto &actor = actors_[index];
 	const auto &entry = actor.plantEntry;
 	const auto &machine = actor.managedBotStateMachines;
-	return entry.active && entry.fullUpdate == services_->service_managedBotFullUpdateSequences()[index] &&
+	return entry.active && entry.fromNavigation == fromNavigation &&
+		entry.fullUpdate == services_->service_managedBotFullUpdateSequences()[index] &&
 		machine.state() == entry.state && machine.normalStateEpoch() == entry.epoch &&
 		machine.attackEntryEpoch() == entry.attackEpoch && !machine.attackOverlayActive() &&
 		executionCurrent(index, entry.receipt, entry.revision);

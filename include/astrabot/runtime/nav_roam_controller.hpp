@@ -67,6 +67,7 @@ struct NavRoamObservation
 	bool noiseTargetCleared = false;
 	bool nativeSameAreaEndpoint = false;
 	bool defuseApproach = false;
+	bool plantApproach = false;
 	bool fetchBombPath = false;
 	const std::function<bool()> *fetchLookAround = nullptr;
 	bool prepareObjectivePathOnly = false;

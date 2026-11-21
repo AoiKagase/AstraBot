@@ -127,6 +127,7 @@ public:
 		const runtime::MovementPhysicsState &before, compat::StateBehaviorInput *behavior = nullptr) const;
 	bool managedActorAtBombSite(std::size_t index);
 	bool nativePlantEntryStopsMovement(std::size_t index) const;
+	bool nativePlantEntryPreservesNavigation(std::size_t index) const;
 	float managedRoundRemainingSeconds() const;
 	void refreshManagedObjectiveSiteRegistry();
 	void refreshManagedTeamObjectiveAssignments(std::size_t contextIndex);
@@ -245,6 +246,7 @@ public:
 	void observeLooseBombModel(edict_t *box, const char *model);
 
 private:
+	bool nativePlantEntryCurrent(std::size_t index, bool fromNavigation) const;
 	struct ActorTaskEnvironment;
 	void reportBombPickedUp(std::size_t index);
 	void hideNearLooseBomb(std::size_t index, bool announce);
@@ -738,6 +740,8 @@ private:
 			std::uint32_t fullUpdate = 0;
 			compat::CompatibilityStateId state = compat::CompatibilityStateId::Idle;
 			bool pending = false, active = false;
+			bool fromNavigation = false;
+			bool runAfterTimeout = false;
 		};
 		PlantEntry plantEntry{};
 		float desiredLookYaw{};

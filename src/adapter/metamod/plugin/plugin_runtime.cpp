@@ -1768,13 +1768,23 @@ runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(
 void PluginRuntime::buildAndExecuteMovement(std::size_t index, FakeClientHandle &handle,
 	const runtime::LifecycleToken &token, const runtime::MovementPhysicsState &before, NavigationUpdate &movement)
 {
+	const bool plantEntry = behavior_.nativePlantEntryPreservesNavigation(index);
+	const auto &machine = behavior_.managedBotStateMachines(index);
+	const auto normalEpoch = machine.normalStateEpoch();
+	const auto attackEpoch = machine.attackEntryEpoch();
+	const auto entryCurrent = [&] {
+		return !plantEntry || (machine.normalStateEpoch() == normalEpoch &&
+			machine.attackEntryEpoch() == attackEpoch && behavior_.nativePlantEntryPreservesNavigation(index));
+	};
 	const auto draft = command_.beginMovementCommand(index, handle, token, before, movement);
-	if (!draft.ready)
+	if (!draft.ready || !entryCurrent())
 	{
 		return;
 	}
 	const auto action =
 		behavior_.decideManagedBotAction(index, before, draft.command.viewAngles, draft.command.movement.buttons);
+	if (!entryCurrent())
+		return;
 	command_.finishMovementCommand(index, handle, token, before, movement, draft, action);
 }
 
@@ -2008,7 +2018,7 @@ void PluginRuntime::updateManagedBots()
 			behavior_.managedBotStateMachines(index).state() == compat::CompatibilityStateId::Hunt)
 			behavior_.inhibitHuntApproachLook(index, movement.huntApproachLook);
 		navigation_.recordNavigationUpdate(index, before, movement);
-		if (roamResult != runtime::NavRoamResult::IntentReady)
+		if (roamResult != runtime::NavRoamResult::IntentReady && !behavior_.nativePlantEntryPreservesNavigation(index))
 		{
 			if (roamDecision.failureReason == runtime::NavFailureReason::None &&
 				roamResult != runtime::NavRoamResult::MovementSuppressed &&

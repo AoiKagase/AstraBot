@@ -235,6 +235,10 @@ bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 			const float yaw = entity.v_angle.y * 0.017453292519943295f;
 			actor.plantFloorLook = {entity.origin.x + 10.0f * std::cos(yaw),
 				entity.origin.y + 10.0f * std::sin(yaw), entity.origin.z - 18.0f};
+			if (plantPathEnded)
+				actor.plantEntry = {plantReceipt, plantRevision, machine.normalStateEpoch(), plantAttack,
+					step.fullUpdateSequence, compat::CompatibilityStateId::PlantBomb, false, true, true,
+					step.outcome == Outcome::PathFailure && decision.failureReason == runtime::NavFailureReason::MovementNotProduced};
 		}
 		if (previous == compat::CompatibilityStateId::FetchBomb)
 			actor.fetchBombGoal = {};
@@ -1389,9 +1393,10 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::prepareManagedAction
 		(actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::PlantBomb ||
 			actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::DefuseBomb))
 	{
-		proposal.stopForWeapon = true;
-		proposal.movementButtons = static_cast<std::uint16_t>(
-			(proposal.movementButtons & ~(IN_JUMP | IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT)) | IN_DUCK);
+		const bool retainNavigation = nativePlantEntryCurrent(index, true);
+		proposal.stopForWeapon = !retainNavigation;
+		proposal.movementButtons = static_cast<std::uint16_t>((retainNavigation ? proposal.movementButtons
+			: proposal.movementButtons & ~(IN_JUMP | IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT)) | IN_DUCK);
 	}
 
 	if (index >= services_->service_managedBotHandles().size())
@@ -1444,6 +1449,15 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::prepareManagedAction
 	const bool nativePlant = services_->service_compatibilitySurface().configuration().mode ==
 			compat::RuntimeMode::Compatibility &&
 		machine.state() == compat::CompatibilityStateId::PlantBomb;
+	if (nativePlant && nativePlantEntryCurrent(index, true))
+	{
+		// OnEnter adds crouch and the floor look. Its first OnUpdate, including
+		// weapon selection and stopping NAV input, belongs to the next full update.
+		proposal.hasUseEntityLook = true;
+		proposal.useEntityLookTarget = actorState.plantFloorLook;
+		proposal.runAfterPlantTimeout = actorState.plantEntry.runAfterTimeout;
+		return BehaviorPhaseResult::Complete;
+	}
 	if (nativePlant)
 	{
 		const auto &weapon = services_->observation_managedBotCurrentWeapons(index);

@@ -46,6 +46,8 @@ struct ActionProposal
 	// Only a current native Plant update may retain its already-issued input
 	// after OnExit changes the weapon or before CurWeapon publishes prediction.
 	bool plantPrimaryInput = false;
+	// Issued only by a current navigation-owned Plant entry after the path timeout.
+	bool runAfterPlantTimeout = false;
 };
 
 struct CombatUpkeepUpdate
