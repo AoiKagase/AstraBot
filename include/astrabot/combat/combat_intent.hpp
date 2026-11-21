@@ -66,6 +66,7 @@ struct AimIntent
 	world::WorldPosition point;
 	float pitch;
 	float yaw;
+	float goalYaw;
 
 	bool isValid() const;
 	bool isIntent() const;
@@ -169,6 +170,8 @@ public:
 	bool upkeepAim(const TargetBelief &target, const CombatDecisionContext &context, AimIntent *aim);
 	bool offsetAimPoint(const CombatDecisionContext &context, world::WorldPosition target,
 		const compat::AimSpringState &spring, world::WorldPosition *point);
+	bool seedAttackAim(const CombatDecisionContext &context, world::WorldPosition enemy, float lookYaw,
+		bool (*current)(const void *) = nullptr, const void *receipt = nullptr);
 	bool upkeepLook(
 		const CombatDecisionContext &context, float yaw, float pitch, bool attacking, compat::AimStep *look);
 	const AimIntent &trackedAim() const
@@ -223,6 +226,7 @@ private:
 	world::WorldVector aimOffsetGoal_ = {};
 	float aimRefreshTime_ = 0.0f;
 	float aimFocusStart_ = 0.0f;
+	world::SnapshotIdentity attackAimSeed_{};
 	bool aimAligned_ = true;
 	AimIntent trackedAim_ = {};
 	compat::CombatMovementPlanner movement_{};

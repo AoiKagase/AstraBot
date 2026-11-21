@@ -202,6 +202,57 @@ bool testInvalidTargetDamageAndGeneration()
 		"stale actor generation rejects combat decision");
 }
 
+bool testAttackEntryAim()
+{
+	using namespace astrabot;
+	const auto world = snapshot(40U);
+	auto ctx = context(world);
+	ctx.aimTrackingEnabled = true;
+	ctx.currentYaw = 90.0f;
+	ctx.timestamp = 10.0f;
+	ctx.elapsedSeconds = 0.033f;
+	ctx.skill = .75f;
+	ctx.fieldOfView = 90.0f;
+	auto enemy = target();
+	combat::CombatDecision decision{};
+	struct Case { float goalYaw, x, error, minimumDelay; };
+	for (const Case &sample : {Case{0, 100, 2.5f, .25f}, Case{90, 100, 5, .75f},
+			Case{180, 100, 6.25f, 1.25f}, Case{-180, -100, 2.5f, .25f}})
+	{
+		enemy.position = {sample.x, 0, 0};
+		const compat::RandomActor actor{ctx.actor.slot, ctx.actor.generation};
+		std::vector<compat::RandomTapeEntry> tape;
+		for (const char *id : {"AimOffsetX", "AimOffsetY", "AimOffsetZ"})
+			tape.push_back(compat::RandomTapeEntry::floatEntry(id, actor, {}, -sample.error, sample.error, 1.0f));
+		tape.push_back(compat::RandomTapeEntry::floatEntry("AimOffsetRefresh", actor, {}, .25f, 1.0f, .25f));
+		tape.push_back(compat::RandomTapeEntry::floatEntry(
+			"AimOffsetAttackRefresh", actor, {}, sample.minimumDelay, 1.5f, 1.5f));
+		compat::ScriptedRandomSource random(tape);
+		ctx.randomSource = &random;
+		combat::CombatController controller;
+		if (!check(controller.seedAttackAim(ctx, enemy.position, sample.goalYaw) && random.verifyComplete(),
+				"entry uses the stored look goal for XYZ, ordinary refresh and turn-dependent refresh"))
+			return false;
+		controller.decide(world, inventory(), enemy, ctx, &decision);
+		if (!check(decision.hasAim && std::fabs(decision.aim.point.z - .1f) < .001f,
+				"the first decision retains the entry seed and smooths it once"))
+			return false;
+		auto upkeep = ctx;
+		upkeep.frame.tick++;
+		upkeep.timestamp += .5f;
+		combat::AimIntent aim{};
+		if (!check(controller.upkeepAim(enemy, upkeep, &aim) && random.verifyComplete(),
+				"the fifth draw overrides the shorter ordinary deadline"))
+			return false;
+		compat::ScriptedRandomSource reentry(tape);
+		upkeep.randomSource = &reentry;
+		if (!check(controller.seedAttackAim(upkeep, enemy.position, sample.goalYaw) && reentry.verifyComplete(),
+				"Attack re-entry draws immediately within the previous refresh window"))
+			return false;
+	}
+	return true;
+}
+
 bool testProfileAimAndSharedRandom()
 {
 	using namespace astrabot;
@@ -380,7 +431,7 @@ int main()
 	}
 	if (!testLoadedFirearmConvergesAtFullUpdateCadence())
 		return 1;
-	if (!testProfileAimAndSharedRandom() || !testFireIntentDoesNotClaimEngineSuccess() ||
+	if (!testAttackEntryAim() || !testProfileAimAndSharedRandom() || !testFireIntentDoesNotClaimEngineSuccess() ||
 		!testSafetyCooldownAndReloadBoundaries() || !testInvalidTargetDamageAndGeneration())
 	{
 		return 1;

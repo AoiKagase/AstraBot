@@ -30,6 +30,28 @@ bool isBoundedPosition(const world::WorldPosition &value)
 		std::fabs(value.y) <= world::WorldLimits::kMaximumCoordinate &&
 		std::fabs(value.z) <= world::WorldLimits::kMaximumCoordinate;
 }
+
+bool sampleAimOffset(const CombatDecisionContext &context, float error, world::WorldVector *goal, float *delay,
+	float attackTurn = -1.0f, bool (*current)(const void *) = nullptr, const void *receipt = nullptr)
+{
+	const compat::RandomActor actor{context.actor.slot, context.actor.generation};
+	const char *ids[] = {"AimOffsetX", "AimOffsetY", "AimOffsetZ", "AimOffsetRefresh", "AimOffsetAttackRefresh"};
+	float draws[5]{};
+	const unsigned count = attackTurn >= 0.0f ? 5U : 4U;
+	for (unsigned i = 0; i < count; ++i)
+	{
+		const float low = i < 3 ? -error : i == 3 ? 0.25f : 0.25f + attackTurn;
+		const float high = i < 3 ? error : i == 3 ? 1.0f : 1.5f;
+		const auto draw = context.randomSource->nextFloat(
+			compat::RandomRequest::floatRequest(ids[i], actor, context.randomTiming, low, high));
+		if (draw.status != compat::RandomStatus::Ok || !std::isfinite(draw.value) || (current && !current(receipt)))
+			return false;
+		draws[i] = draw.value;
+	}
+	*goal = {draws[0], draws[1], draws[2]};
+	*delay = draws[count - 1U];
+	return true;
+}
 }
 
 bool TargetBelief::isValid() const
@@ -183,10 +205,6 @@ bool CombatController::offsetAimPoint(const CombatDecisionContext &context, worl
 	constexpr float kAimErrorReferenceFieldOfView = 90.0f;
 // Keep literal evaluation precision on x87; each macro is undefined below.
 #define ASTRABOT_COMBAT_INTENT_AIM_ERROR_SCALE 0.1f
-	constexpr int kAimRandomDrawCount = 4;
-	constexpr int kAimRefreshDrawIndex = 3;
-	constexpr float kMinimumAimRefreshSeconds = 0.25f;
-	constexpr float kMaximumAimRefreshSeconds = 1.0f;
 #define ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING 0.1f
 	constexpr float kMaximumFieldOfView = 180.0f;
 	if (!point || !context.randomSource || !std::isfinite(context.skill) || context.skill < 0.0f ||
@@ -208,21 +226,10 @@ bool CombatController::offsetAimPoint(const CombatDecisionContext &context, worl
 			context.aimErrorRange >= 0.0f ? context.aimErrorRange : std::sqrt(dx * dx + dy * dy + dz * dz);
 		const float error = errorRange * context.fieldOfView / kAimErrorReferenceFieldOfView *
 			ASTRABOT_COMBAT_INTENT_AIM_ERROR_SCALE * (1.0f - accuracy);
-		const compat::RandomActor actor = {context.actor.slot, context.actor.generation};
-		float draws[kAimRandomDrawCount] = {};
-		const char *ids[kAimRandomDrawCount] = {"AimOffsetX", "AimOffsetY", "AimOffsetZ", "AimOffsetRefresh"};
-		for (unsigned i = 0; i != kAimRandomDrawCount; ++i)
-		{
-			const compat::RandomFloatResult draw =
-				context.randomSource->nextFloat(compat::RandomRequest::floatRequest(ids[i], actor,
-					context.randomTiming, i == kAimRefreshDrawIndex ? kMinimumAimRefreshSeconds : -error,
-					i == kAimRefreshDrawIndex ? kMaximumAimRefreshSeconds : error));
-			if (draw.status != compat::RandomStatus::Ok || !std::isfinite(draw.value))
-				return false;
-			draws[i] = draw.value;
-		}
-		aimOffsetGoal_ = {draws[0], draws[1], draws[2]};
-		aimRefreshTime_ = context.timestamp + draws[kAimRefreshDrawIndex];
+		float delay;
+		if (!sampleAimOffset(context, error, &aimOffsetGoal_, &delay))
+			return false;
+		aimRefreshTime_ = context.timestamp + delay;
 	}
 	aimOffset_.x += ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING * (aimOffsetGoal_.x - aimOffset_.x);
 	aimOffset_.y += ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING * (aimOffsetGoal_.y - aimOffset_.y);
@@ -234,6 +241,46 @@ bool CombatController::offsetAimPoint(const CombatDecisionContext &context, worl
 }
 #undef ASTRABOT_COMBAT_INTENT_AIM_ERROR_SCALE
 #undef ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING
+
+bool CombatController::seedAttackAim(const CombatDecisionContext &context, world::WorldPosition enemy, float lookYaw,
+	bool (*current)(const void *), const void *receipt)
+{
+	if (!context.isValid() || !isBoundedPosition(enemy) || !std::isfinite(lookYaw) ||
+		std::fabs(lookYaw) > 2.0f * world::WorldLimits::kMaximumAngle || !context.randomSource ||
+		!std::isfinite(context.skill) || context.skill < 0.0f || context.skill > 1.0f ||
+		!std::isfinite(context.fieldOfView) || context.fieldOfView <= 0.0f || context.fieldOfView > 180.0f ||
+		!std::isfinite(context.timestamp) || context.timestamp < 0.0f || (current && !current(receipt)))
+		return false;
+	const float dx = enemy.x - context.origin.x, dy = enemy.y - context.origin.y, dz = enemy.z - context.origin.z;
+	constexpr double degreesPerRadian = 57.29577951308232;
+	float enemyYaw = dx == 0.0f && dy == 0.0f ? 0.0f :
+		static_cast<float>(std::atan2(static_cast<double>(dy), static_cast<double>(dx)) * degreesPerRadian);
+	if (enemyYaw < 0.0f)
+		enemyYaw += 360.0f;
+	float deltaYaw = std::fabs(lookYaw - enemyYaw);
+	if (deltaYaw >= 720.0f)
+		deltaYaw = std::fmod(deltaYaw, 360.0f);
+	while (deltaYaw > 180.0f)
+		deltaYaw -= 360.0f;
+	const float turn = static_cast<float>(std::fabs(deltaYaw) * 0.0055555557);
+	const float accuracy = static_cast<float>(context.skill / (1.0 + turn));
+	const float range = std::sqrt(dx * dx + dy * dy + dz * dz);
+	const float maxOffset = static_cast<float>(range * (context.fieldOfView / 90.0) * 0.1);
+	world::WorldVector goal;
+	float delay;
+	if (!sampleAimOffset(context, maxOffset * (1.0f - accuracy), &goal, &delay, turn, current, receipt))
+		return false;
+	// A fresh actor or round starts with an empty smoothed offset.
+	const auto &previous = attackAimSeed_.observer == context.actor ? attackAimSeed_.frame : lastFrame_;
+	if ((initialized_ && !(actor_ == context.actor)) || previous.mapGeneration != context.frame.mapGeneration ||
+		previous.roundGeneration != context.frame.roundGeneration)
+		aimOffset_ = {};
+	aimOffsetGoal_ = goal;
+	aimFocusStart_ = context.timestamp;
+	aimRefreshTime_ = context.timestamp + delay;
+	attackAimSeed_ = {context.frame, context.actor, 0U};
+	return true;
+}
 
 bool CombatController::buildAim(const CombatDecisionContext &context, const TargetBelief &target, AimIntent *intent)
 {
@@ -288,6 +335,7 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 	intent->target = target.target;
 	intent->point = aimPoint;
 	intent->yaw = std::atan2(deltaY, deltaX) * kHalfTurnDegrees / kPi;
+	intent->goalYaw = intent->yaw;
 	intent->pitch = -std::atan2(deltaZ, horizontalDistance) * kHalfTurnDegrees / kPi;
 	const float useYaw = context.lookOverride ? context.lookYaw : intent->yaw;
 	const float usePitch = context.lookOverride && context.lookPitchOverride ? context.lookPitch : intent->pitch;
@@ -410,6 +458,7 @@ CombatResult CombatController::decide(const world::WorldSnapshot &snapshot, cons
 		aimOffsetGoal_ = {};
 		aimRefreshTime_ = 0.0f;
 		aimFocusStart_ = context.timestamp;
+		attackAimSeed_ = {};
 		return CombatResult::ActorGenerationChanged;
 	}
 
@@ -422,8 +471,11 @@ CombatResult CombatController::decide(const world::WorldSnapshot &snapshot, cons
 	{
 		return CombatResult::StaleFrame;
 	}
-	if (firstFrame || context.frame.mapGeneration != lastFrame_.mapGeneration ||
-		context.frame.roundGeneration != lastFrame_.roundGeneration)
+	const bool startedThisRound = attackAimSeed_.observer == context.actor &&
+		attackAimSeed_.frame.mapGeneration == context.frame.mapGeneration &&
+		attackAimSeed_.frame.roundGeneration == context.frame.roundGeneration;
+	if (!startedThisRound && (firstFrame || context.frame.mapGeneration != lastFrame_.mapGeneration ||
+		context.frame.roundGeneration != lastFrame_.roundGeneration))
 	{
 		aimOffset_ = {};
 		aimOffsetGoal_ = {};

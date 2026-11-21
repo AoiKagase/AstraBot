@@ -8,14 +8,14 @@ namespace metamod
 {
 namespace
 {
-void advanceNoiseLook(compat::NoiseLookPlanner &look, const edict_t &self, float now, runtime::BotCommand &command,
-	bool localMovement)
+bool advanceNoiseLook(compat::NoiseLookPlanner &look, const edict_t &self, float now, runtime::BotCommand &command,
+	bool localMovement, float *goalYaw)
 {
 	float pitch = 0, yaw = 0;
 	const auto eye = self.v.origin + self.v.view_ofs;
 	if (!look.update(now, {self.v.origin.x, self.v.origin.y, self.v.origin.z}, {eye.x, eye.y, eye.z},
-			self.v.v_angle.x, self.v.v_angle.y, &pitch, &yaw))
-		return;
+			self.v.v_angle.x, self.v.v_angle.y, &pitch, &yaw, goalYaw))
+		return false;
 	if (!localMovement)
 	{
 		const auto move =
@@ -28,6 +28,7 @@ void advanceNoiseLook(compat::NoiseLookPlanner &look, const edict_t &self, float
 	}
 	command.viewAngles = {pitch, yaw, 0};
 	command.synchronizeCombatView = true;
+	return true;
 }
 }
 
@@ -63,7 +64,9 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 	look.synchronize({handle.actor.slot, handle.actor.actorGeneration}, frame, globals->time);
 	if (upkeepOnly)
 	{
-		advanceNoiseLook(look, *self, globals->time, command, true);
+		float goalYaw = 0.0f;
+		if (advanceNoiseLook(look, *self, globals->time, command, true, &goalYaw))
+			recordLookGoal(index, goalYaw);
 		return;
 	}
 	bool visibleEnemy = false;
@@ -207,7 +210,9 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 			}
 		}
 	}
-	advanceNoiseLook(look, *self, globals->time, command, false);
+	float goalYaw = 0.0f;
+	if (advanceNoiseLook(look, *self, globals->time, command, false, &goalYaw))
+		recordLookGoal(index, goalYaw);
 }
 } // namespace metamod
 } // namespace astrabot

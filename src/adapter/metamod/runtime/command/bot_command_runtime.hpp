@@ -157,7 +157,9 @@ private:
 			huntApproachLookActive = false;
 		}
 	};
-	runtime::ViewAngles stepNavigationLook(const edict_t &entity, ActorState &actor, bool useHuntApproachLook);
+	runtime::ViewAngles stepIdleLook(std::size_t index, const edict_t &entity, float yaw, float pitch,
+		compat::AimSpringState &spring);
+	runtime::ViewAngles stepNavigationLook(std::size_t index, const edict_t &entity, bool useHuntApproachLook);
 	void advanceLadderDescentLook(std::size_t index, FakeClientHandle &handle);
 	void advanceHuntEncounterLook(std::size_t index, edict_t &entity);
 	void applyUseEntityLook(std::size_t index, const edict_t &entity, const ActionProposal &action,

@@ -457,6 +457,7 @@ void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 				services_->service_managedBotFullUpdateSequences()[ctx.index]},
 			&pitch, &yaw))
 	{
+		recordLookGoal(ctx.index, state.guardLook.desiredYaw());
 		ctx.proposal.viewAngles = {pitch, yaw, 0};
 		ctx.proposal.hasGuardLook = true;
 		ctx.proposal.movementButtons =

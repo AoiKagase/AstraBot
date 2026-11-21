@@ -108,6 +108,7 @@ public:
 	bool forcedRunning(std::size_t index);
 	world::EntityKey currentEnemySource(std::size_t index) const;
 	bool bombObjectiveEnemyAim(std::size_t index, const compat::AimSpringState &spring, world::WorldPosition *point);
+	void recordLookGoal(std::size_t index, float yaw);
 	void observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame);
 	void bindServices(BotBehaviorServices &services)
 	{
@@ -707,6 +708,7 @@ private:
 		};
 		BombObjectiveAimDecision bombObjectiveAimDecision{};
 		world::WorldPosition plantFloorLook{};
+		float desiredLookYaw{};
 		std::uint32_t recognitionSequences{};
 		float lastVisibleEnemyTimes{};
 		compat::NoiseEnemyContact noiseEnemyContact{};

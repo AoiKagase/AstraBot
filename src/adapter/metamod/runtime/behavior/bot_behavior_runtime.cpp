@@ -189,6 +189,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].weaponActions.reset();
 	actors_[index].buyControllers.reset();
 	actors_[index].managedBotCombat = combat::CombatController();
+	actors_[index].desiredLookYaw = 0.0f;
 	actors_[index].managedBotObjectives = objectives::RoundObjectivePlanner();
 	actors_[index].managedBotObjectiveTargets = {};
 	actors_[index].managedBombApproaches = {};
@@ -228,6 +229,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	actors_[index].huntEncounter = {};
 	actors_[index].equipment.reset();
 	actors_[index].managedBotCombat = combat::CombatController(actor);
+	actors_[index].desiredLookYaw = 0.0f;
 	actors_[index].managedBotObjectives = objectives::RoundObjectivePlanner(actor);
 	actors_[index].managedBotStateMachines = compat::CompatibilityStateMachine(actor);
 	actors_[index].managedBotStateRounds = services_->service_lifecycle().roundGeneration();
@@ -305,6 +307,7 @@ void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 	actors_[index].obstacleNextEquipAt = 0.0f;
 	actors_[index].obstaclePathActive = false;
 	actors_[index].managedBotCombat = combat::CombatController();
+	actors_[index].desiredLookYaw = 0.0f;
 	actors_[index].managedBotObjectives = objectives::RoundObjectivePlanner();
 	actors_[index].managedBotObjectiveTargets = {};
 	actors_[index].managedBombApproaches = {};
@@ -323,6 +326,7 @@ void BotBehaviorRuntime::resetRoundTactics()
 		actor.followMotion = {};
 		actor.obstacleLook = {};
 		actor.obstaclePathActive = false;
+		actor.desiredLookYaw = 0.0f;
 	}
 
 	reset_scenarioEscapeAreas();

@@ -82,6 +82,8 @@ public:
 		approaches_ = approaches;
 	}
 
+	float desiredYaw() const { return desiredYaw_; }
+
 	bool update(float now, bool sniper, const nav::NavVector &eye, float currentPitch, float currentYaw,
 		ICompatibilityRandomSource &random, RandomTimingContext timing, float *pitch, float *yaw)
 	{

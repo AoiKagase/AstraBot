@@ -190,7 +190,7 @@ public:
 		return true;
 	}
 	bool update(float now, const world::WorldPosition &origin, const world::WorldPosition &eye, float pitch, float yaw,
-		float *outPitch, float *outYaw)
+		float *outPitch, float *outYaw, float *goalYaw = nullptr)
 	{
 		if (!active_ || !outPitch || !outYaw || !std::isfinite(now) || now < lastTime_)
 			return false;
@@ -210,6 +210,8 @@ public:
 			yaw, pitch, desiredYaw, desiredPitch, runtime::BotTimingScheduler::kCommandInterval, 1.0f, &spring_, false);
 		*outPitch = aim.pitch;
 		*outYaw = aim.yaw;
+		if (goalYaw)
+			*goalYaw = desiredYaw;
 		if (alignedAt_ < 0 && std::fabs(normalizedAimAngle(desiredYaw - aim.yaw)) <= 5.0f &&
 			std::fabs(normalizedAimAngle(desiredPitch - aim.pitch)) <= 5.0f)
 			alignedAt_ = now;

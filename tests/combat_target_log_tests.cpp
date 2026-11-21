@@ -34,6 +34,7 @@ bool rejectAmbushRoll = false;
 unsigned rejectedPercentageRolls = 0;
 unsigned combatReloadCommands = 0;
 unsigned attackDeadlineDraws = 0;
+unsigned attackAimRefreshDraws = 0;
 unsigned retreatTimerDraws = 0;
 float forcedNoticeFixtureRoll = -1.0f;
 std::vector<Vector> *occludedAimTraces = nullptr;
@@ -48,6 +49,8 @@ float combatRandomFloat(float low, float high)
 {
 	if (low == 7.0f && high == 10.0f)
 		++attackDeadlineDraws;
+	if (low >= .25f && low <= 1.25f && high == 1.5f)
+		++attackAimRefreshDraws;
 	if (low == 3.0f && high == 15.0f)
 		++retreatTimerDraws;
 	if (forcedNoticeFixtureRoll >= 0.0f && low == 0.0f && high == 100.0f)
@@ -169,11 +172,11 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	runtime.onWriteByte(22);
 	runtime.onWriteByte(30);
 	runtime.onMessageEnd();
-	const auto stepRifle = [&](int clip, float yaw = 0.0f)
+	const auto stepRifle = [&](int clip, float yaw = 0.0f, int weapon = 22)
 	{
 		runtime.onMessageBegin(1, 94, nullptr, &gEntities[0]);
 		runtime.onWriteByte(1);
-		runtime.onWriteByte(22);
+		runtime.onWriteByte(weapon);
 		runtime.onWriteByte(clip);
 		runtime.onMessageEnd();
 		gEntities[0].v.v_angle = Vector(0, yaw, 0);
@@ -216,13 +219,13 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		runtime.onMessageEnd();
 		const auto run = [&](float range, Vector angles, Vector punch, bool bodyVisible, bool eyeVisible,
 							 bool replaced, bool expectedAttack, unsigned expectedChecks, const char *description,
-							 float height = 0.0f, bool damaged = false) {
+							 float height = 0.0f, bool damaged = false, bool grenade = false) {
 			enemyBehindCover = false;
 			enemy.v.origin = gEntities[0].v.origin + Vector(range, 0, height);
 			enemy.v.v_angle = angles;
 			enemy.v.punchangle = punch;
 			runtime.beginRoundGeneration();
-			stepRifle(30);
+			stepRifle(30, 0.0f, grenade ? 4 : 22);
 			auto behavior = std::make_unique<metamod::BotBehaviorRuntime>();
 			const auto &handle = ports.service_managedBotHandles()[0];
 			behavior->bindServices(ports);
@@ -255,7 +258,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			if (!check(!state.attackOverlayActive(), "one sample is waiting in the reaction queue"))
 				return false;
 			enemyBehindCover = !bodyVisible;
-			stepRifle(30);
+			stepRifle(30, 0.0f, grenade ? 4 : 22);
 			if (damaged)
 				behavior->observePlayerDamage(0, context.actor,
 					{life.mapGeneration(), life.roundGeneration(), ports.service_adapterFrameCount()}, &enemy,
@@ -264,6 +267,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			selfDefenseTrace = &trace;
 			const auto serial = enemy.serialnumber;
 			const auto deadlineDraws = attackDeadlineDraws;
+			const auto aimRefreshDraws = attackAimRefreshDraws;
 			const auto action = behavior->decideManagedBotAction(0, before, {}, 0);
 			selfDefenseTrace = nullptr;
 			enemyBehindCover = false;
@@ -271,10 +275,11 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			if (state.attackOverlayActive() != expectedAttack || trace.eyeChecks != expectedChecks)
 				std::fprintf(stderr, "self-defense range=%.1f overlay=%d eye=%u expected=%d/%u\n",
 					range, state.attackOverlayActive(), trace.eyeChecks, expectedAttack, expectedChecks);
-			return check(state.attackOverlayActive() == expectedAttack && action.hasCombatAim == expectedAttack &&
+			return check(state.attackOverlayActive() == expectedAttack && (grenade || action.hasCombatAim == expectedAttack) &&
 					trace.eyeChecks == expectedChecks &&
 					(replaced || behavior->currentEnemySource(0).id == 2U) &&
 					(expectedAttack || attackDeadlineDraws == deadlineDraws) &&
+					(!grenade || attackAimRefreshDraws == aimRefreshDraws + (expectedAttack ? 1U : 0U)) &&
 					(bodyVisible || action.kind != metamod::ActionKind::Fire), description);
 		};
 		const Vector away(0, 0, 0), facing(0, 180, 0), none(0, 0, 0);
@@ -289,6 +294,10 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			run(950, facing, none, true, true, false, false, 0, "height attenuates the full 3D displacement", 600.0f) &&
 			run(749, facing, none, true, false, false, true, 1, "the eye ray precedes even the close distance fallback") &&
 			run(950, away, none, true, true, false, true, 0, "recent damage still permits retaliation", 0.0f, true) &&
+			run(128, away, none, true, true, false, false, 0,
+				"grenade recognition does not enter Attack or draw an entry aim offset", 0.0f, false, true) &&
+			run(128, away, none, true, true, false, true, 0,
+				"recent damage permits Attack and the entry aim draw while holding a grenade", 0.0f, true, true) &&
 			run(950, facing, none, true, true, true, false, 1, "edict replacement during the eye trace cancels attack");
 	}
 	if (occludedFixture)

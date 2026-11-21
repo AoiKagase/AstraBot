@@ -695,6 +695,10 @@ private:
 	{
 		behavior_.applyNoiseLookCommand(index, command, upkeepOnly);
 	}
+	void behavior_recordLookGoal(std::size_t index, float yaw) override
+	{
+		behavior_.recordLookGoal(index, yaw);
+	}
 
 	void behavior_applyObstacleCommand(std::size_t index, runtime::BotCommand &command) override
 	{

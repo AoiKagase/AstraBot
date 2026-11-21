@@ -231,6 +231,7 @@ void BotBehaviorRuntime::applyObstacleCommand(std::size_t index, runtime::BotCom
 	const float dz = look.point.z - self->v.origin.z - self->v.view_ofs.z;
 	const float yaw = kDegreesPerRadian * std::atan2(dy, dx);
 	const float pitch = -kDegreesPerRadian * std::atan2(dz, std::hypot(dx, dy));
+	recordLookGoal(index, yaw);
 	const auto aim = compat::trackAim(look.angles.yaw, look.angles.pitch, yaw, pitch,
 		runtime::BotTimingScheduler::kCommandInterval, 1.0f, &look.spring, false);
 	look.angles = {aim.pitch, aim.yaw, 0};

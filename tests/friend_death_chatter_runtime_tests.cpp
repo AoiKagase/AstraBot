@@ -552,9 +552,10 @@ bool testDeathChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &
 		death();
 		const auto expected = rejected ? std::vector<std::string>{"FriendDeath.Hurry"}
 			: std::vector<std::string>{"FriendDeath.Hurry", "Attack.PinnedDown", "Attack.ShieldToggle",
-				  "Combat.CrouchChance", "Combat.DodgeChance", "Attack.Coward"};
+				  "Combat.CrouchChance", "Combat.DodgeChance", "Attack.Coward",
+				  "AimOffsetX", "AimOffsetY", "AimOffsetZ", "AimOffsetRefresh", "AimOffsetAttackRefresh"};
 		if (!check(deathSpeechDraws == expected,
-				"retaliation suppresses speech and only accepted Attack draws its entry rolls"))
+				"accepted retaliation draws the initial aim offset immediately after the Attack OnEnter rolls"))
 			return false;
 		step(1);
 		if (!check(deathSpeechSamples.empty(), "retaliation early return suppresses actual CommanderDown"))

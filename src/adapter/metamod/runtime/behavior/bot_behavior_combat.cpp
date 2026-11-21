@@ -102,6 +102,12 @@ void BotBehaviorRuntime::applyNativeLadderLookCommand(
 	command.synchronizeCombatView = true;
 }
 
+void BotBehaviorRuntime::recordLookGoal(std::size_t index, float yaw)
+{
+	if (index < actors_.size() && std::isfinite(yaw))
+		actors_[index].desiredLookYaw = yaw;
+}
+
 bool BotBehaviorRuntime::bombObjectiveEnemyAim(
 	std::size_t index, const compat::AimSpringState &spring, world::WorldPosition *point)
 {
@@ -357,6 +363,7 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	combat::AimIntent aim{};
 	if (state.managedBotCombat.upkeepAim(target, context, &aim))
 	{
+		recordLookGoal(index, aim.goalYaw);
 		state.lastCombatTimes = now;
 		update.hasAim = true;
 		update.angles = {aim.pitch, aim.yaw, 0};
@@ -710,6 +717,23 @@ bool BotBehaviorRuntime::prepareNativeAttack(std::size_t index, world::ActorKey 
 	const auto entry = compat::planAttackEntry(input, current);
 	if (!entry.valid || !current())
 		return false;
+	if (enemy)
+	{
+		combat::CombatDecisionContext aim{};
+		aim.actor = receipt.actor;
+		aim.frame = receipt.frame;
+		aim.origin = {self->v.origin.x, self->v.origin.y, self->v.origin.z};
+		aim.timestamp = receipt.now;
+		aim.skill = input.skill;
+		aim.fieldOfView = self->v.fov > 0.0f ? self->v.fov : kDefaultFieldOfView;
+		aim.randomSource = input.random;
+		aim.randomTiming = input.timing;
+		const auto &origin = enemy->v.origin;
+		(void)actor.managedBotCombat.seedAttackAim(aim, {origin.x, origin.y, origin.z}, actor.desiredLookYaw,
+			[](const void *guard) { return (*static_cast<const decltype(current) *>(guard))(); }, &current);
+		if (!current())
+			return false;
+	}
 	retreat.attackEpoch = attack;
 	retreat.posture = entry;
 	retreat.postureNormalEpoch = epoch;
@@ -779,8 +803,10 @@ void BotBehaviorRuntime::tryBombObjectiveAttack(std::size_t index, const compat:
 	if (!store.read(context.actor, context.frame, &currentWeapon) || !currentWeapon.weaponKnown ||
 		currentWeapon.weaponId <= 0 || currentWeapon.weaponId >= MAX_WEAPONS)
 		return;
-	if (objectiveState == compat::CompatibilityStateId::DefuseBomb &&
-		(compat::WeaponActionPlanner::isGrenade(static_cast<std::uint16_t>(currentWeapon.weaponId)) ||
+	constexpr float retaliationSeconds = 1.0f;
+	if ((compat::WeaponActionPlanner::isGrenade(static_cast<std::uint16_t>(currentWeapon.weaponId)) &&
+			!actor.enemyReaction.recentlyDamaged(receipt, retaliationSeconds)) ||
+		(objectiveState == compat::CompatibilityStateId::DefuseBomb &&
 			currentWeapon.weaponId == ActionAdapter::kC4WeaponId))
 		return;
 	compat::CompatibilityObservation observation{};
@@ -1021,7 +1047,12 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			combatActor.noiseEnemyContact = {targetActor, acquisition.source, targetPosition, receipt.now};
 		}
 	}
-	if (compatibility && combatVisible && !reactionIgnoring(index) && !state.attackOverlayActive())
+	// Grenade recognition normally goes through the throw decision. Recent damage can still trigger Attack.
+	const bool grenadeThreat = delayedRecognition && weapon.kind == combat::WeaponKind::Grenade;
+	constexpr float retaliationSeconds = 1.0f;
+	const bool grenadeRetaliation = grenadeThreat &&
+		combatActor.enemyReaction.recentlyDamaged(reactionContext(index), retaliationSeconds);
+	if (compatibility && (combatVisible || grenadeRetaliation) && !reactionIgnoring(index) && !state.attackOverlayActive())
 	{
 		const auto entry = makeManagedBotStateContext(index, before);
 		if (!defenseCurrent() ||
@@ -1168,7 +1199,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	const compat::StateUpdateContext stateContext = makeManagedBotStateContext(index, before);
 	if ((combatVisible || delayedRecognition) && !reactionIgnoring(index))
 	{
-		if (!handledOccludedEntry)
+		if (!handledOccludedEntry && !grenadeThreat)
 		{
 			if (!defenseCurrent())
 				return proposal;
@@ -1281,6 +1312,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	}
 	if (decision.hasAim)
 	{
+		recordLookGoal(index, decision.aim.goalYaw);
 		proposal.hasCombatAim = true;
 		proposal.viewAngles = {decision.aim.pitch, decision.aim.yaw, movementAngles.roll};
 	}

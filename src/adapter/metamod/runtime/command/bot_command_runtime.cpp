@@ -43,17 +43,20 @@ bool clearsHuntApproachLook(compat::CompatibilityStateId state)
 	return state == compat::CompatibilityStateId::PlantBomb || state == compat::CompatibilityStateId::DefuseBomb ||
 		state == compat::CompatibilityStateId::UseEntity;
 }
+}
 
-runtime::ViewAngles stepIdleLook(
-	const edict_t &entity, float desiredYaw, float desiredPitch, float now, compat::AimSpringState &spring)
+runtime::ViewAngles BotCommandRuntime::stepIdleLook(std::size_t index, const edict_t &entity, float desiredYaw,
+	float desiredPitch, compat::AimSpringState &spring)
 {
 	const auto &angles = entity.v.v_angle;
-	const auto look = compat::trackAim(angles.y, angles.x, desiredYaw + 2.0f * ActionAdapter::csBotCosine(33.0f * now),
+	const float now = services_->service_globals()->time;
+	desiredYaw += 2.0f * ActionAdapter::csBotCosine(33.0f * now);
+	services_->behavior_recordLookGoal(index, desiredYaw);
+	const auto look = compat::trackAim(angles.y, angles.x, desiredYaw,
 		desiredPitch + 2.0f * ActionAdapter::csBotCosine(13.0f * now - 90.0f),
 		runtime::BotTimingScheduler::kCommandInterval, 1.0f,
 		&spring, false);
 	return {look.pitch, look.yaw, 0.0f};
-}
 }
 
 void BotCommandRuntime::applyCombatUpkeep(std::size_t index, const CombatUpkeepUpdate &update)
@@ -344,7 +347,10 @@ void BotCommandRuntime::advanceLadderDescentLook(std::size_t index, FakeClientHa
 		return;
 	const float drift = entity->v.fov > 0.0f && entity->v.fov < 90.0f ? 0.5f : 2.0f;
 	if (!ladder.active)
+	{
 		yaw += drift * ActionAdapter::csBotCosine(33.0f * now);
+		services_->behavior_recordLookGoal(index, yaw);
+	}
 	if (!ladder.pitchOverride)
 		pitch += drift * ActionAdapter::csBotCosine(13.0f * now - 90.0f);
 	const auto before = entity->v.v_angle;
@@ -391,7 +397,7 @@ void BotCommandRuntime::advanceHuntEncounterLook(std::size_t index, edict_t &ent
 
 	if (!close || std::isfinite(actor.navigationLookYaw))
 	{
-		const auto view = stepNavigationLook(entity, actor, true);
+		const auto view = stepNavigationLook(index, entity, true);
 		entity.v.v_angle = Vector(view.pitch, view.yaw, view.roll);
 	}
 	actor.huntEncounterUpkeepAt = now;
@@ -422,8 +428,8 @@ void BotCommandRuntime::advanceUpkeepLook(std::size_t index, FakeClientHandle &h
 			handle.entity->v.deadflag == DEAD_NO && handle.entity->v.health > 0.0f &&
 			!(handle.entity->v.flags & FL_FROZEN) && !services_->roundFreezeActive())
 		{
-			const auto look = stepIdleLook(*handle.entity, actor.navigationLookYaw, 0.0f,
-				services_->service_globals()->time, actor.navigationLookSpring);
+			const auto look = stepIdleLook(index, *handle.entity, actor.navigationLookYaw, 0.0f,
+				actor.navigationLookSpring);
 			handle.entity->v.v_angle = Vector(look.pitch, look.yaw, look.roll);
 		}
 		return;
@@ -454,6 +460,7 @@ void BotCommandRuntime::advanceUpkeepLook(std::size_t index, FakeClientHandle &h
 		const auto &origin = entity->v.origin;
 		const auto goal = ActionAdapter::useEntityView(
 			enemyPoint.x - origin.x, enemyPoint.y - origin.y, enemyPoint.z - origin.z);
+		services_->behavior_recordLookGoal(index, goal.yaw);
 		const auto look = compat::trackAim(entity->v.v_angle.y, entity->v.v_angle.x, goal.yaw, goal.pitch,
 			runtime::BotTimingScheduler::kCommandInterval, 1.0f, &actor.useEntityLookSpring, false);
 		entity->v.v_angle = Vector(look.pitch, look.yaw, 0.0f);
@@ -461,8 +468,7 @@ void BotCommandRuntime::advanceUpkeepLook(std::size_t index, FakeClientHandle &h
 	}
 	const auto &point = actor.useEntityLookTarget;
 	const auto desired = ActionAdapter::useEntityView(point.x - eye.x, point.y - eye.y, point.z - eye.z);
-	const auto look = stepIdleLook(*handle.entity, desired.yaw, desired.pitch,
-		services_->service_globals()->time, actor.useEntityLookSpring);
+	const auto look = stepIdleLook(index, *handle.entity, desired.yaw, desired.pitch, actor.useEntityLookSpring);
 	handle.entity->v.v_angle = Vector(look.pitch, look.yaw, look.roll);
 }
 
@@ -599,8 +605,9 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 }
 
 runtime::ViewAngles BotCommandRuntime::stepNavigationLook(
-	const edict_t &entity, ActorState &actor, bool useHuntApproachLook)
+	std::size_t index, const edict_t &entity, bool useHuntApproachLook)
 {
+	auto &actor = actors_[index];
 	float yaw = actor.navigationLookYaw, pitch = 0.0f;
 	if (useHuntApproachLook && actor.huntApproachLookActive)
 	{
@@ -610,7 +617,7 @@ runtime::ViewAngles BotCommandRuntime::stepNavigationLook(
 		yaw = angles.yaw;
 		pitch = angles.pitch;
 	}
-	return stepIdleLook(entity, yaw, pitch, services_->service_globals()->time, actor.navigationLookSpring);
+	return stepIdleLook(index, entity, yaw, pitch, actor.navigationLookSpring);
 }
 
 runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
@@ -693,7 +700,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 		(huntApproach || canAdvanceNavigationLook(machine.state(), (handle.entity->v.flags & FL_ONGROUND) != 0)))
 	{
 		// CSBot's upkeep turns the view while keeping the axes from the last full decision.
-		command.viewAngles = stepNavigationLook(*handle.entity, actor, usesApproachLook(machine.state()));
+		command.viewAngles = stepNavigationLook(index, *handle.entity, usesApproachLook(machine.state()));
 		command.synchronizeCombatView = true;
 	}
 	if (actor.useEntityLookActive || (actor.defusePathLook && !machine.attackOverlayActive() &&
@@ -1139,7 +1146,7 @@ MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t index, 
 		!(handle.entity->v.flags & FL_FROZEN) && !services_->roundFreezeActive() &&
 		(huntApproach || canAdvanceNavigationLook(machine.state(), before.grounded)))
 	{
-		command.viewAngles = stepNavigationLook(*handle.entity, actor, machine.state() == compat::CompatibilityStateId::Hunt);
+		command.viewAngles = stepNavigationLook(index, *handle.entity, machine.state() == compat::CompatibilityStateId::Hunt);
 	}
 	std::uint16_t movementButtons = locomotionIntent.posture == nav::LocomotionPosture::Crouching
 		? static_cast<std::uint16_t>(IN_DUCK)

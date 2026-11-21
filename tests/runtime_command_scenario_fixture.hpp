@@ -232,6 +232,7 @@ public:
 	{
 		return false;
 	}
+	void behavior_recordLookGoal(std::size_t, float) override {}
 
 	void behavior_applyNoiseLookCommand(std::size_t, runtime::BotCommand &, bool) override
 	{
