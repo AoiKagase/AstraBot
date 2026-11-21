@@ -203,6 +203,10 @@ public:
 	{
 		movement_.stop();
 	}
+	void initializeMovementRange(world::ActorKey actor, std::uint32_t map, float range)
+	{
+		movement_.initializeRange(actor, map, range);
+	}
 
 	bool movementActive() const
 	{

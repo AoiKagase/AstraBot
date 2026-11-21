@@ -84,7 +84,8 @@ void FakeClientManager::configure(enginefuncs_t *engineFunctions, gamedll_funcs_
 	managedBotCreationAllowed_ = managedBotCreationAllowed;
 }
 
-FakeClientResult FakeClientManager::create(const char *name, FakeClientHandle *handle)
+FakeClientResult FakeClientManager::create(const char *name, FakeClientHandle *handle,
+	bool (*initialize)(void *, FakeClientHandle *), void *context)
 {
 	if (name == nullptr || name[0] == '\0')
 	{
@@ -216,18 +217,43 @@ FakeClientResult FakeClientManager::create(const char *name, FakeClientHandle *h
 		return mapRegistryResult(actorResult);
 	}
 
+	FakeClientHandle initialized{actor, entity};
+	const int serial = entity->serialnumber;
+	if (initialize && !initialize(context, &initialized))
+	{
+		if (registry_.state(actor) == runtime::ActorState::Joining && lifecycle_.isCurrent(lifecycleToken) &&
+			!entity->free && entity->serialnumber == serial)
+		{
+			registry_.release(actor);
+			cleanupFailedClient(entity, clientSlot, connectedHere);
+		}
+		return FakeClientResult::InvalidState;
+	}
+	if (registry_.state(actor) != runtime::ActorState::Joining || !lifecycle_.isCurrent(lifecycleToken) ||
+		entity->free || entity->serialnumber != serial)
+		return FakeClientResult::InvalidState;
+
 	char rejectReason[128] = {};
 	if (gameDllFunctions_->dllapi_table->pfnClientConnect(entity, name, "127.0.0.1", rejectReason) == 0)
 	{
-		registry_.release(actor);
-		cleanupFailedClient(entity, clientSlot, connectedHere);
+		if (registry_.state(actor) == runtime::ActorState::Joining && lifecycle_.isCurrent(lifecycleToken) &&
+			!entity->free && entity->serialnumber == serial)
+		{
+			registry_.release(actor);
+			cleanupFailedClient(entity, clientSlot, connectedHere);
+		}
 		return FakeClientResult::JoinFailed;
 	}
 
+	if (registry_.state(actor) != runtime::ActorState::Joining || !lifecycle_.isCurrent(lifecycleToken) ||
+		entity->free || entity->serialnumber != serial)
+		return FakeClientResult::InvalidState;
 	gameDllFunctions_->dllapi_table->pfnClientPutInServer(entity);
+	if (registry_.state(actor) != runtime::ActorState::Joining || !lifecycle_.isCurrent(lifecycleToken) ||
+		entity->free || entity->serialnumber != serial)
+		return FakeClientResult::InvalidState;
 	entity->v.flags |= (FL_CLIENT | FL_FAKECLIENT);
-	handle->actor = actor;
-	handle->entity = entity;
+	*handle = initialized;
 	return FakeClientResult::Created;
 }
 

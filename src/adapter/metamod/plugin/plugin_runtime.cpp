@@ -2485,7 +2485,20 @@ int PluginRuntime::commandArgc() const
 FakeClientResult PluginRuntime::createFakeClient(const char *name, FakeClientHandle *handle)
 {
 	configureFakeClientManager();
-	const FakeClientResult result = fakeClientManager_.create(name, handle);
+	const FakeClientResult result = fakeClientManager_.create(name, handle,
+		[](void *context, FakeClientHandle *created) {
+			auto &runtime = *static_cast<PluginRuntime *>(context);
+			if (runtime.compatibilitySurface_.configuration().mode != compat::RuntimeMode::Compatibility)
+				return true;
+			const auto draw = runtime.compatibilityRandomSource_.nextFloat(
+				compat::RandomRequest::floatRequest("Combat.Range",
+					{created->actor.slot, created->actor.actorGeneration}, {}, 325.0f, 425.0f));
+			if (draw.status != compat::RandomStatus::Ok || !std::isfinite(draw.value) ||
+				draw.value < 325.0f || draw.value > 425.0f)
+				return false;
+			created->combatRange = draw.value;
+			return true;
+		}, this);
 	if (result == FakeClientResult::Created && handle != nullptr && handle->actor.slot >= 1U &&
 		handle->actor.slot <= NativeBotObservation::kClientSlotCount)
 	{

@@ -32,6 +32,7 @@ struct FakeClientHandle
 {
 	runtime::ActorId actor;
 	edict_t *entity;
+	float combatRange = 0.0f;
 };
 
 class FakeClientManager
@@ -41,7 +42,8 @@ public:
 
 	void configure(enginefuncs_t *engineFunctions, gamedll_funcs_t *gameDllFunctions, bool managedBotCreationAllowed,
 		mutil_funcs_t *metaUtils = nullptr, plid_t pluginId = nullptr);
-	FakeClientResult create(const char *name, FakeClientHandle *handle);
+	FakeClientResult create(const char *name, FakeClientHandle *handle,
+		bool (*initialize)(void *, FakeClientHandle *) = nullptr, void *context = nullptr);
 	FakeClientResult remove(FakeClientHandle *handle);
 	FakeClientResult kill(FakeClientHandle *handle);
 

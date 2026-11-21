@@ -23,6 +23,7 @@ bool gBotMarkerPresent = false;
 bool gBotMarkerObservedDuringPutInServer = false;
 int gPlayerFactoryCallCount = 0;
 bool gPlayerFactorySawOriginalOrigin = false;
+bool gInitializationObserved = false;
 
 bool check(bool condition, const char *description)
 {
@@ -89,6 +90,15 @@ qboolean clientConnect(edict_t *, const char *, const char *, char[128])
 {
 	++gClientConnectCount;
 	return gClientConnectSucceeds;
+}
+
+bool initializeClient(void *, astrabot::metamod::FakeClientHandle *handle)
+{
+	gInitializationObserved = handle->actor.slot == static_cast<unsigned>(gCreateCallCount) &&
+		handle->actor.actorGeneration != 0U && gClientConnectCount == gCreateCallCount - 1 &&
+		gPutInServerCount == gCreateCallCount - 1;
+	handle->combatRange = 350.0f + 25.0f * handle->actor.slot;
+	return true;
 }
 
 int indexOfEdict(const edict_t *entity)
@@ -197,7 +207,9 @@ int main()
 	manager.configure(&engineFunctions, &gameDllFunctions, true);
 	FakeClientHandle firstHandle{};
 	if (!check(
-			manager.create("Astra-1", &firstHandle) == FakeClientResult::Created, "first FakeClient creation succeeds"))
+			manager.create("Astra-1", &firstHandle, &initializeClient) == FakeClientResult::Created &&
+				gInitializationObserved && firstHandle.combatRange == 375.0f,
+			"actor initialization runs with a reserved identity before ClientConnect and ClientPutInServer"))
 	{
 		return 1;
 	}
@@ -252,7 +264,8 @@ int main()
 		return 1;
 	}
 	FakeClientHandle secondHandle{};
-	if (!check(manager.create("Astra-2", &secondHandle) == FakeClientResult::Created,
+	if (!check(manager.create("Astra-2", &secondHandle, &initializeClient) == FakeClientResult::Created &&
+				gInitializationObserved && secondHandle.combatRange == 400.0f && firstHandle.combatRange == 375.0f,
 			"second FakeClient creation succeeds"))
 	{
 		return 1;
@@ -331,6 +344,25 @@ int main()
 			"engine create failure is returned"))
 	{
 		return 1;
+	}
+	for (bool accepted : {false, true})
+	{
+		resetHost();
+		LifecycleSession isolatedLife;
+		ActorRegistry isolatedRegistry;
+		isolatedLife.activateMap();
+		FakeClientManager isolated(isolatedLife, isolatedRegistry);
+		isolated.configure(&engineFunctions, &gameDllFunctions, true);
+		FakeClientHandle invalidated{};
+		const auto result = isolated.create("replaced", &invalidated,
+			[](void *context, FakeClientHandle *created) {
+				++created->entity->serialnumber;
+				return *static_cast<bool *>(context);
+			}, &accepted);
+		if (!check(result == FakeClientResult::InvalidState && gClientConnectCount == 0 &&
+				gPutInServerCount == 0 && gDisconnectCount == 0 && invalidated.entity == nullptr,
+				"replacement during initialization cancels both accepted and failed callbacks without cleanup of the replacement"))
+			return 1;
 	}
 	return 0;
 }

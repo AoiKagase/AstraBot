@@ -72,6 +72,20 @@ bool testAimPolicy()
 
 bool testCrouchHold()
 {
+	compat::CombatMovementPlanner initialized;
+	for (unsigned round : {1U, 2U})
+	{
+		compat::ScriptedRandomSource seeded({draw("Combat.CrouchChance", 0, 100, 0),
+			draw("Combat.DodgeChance", 0, 100, 99)});
+		auto sample = input(&seeded);
+		sample.frame.roundGeneration = round;
+		if (round == 1U)
+			initialized.initializeRange(sample.actor, sample.frame.mapGeneration, 375.0f);
+		const auto decision = initialized.update(sample);
+		if (!check(decision.active && seeded.verifyComplete(),
+				"initialized movement range survives a round change without another range draw"))
+			return false;
+	}
 	compat::ScriptedRandomSource random({draw("Combat.Range", 325, 425, 375), draw("Combat.CrouchChance", 0, 100, 0),
 		draw("Combat.DodgeChance", 0, 100, 99)});
 	auto in = input(&random);

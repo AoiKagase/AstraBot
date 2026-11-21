@@ -192,6 +192,12 @@ int main()
 		return 1;
 	}
 	engineFunctions.pfnCreateFakeClient = &createFakeClient;
+	static unsigned rangeDraws = 0;
+	engineFunctions.pfnRandomFloat = [](float low, float high) -> float {
+		if (low == 325.0f && high == 425.0f)
+			++rangeDraws;
+		return (low + high) * .5f;
+	};
 	engineFunctions.pfnIndexOfEdict = &indexOfEdict;
 	engineFunctions.pfnPEntityOfEntIndex = &entityOfIndex;
 	engineFunctions.pfnCVarGetPointer = &getCvar;
@@ -223,8 +229,9 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(PluginRuntime::instance().createFakeClient("Astra-2", &second) == FakeClientResult::Created,
-			"second managed FakeClient is created"))
+	if (!check(PluginRuntime::instance().createFakeClient("Astra-2", &second) == FakeClientResult::Created &&
+				rangeDraws == 2U && first.combatRange == 375.0f && second.combatRange == 375.0f,
+			"direct creation draws each actor range once before either actor enters combat"))
 	{
 		return 1;
 	}

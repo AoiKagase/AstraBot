@@ -106,9 +106,25 @@ struct CombatMovementDecision
 class CombatMovementPlanner
 {
 public:
+	void initializeRange(world::ActorKey actor, std::uint32_t map, float range)
+	{
+		if (actor.isValid() && map != 0U && std::isfinite(range) && range >= 325.0f && range <= 425.0f)
+		{
+			rangeActor_ = actor;
+			rangeMap_ = map;
+			initializedRange_ = range;
+		}
+	}
+
 	void reset()
 	{
+		const auto rangeActor = rangeActor_;
+		const auto rangeMap = rangeMap_;
+		const auto range = initializedRange_;
 		*this = CombatMovementPlanner();
+		rangeActor_ = rangeActor;
+		rangeMap_ = rangeMap;
+		initializedRange_ = range;
 	}
 
 	void stop()
@@ -208,6 +224,8 @@ public:
 			firstDodge_ = true;
 			nextDodge_ = 0;
 			dodgeState_ = kDodgeNone;
+			if (initializedRange_ != 0.0f && rangeActor_ == in.actor && rangeMap_ == in.frame.mapGeneration)
+				combatRange_ = initializedRange_;
 			if (combatRange_ == 0 && !draw("Combat.Range", kMinimumCombatRange, kMaximumCombatRange, combatRange_))
 				return out;
 			float roll = 0;
@@ -337,6 +355,9 @@ private:
 	world::ActorKey actor_{}, target_{};
 	world::FrameIdentity frame_{};
 	float now_ = 0, combatRange_ = 0, nextDodge_ = 0;
+	world::ActorKey rangeActor_{};
+	std::uint32_t rangeMap_ = 0U;
+	float initializedRange_ = 0.0f;
 	bool active_ = false, crouch_ = false, dodge_ = false, firstDodge_ = true;
 	bool finished_ = false;
 	int dodgeState_ = kDodgeNone;

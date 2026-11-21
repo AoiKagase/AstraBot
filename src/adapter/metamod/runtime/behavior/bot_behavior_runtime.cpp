@@ -229,6 +229,8 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	actors_[index].huntEncounter = {};
 	actors_[index].equipment.reset();
 	actors_[index].managedBotCombat = combat::CombatController(actor);
+	actors_[index].managedBotCombat.initializeMovementRange(
+		actor, services_->service_lifecycle().mapGeneration(), handle.combatRange);
 	actors_[index].desiredLookYaw = 0.0f;
 	actors_[index].managedBotObjectives = objectives::RoundObjectivePlanner(actor);
 	actors_[index].managedBotStateMachines = compat::CompatibilityStateMachine(actor);
@@ -307,6 +309,9 @@ void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 	actors_[index].obstacleNextEquipAt = 0.0f;
 	actors_[index].obstaclePathActive = false;
 	actors_[index].managedBotCombat = combat::CombatController();
+	const auto &handle = services_->service_managedBotHandles()[index];
+	actors_[index].managedBotCombat.initializeMovementRange({handle.actor.slot, handle.actor.actorGeneration},
+		services_->service_lifecycle().mapGeneration(), handle.combatRange);
 	actors_[index].desiredLookYaw = 0.0f;
 	actors_[index].managedBotObjectives = objectives::RoundObjectivePlanner();
 	actors_[index].managedBotObjectiveTargets = {};
