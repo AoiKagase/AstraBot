@@ -244,7 +244,7 @@ int queueMessageId(plid_t id, const char *name, int *size)
 	}
 	if (std::strcmp(name, "DeathMsg") == 0)
 		return 103;
-	if ((victoryFixture || barelyDefusedFixture) && std::strcmp(name, "ResetHUD") == 0)
+	if ((victoryFixture || barelyDefusedFixture || blindedChatterFixture) && std::strcmp(name, "ResetHUD") == 0)
 		return 104;
 	if (blindedChatterFixture && std::strcmp(name, "ScreenFade") == 0)
 		return 105;
@@ -2525,16 +2525,18 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		};
 		int botObject = 0;
 		int otherObject = 0;
-		const auto notify = [&](const void *victim, bool reuseSlot = false)
+		const auto notify = [&](const void *victim, bool reuseSlot = false, float duration = 1.25f)
 		{
 			const int serial = self.serialnumber;
-			observer.observeGameDllBlind(victim, 1.25f, [&](const char *name) -> const void * {
+			const auto complete = observer.prepareGameDllBlind(victim, duration, [&](const char *name) -> const void * {
 				if (std::strcmp(name, "Blind Test Bot") != 0)
 					return nullptr;
 				if (reuseSlot)
 					++self.serialnumber;
 				return &botObject;
 			});
+			if (complete)
+				complete();
 			self.serialnumber = serial;
 		};
 		for (int frame = 0; frame < 8; ++frame)
@@ -2577,7 +2579,80 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			return false;
 		blindedChatterRoll = 33.2f;
 		notify(&botObject);
-		return check(playUpdates() == 1, "an accepted blindness receipt plays Blinded once");
+		if (!check(playUpdates() == 1, "an accepted blindness receipt plays Blinded once"))
+			return false;
+
+		auto &observationService = static_cast<metamod::BotObservationServices &>(runtime);
+		const auto &handle = observationService.service_managedBotHandles()[0];
+		const world::ActorKey managed{handle.actor.slot, handle.actor.actorGeneration};
+		const auto &life = observationService.service_lifecycle();
+		const auto frame = [&] { return world::FrameIdentity{
+			life.mapGeneration(), life.roundGeneration(), observationService.service_adapterFrameCount()}; };
+		observer.onActorRemembered(0, handle);
+		const auto fade = [&] {
+			observer.onMessageBegin(MSG_ONE, 105, nullptr, &self);
+			observer.onWriteShort(4096);
+			observer.onWriteShort(1024);
+			observer.onWriteShort(0);
+			for (int field = 0; field < 4; ++field)
+				observer.onWriteByte(255);
+			observer.onMessageEnd();
+		};
+		const auto &observations = observer.publicObservations();
+		const auto blinded = [&](float at, bool compatibility = true) {
+			return observations.isBlinded(managed, frame(), at, compatibility);
+		};
+		fade();
+		if (!check(blinded(globals.time + .25f) && !blinded(globals.time + 1.25f),
+				"without a GameDLL hook the standard fallback uses the HUD deadline"))
+			return false;
+		blindedChatterRoll = 100.0f;
+		notify(&botObject, false, .25f);
+		const float deadline = globals.time + .25f;
+		if (!check(blinded(std::nextafter(deadline, 0.0f)) && !blinded(deadline) && blinded(deadline, false),
+				"the accepted GameDLL duration controls the gameplay deadline with strict expiry"))
+			return false;
+		notify(&botObject, false, 2.0f);
+		globals.time += .125f;
+		fade();
+		notify(&botObject, false, .125f);
+		fade();
+		if (!check(blinded(globals.time) && !blinded(globals.time + .125f) && blinded(globals.time + .125f, false),
+				"a shorter overlapping Blind replaces gameplay time and later HUD fades affect only the HUD timer"))
+			return false;
+		notify(&botObject, true, 4.0f);
+		if (!check(!blinded(globals.time + .125f), "a reused edict cannot extend the recorded gameplay deadline"))
+			return false;
+
+		notify(&botObject, false, 2.0f);
+		observer.onMessageBegin(MSG_ONE, 104, nullptr, &self);
+		observer.onMessageEnd();
+		if (!check(blinded(globals.time + .125f) && !blinded(globals.time, false),
+				"a same-life ResetHUD clears the HUD deadline and preserves gameplay blindness"))
+			return false;
+
+		engine.pfnPvEntPrivateData = [](edict_t *entity) -> void * { return entity->pvPrivateData; };
+		self.pvPrivateData = &botObject;
+		duplicateBlindNetname = true;
+		const auto stale = observer.prepareGameDllBlind(&botObject, 4.0f, {});
+		if (!check(static_cast<bool>(stale), "opaque actor identity resolves independently of duplicate public names"))
+			return false;
+		observer.observeGameDllBotEvent(metamod::NativeBotEvent::PlayerSpawned, &botObject);
+		stale();
+		self.v.deadflag = DEAD_DEAD;
+		notify(&botObject, false, 4.0f);
+		self.v.deadflag = DEAD_NO;
+		if (!check(!blinded(globals.time) && !blinded(globals.time, false),
+				"spawn clears gameplay blindness, invalidates a pending receipt, and a dead actor cannot receive one"))
+			return false;
+
+		compat::PublicObservationStore connected;
+		connected.setGameDllBlindEventsAvailable(true);
+		connected.bind(managed, frame());
+		(void)connected.screenFade(managed, frame(), globals.time + 1.25f);
+		return check(!connected.isBlinded(managed, frame(), globals.time, true) &&
+				connected.isBlinded(managed, frame(), globals.time, false),
+			"a connected GameDLL hook keeps ScreenFade independent before the first gameplay receipt");
 	}
 	if (barelyDefusedFixture)
 	{

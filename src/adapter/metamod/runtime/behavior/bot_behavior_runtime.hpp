@@ -540,6 +540,7 @@ private:
 		bool checkFov) const;
 	bool canSeeEntityOrigin(std::size_t index, const edict_t *entity, const world::FrameIdentity &frame,
 		bool checkFov = true) const;
+	bool isBlinded(world::ActorKey actor, world::FrameIdentity frame, float now) const;
 	compat::ReactionContext reactionContext(std::size_t index) const;
 	void observeFriendDeath(std::size_t index, const edict_t *victim, const edict_t *killer,
 		const world::FrameIdentity &frame, world::ActorKey victimConnection, world::ActorKey killerConnection);

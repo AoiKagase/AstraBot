@@ -53,7 +53,8 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 	if ((panicLook ? actor.enemyReaction.shouldAim(reactionContext(index))
 				   : visibleEnemy || actor.managedBotStateMachines.attackOverlayActive()) ||
 		actor.weaponActions.grenadeInProgress() || (command.movement.buttons & (IN_USE | IN_ATTACK | IN_ATTACK2)) ||
-		(known && ((weapon.weaponKnown && weapon.weaponId == 6) || weapon.blindUntil > globals->time)) ||
+		(known && weapon.weaponKnown && weapon.weaponId == 6) ||
+		isBlinded({handle.actor.slot, handle.actor.actorGeneration}, frame, globals->time) ||
 		actor.obstacleLook.entity)
 	{
 		if (!panicLook)

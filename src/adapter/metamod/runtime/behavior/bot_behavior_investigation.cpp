@@ -77,9 +77,7 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 	in.defenseAmbushExpired = mayInvestigateFromDefense && actor.scenarioPlanners.defenseAmbushExpired(in.now);
 	const bool freeTask = current == compat::CompatibilityStateId::Idle ||
 		current == compat::CompatibilityStateId::Hunt || current == compat::CompatibilityStateId::InvestigateNoise;
-	compat::PublicActorState publicState{};
-	const bool blind = services_->observation_publicObservations().read(in.actor, in.frame, &publicState) &&
-		in.now < publicState.blindUntil;
+	const bool blind = isBlinded(in.actor, in.frame, in.now);
 	in.allowed = (freeTask || mayInvestigateFromDefense) && !machine.attackOverlayActive() && config.botEnable > 0 && config.botStop <= 0 &&
 		!(self->v.flags & (FL_FROZEN | FL_SPECTATOR)) && in.now >= roundStart && !blind;
 	in.hiding = atHidingSpot;

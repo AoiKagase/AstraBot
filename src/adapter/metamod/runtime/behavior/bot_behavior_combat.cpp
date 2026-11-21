@@ -130,7 +130,7 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	compat::PublicActorState activeWeapon{};
 	if (!services_->observation_publicObservations().read(tracked.actor, frame, &activeWeapon) ||
 		!activeWeapon.weaponKnown || activeWeapon.weaponId != state.weaponActions.currentWeaponId() ||
-		activeWeapon.blindUntil > now)
+		isBlinded(tracked.actor, frame, now))
 	{
 		state.managedBotCombat.clearAim();
 		state.weaponActions.stopRapidFire();

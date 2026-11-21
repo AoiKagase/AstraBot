@@ -6,6 +6,13 @@ namespace astrabot
 {
 namespace metamod
 {
+bool BotBehaviorRuntime::isBlinded(world::ActorKey actor, world::FrameIdentity frame, float now) const
+{
+	const bool compatibility =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	return services_->observation_publicObservations().isBlinded(actor, frame, now, compatibility);
+}
+
 bool BotBehaviorRuntime::canSeeEntityOrigin(
 	std::size_t index, const edict_t *entity, const world::FrameIdentity &frame, bool checkFov) const
 {
@@ -23,10 +30,7 @@ bool BotBehaviorRuntime::canSeePoint(std::size_t index, world::WorldPosition poi
 	auto *self = handle.entity;
 	if (!engine || !engine->pfnTraceLine || !globals || !self)
 		return false;
-	compat::PublicActorState observed{};
-	if (services_->observation_publicObservations().read(
-			{handle.actor.slot, handle.actor.actorGeneration}, frame, &observed) &&
-		globals->time < observed.blindUntil)
+	if (isBlinded({handle.actor.slot, handle.actor.actorGeneration}, frame, globals->time))
 		return false;
 	const world::WorldPosition eye{self->v.origin.x + self->v.view_ofs.x, self->v.origin.y + self->v.view_ofs.y,
 		self->v.origin.z + self->v.view_ofs.z};
@@ -90,10 +94,8 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		actor.occludedRecognition = {};
 		actors_[index].recognitionSequences = services_->service_managedBotFullUpdateSequences()[index];
 		compat::ThreatCandidate threat{};
-		compat::PublicActorState publicState{};
-		const bool blinded =
-			services_->observation_publicObservations().read(observer, belief.identity().frame, &publicState) &&
-			services_->service_globals() != nullptr && services_->service_globals()->time < publicState.blindUntil;
+		const bool blinded = services_->service_globals() != nullptr &&
+			isBlinded(observer, belief.identity().frame, services_->service_globals()->time);
 		const auto findThreatEntity = [&](world::ActorKey key) -> const edict_t *
 		{
 			const auto *engine = services_->service_engineFunctions();
@@ -208,9 +210,7 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 			actors_[index].recognizedTargets = {};
 		}
 	}
-	compat::PublicActorState sight{};
-	const bool blinded = services_->observation_publicObservations().read(observer, belief.identity().frame, &sight) &&
-		reaction.now < sight.blindUntil;
+	const bool blinded = isBlinded(observer, belief.identity().frame, reaction.now);
 	const world::ActorObservation *currentEnemy = nullptr;
 	if (!blinded && memory.enemy(reaction).isValid() &&
 		belief.findActor(memory.enemy(reaction), &currentEnemy) == world::ContactLookupResult::Found && currentEnemy &&

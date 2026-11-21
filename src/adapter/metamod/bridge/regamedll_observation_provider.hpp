@@ -4,6 +4,7 @@
 #include "astrabot/compat/public_observation.hpp"
 #include <regamedll-5.30/GameEvent.h>
 #include <cstdint>
+#include <functional>
 
 class CBasePlayer;
 class CBaseEntity;
@@ -28,7 +29,7 @@ enum class ReGameDllProbeStatus
 	MetadataOnly
 };
 
-enum class NativeBotEvent { Fired, FiredOnEmpty, Reloaded, HostageUsed, DefuseStarted, DefuseEnded };
+enum class NativeBotEvent { Fired, FiredOnEmpty, Reloaded, HostageUsed, DefuseStarted, DefuseEnded, PlayerSpawned };
 
 // This provider never dereferences GameDLL player, weapon or gamerules layouts.
 // The negotiated API exposes metadata, but no safe getters for the per-actor
@@ -37,7 +38,7 @@ class ReGameDllObservationProvider final : public compat::IObservationProvider
 {
 public:
 	using Factory = void *(*)(const char *, int *);
-	using BlindListener = void (*)(void *, const void *, float);
+	using BlindListener = std::function<void()> (*)(void *, const void *, float);
 	using DamageListener = void (*)(void *, const void *, const entvars_s *);
 	using BotEventListener = void (*)(void *, NativeBotEvent, const void *);
 	ReGameDllObservationProvider() = default;
@@ -52,7 +53,7 @@ public:
 	bool connectDamageEvents(DamageListener listener, void *context);
 	bool connectBotEvents(BotEventListener listener, void *context);
 	bool botEventsConnected() const { return botEventRegistry_ != nullptr; }
-	bool dispatchingEvents() const { return damageDispatchDepth_ != 0 || botEventDispatchDepth_ != 0; }
+	bool dispatchingEvents() const { return blindDispatchDepth_ != 0 || damageDispatchDepth_ != 0 || botEventDispatchDepth_ != 0; }
 	const void *findClientObject(const char *name) const;
 	ReGameDllProbeStatus status() const
 	{
@@ -85,6 +86,8 @@ private:
 		float &damage, int damageType);
 	static void onBotEvent(BotEventChain *chain, GameEventType event, CBaseEntity *source, CBaseEntity *other);
 	static ReGameDllObservationProvider *eventOwner_;
+	static BlindRegistry *deferredBlindRegistry_;
+	static unsigned blindDispatchDepth_;
 	static DamageRegistry *deferredDamageRegistry_;
 	static unsigned damageDispatchDepth_;
 	static BotEventRegistry *deferredBotEventRegistry_;

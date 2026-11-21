@@ -292,7 +292,7 @@ void BotBehaviorRuntime::updateBombGuardTarget(
 	std::vector<nav::NavVector> occupied;
 	compat::PublicActorState weapon{};
 	const bool publicStateKnown = services_->observation_publicObservations().read(input.actor, input.frame, &weapon);
-	const bool blind = publicStateKnown && input.timestamp < weapon.blindUntil;
+	const bool blind = isBlinded(input.actor, input.frame, input.timestamp);
 	if (!blind && services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr)
 	{
 		for (int slot = 1; slot <= (std::min)(kMaximumClientSlots, services_->service_globals()->maxClients); ++slot)

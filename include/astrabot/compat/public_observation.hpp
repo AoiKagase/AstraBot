@@ -81,7 +81,8 @@ struct PublicActorState
 	std::uint32_t progressTick = 0U;
 	float progressObservedAt = 0.0f;
 	float progressExpiresAt = 0.0f;
-	float blindUntil = 0.0f;
+	float screenFadeUntil = 0.0f;
+	float gameDllBlindUntil = -1.0f;
 	bool reloadRequested = false;
 	float reloadRequestedAt = 0.0f;
 };
@@ -108,25 +109,50 @@ public:
 	void resetSlot(std::uint32_t slot)
 	{
 		if (slot > 0U && slot <= actors_.size())
+		{
 			actors_[slot - 1U] = {};
+			++lifeRevisions_[slot - 1U];
+		}
 	}
 
 	void reset()
 	{
 		actors_ = {};
 		definitions_ = {};
+		for (auto &revision : lifeRevisions_)
+			++revision;
+	}
+
+	void resetHud(world::ActorKey actor, world::FrameIdentity frame)
+	{
+		auto *state = edit(actor, frame);
+		if (!state)
+			return;
+		const float nativeDeadline = state->gameDllBlindUntil;
+		*state = {};
+		bind(actor, frame);
+		state->gameDllBlindUntil = nativeDeadline;
 	}
 
 	bool read(world::ActorKey actor, world::FrameIdentity frame, PublicActorState *out) const
 	{
-		if (out == nullptr || !actor.isValid() || actor.slot > actors_.size())
+		const PublicActorState *state = find(actor, frame);
+		if (!out || !state)
 			return false;
-		const PublicActorState &state = actors_[actor.slot - 1U];
-		if (!state.bound || !(state.actor == actor) || state.frame.mapGeneration != frame.mapGeneration ||
-			state.frame.roundGeneration != frame.roundGeneration || state.frame.tick > frame.tick)
-			return false;
-		*out = state;
+		*out = *state;
 		return true;
+	}
+
+	void setGameDllBlindEventsAvailable(bool available) { gameDllBlindEventsAvailable_ = available; }
+
+	bool isBlinded(world::ActorKey actor, world::FrameIdentity frame, float now, bool compatibility) const
+	{
+		const PublicActorState *state = find(actor, frame);
+		if (!state)
+			return false;
+		// A connected hook makes HUD fades independent of gameplay in compatibility mode.
+		const bool useGameDll = compatibility && (gameDllBlindEventsAvailable_ || state->gameDllBlindUntil >= 0.0f);
+		return now < (useGameDll ? state->gameDllBlindUntil : state->screenFadeUntil);
 	}
 
 	bool currentWeapon(world::ActorKey actor, world::FrameIdentity frame, int active, int id, int clip)
@@ -314,15 +340,41 @@ public:
 		return true;
 	}
 
-	bool blind(world::ActorKey actor, world::FrameIdentity frame, float until)
+	bool screenFade(world::ActorKey actor, world::FrameIdentity frame, float until)
 	{
 		if (!std::isfinite(until) || until < 0.0f)
 			return false;
 		PublicActorState *state = edit(actor, frame);
 		if (state == nullptr)
 			return false;
-		state->blindUntil = until;
+		state->screenFadeUntil = until;
 		return true;
+	}
+
+	bool gameDllBlind(world::ActorKey actor, world::FrameIdentity frame, float until)
+	{
+		if (!std::isfinite(until) || until < 0.0f)
+			return false;
+		PublicActorState *state = edit(actor, frame);
+		if (state == nullptr)
+			return false;
+		// Blind replaces the deadline, including when a later flash shortens it.
+		state->gameDllBlindUntil = until;
+		return true;
+	}
+
+	void gameDllSpawn(world::ActorKey actor, world::FrameIdentity frame)
+	{
+		if (auto *state = edit(actor, frame))
+		{
+			state->gameDllBlindUntil = -1.0f;
+			++lifeRevisions_[actor.slot - 1U];
+		}
+	}
+
+	std::uint64_t lifeRevision(world::ActorKey actor) const
+	{
+		return actor.isValid() && actor.slot <= lifeRevisions_.size() ? lifeRevisions_[actor.slot - 1U] : 0U;
 	}
 
 	void requestReload(world::ActorKey actor, world::FrameIdentity frame, float now)
@@ -387,10 +439,20 @@ private:
 	static constexpr int kAmmoIndexLimit = 32;
 	static constexpr unsigned kWeaponStateCapacity = 31U;
 	static constexpr unsigned kActorStateCapacity = 32U;
+	const PublicActorState *find(world::ActorKey actor, world::FrameIdentity frame) const
+	{
+		if (!actor.isValid() || actor.slot > actors_.size())
+			return nullptr;
+		const PublicActorState &state = actors_[actor.slot - 1U];
+		if (!state.bound || !(state.actor == actor) || state.frame.mapGeneration != frame.mapGeneration ||
+			state.frame.roundGeneration != frame.roundGeneration || state.frame.tick > frame.tick)
+			return nullptr;
+		return &state;
+	}
+
 	PublicActorState *edit(world::ActorKey actor, world::FrameIdentity frame)
 	{
-		PublicActorState state{};
-		if (!read(actor, frame, &state))
+		if (!find(actor, frame))
 			return nullptr;
 		PublicActorState &result = actors_[actor.slot - 1U];
 		result.frame = frame;
@@ -409,6 +471,8 @@ private:
 
 	std::array<PublicActorState, kActorStateCapacity> actors_{};
 	std::array<PublicWeaponDefinition, kWeaponStateCapacity> definitions_{};
+	std::array<std::uint64_t, kActorStateCapacity> lifeRevisions_{};
+	bool gameDllBlindEventsAvailable_ = false;
 };
 }
 }

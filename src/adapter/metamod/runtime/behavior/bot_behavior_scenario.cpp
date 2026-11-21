@@ -681,9 +681,7 @@ void BotBehaviorRuntime::populateScenarioPublicState(std::size_t index, const ru
 	scenario.team = observedTeam == kTerroristTeam ? objectives::TeamRole::Terrorist
 		: observedTeam == kCounterTerroristTeam	   ? objectives::TeamRole::CounterTerrorist
 												   : objectives::TeamRole::Unknown;
-	compat::PublicActorState publicState = {};
-	scenario.blind = services_->observation_publicObservations().read(context.actor, context.frame, &publicState) &&
-		context.timestamp < publicState.blindUntil;
+	scenario.blind = isBlinded(context.actor, context.frame, context.timestamp);
 	scenario.isVipKnown = observation.objective.vip.isAvailable();
 	scenario.isVip = scenario.isVipKnown && observation.objective.vip.value;
 	scenario.bombPlantedKnown = observation.objective.bombPlanted.isAvailable();

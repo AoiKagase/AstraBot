@@ -24,7 +24,7 @@ public:
 		return index < actors_.size() && actors_[index].managedBotPerception.consumeNoise(expected);
 	}
 	void captureManagedCurrentWeapon();
-	void observeGameDllBlind(const void *player, float duration,
+	std::function<void()> prepareGameDllBlind(const void *player, float duration,
 		const std::function<const void *(const char *)> &findClientObject);
 	void observeGameDllDamage(const void *player, const entvars_t *inflictor,
 		const std::function<const void *(const char *)> &findClientObject);
@@ -209,9 +209,13 @@ private:
 		std::size_t index = 0;
 		world::ActorKey actor{};
 		world::FrameIdentity frame{};
+		const edict_t *entity = nullptr;
+		int serial = -1;
+		std::uint32_t connection = 0U;
+		std::uint64_t lifeRevision = 0U;
 	};
 	GameDllClientReceipt resolveGameDllClient(const void *player,
-		const std::function<const void *(const char *)> &findClientObject) const;
+		const std::function<const void *(const char *)> &findClientObject, bool useOpaqueIdentity = false) const;
 	void fill_managedBotPerceptionFullUpdates(const std::uint32_t &value)
 	{
 		for (auto &actor : actors_)

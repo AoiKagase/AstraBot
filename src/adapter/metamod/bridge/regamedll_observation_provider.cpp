@@ -16,6 +16,8 @@ namespace astrabot
 namespace metamod
 {
 ReGameDllObservationProvider *ReGameDllObservationProvider::eventOwner_ = nullptr;
+ReGameDllObservationProvider::BlindRegistry *ReGameDllObservationProvider::deferredBlindRegistry_ = nullptr;
+unsigned ReGameDllObservationProvider::blindDispatchDepth_ = 0;
 ReGameDllObservationProvider::DamageRegistry *ReGameDllObservationProvider::deferredDamageRegistry_ = nullptr;
 unsigned ReGameDllObservationProvider::damageDispatchDepth_ = 0;
 ReGameDllObservationProvider::BotEventRegistry *ReGameDllObservationProvider::deferredBotEventRegistry_ = nullptr;
@@ -53,12 +55,16 @@ void ReGameDllObservationProvider::reset()
 	++eventRevision_;
 	status_ = ReGameDllProbeStatus::NotPresent;
 	major_ = minor_ = 0;
+	// The native chains borrow their registries' arrays until dispatch returns.
 	if (blindRegistry)
-		blindRegistry->unregisterHook(&onBlind);
+	{
+		if (blindDispatchDepth_ != 0)
+			deferredBlindRegistry_ = blindRegistry;
+		else
+			blindRegistry->unregisterHook(&onBlind);
+	}
 	if (damageRegistry)
 	{
-		// The native chain borrows the registry's array. Removing its active
-		// entry here would shift the next hook before callNext can read it.
 		if (damageDispatchDepth_ != 0)
 			deferredDamageRegistry_ = damageRegistry;
 		else
@@ -110,14 +116,17 @@ bool ReGameDllObservationProvider::connectBlindEvents(BlindListener listener, vo
 	if (!functions || !functions->UTIL_FindEntityByString || !hooks)
 		return false;
 	auto *registry = hooks->CBasePlayer_Blind();
-	if (!registry)
+	if (!registry || (deferredBlindRegistry_ && deferredBlindRegistry_ != registry))
 		return false;
 	functions_ = functions;
 	blindRegistry_ = registry;
 	blindListener_ = listener;
 	blindContext_ = context;
 	eventOwner_ = this;
-	registry->registerHook(&onBlind, HC_PRIORITY_LOW);
+	if (deferredBlindRegistry_)
+		deferredBlindRegistry_ = nullptr;
+	else
+		registry->registerHook(&onBlind, HC_PRIORITY_LOW);
 	return eventOwner_ == this && blindRegistry_ == registry;
 }
 
@@ -198,6 +207,9 @@ void ReGameDllObservationProvider::onBotEvent(
 		case EVENT_BOMB_DEFUSING:
 			listener(context, NativeBotEvent::DefuseStarted, source);
 			break;
+		case EVENT_PLAYER_SPAWNED:
+			listener(context, NativeBotEvent::PlayerSpawned, source);
+			break;
 		default:
 			break;
 		}
@@ -214,11 +226,21 @@ void ReGameDllObservationProvider::onBotEvent(
 void ReGameDllObservationProvider::onBlind(
 	BlindChain *chain, CBasePlayer *player, float duration, float hold, float fade, int alpha)
 {
+	++blindDispatchDepth_;
 	auto *owner = eventOwner_;
 	const auto revision = owner ? owner->eventRevision_ : 0U;
+	std::function<void()> complete;
+	if (player && owner && owner->blindListener_)
+		complete = owner->blindListener_(owner->blindContext_, player, duration);
 	chain->callNext(player, duration, hold, fade, alpha);
-	if (player && owner && owner == eventOwner_ && owner->eventRevision_ == revision && owner->blindListener_)
-		owner->blindListener_(owner->blindContext_, player, duration);
+	if (complete && owner == eventOwner_ && owner->eventRevision_ == revision)
+		complete();
+	if (--blindDispatchDepth_ == 0 && deferredBlindRegistry_)
+	{
+		auto *registry = deferredBlindRegistry_;
+		deferredBlindRegistry_ = nullptr;
+		registry->unregisterHook(&onBlind);
+	}
 }
 
 int ReGameDllObservationProvider::onDamage(DamageChain *chain, CBasePlayer *player, entvars_s *inflictor,

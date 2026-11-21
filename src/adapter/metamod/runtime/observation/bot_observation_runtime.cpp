@@ -1187,18 +1187,17 @@ void BotObservationRuntime::capturePublicMessage()
 		services_->service_globals() != nullptr && v[3] == kMaximumMessageByte && v[4] == kMaximumMessageByte &&
 		v[5] == kMaximumMessageByte && v[6] > kMinimumBlindFadeAlpha)
 	{
-		// HUD fade duration is fixed point (1 << 12); private blindness remains unavailable.
+		// The HUD duration is fixed point (1 << 12). Keep it independent of the GameDLL clock.
 		const float duration =
 			static_cast<float>((std::max)(0, v[0]) + (std::max)(0, v[1])) / kFadeDurationUnitsPerSecond;
-		(void)publicObservations_.blind(
+		(void)publicObservations_.screenFade(
 			publicMessageActor_, publicMessageFrame_, services_->service_globals()->time + duration);
 	}
 	else if (std::strcmp(name, "ResetHUD") == 0)
 	{
 		services_->behavior_resetEquipment(publicMessageActor_.slot - 1U, true);
 		services_->navigation_observeResetHud(publicMessageActor_.slot - 1U);
-		publicObservations_.resetSlot(publicMessageActor_.slot);
-		publicObservations_.bind(publicMessageActor_, publicMessageFrame_);
+		publicObservations_.resetHud(publicMessageActor_, publicMessageFrame_);
 	}
 }
 
@@ -1440,9 +1439,7 @@ bool BotObservationRuntime::collectManagedPerception(
 		return false;
 	}
 	const auto acquiredEnemy = services_->behavior_currentEnemySource(index);
-	compat::PublicActorState sightState{};
-	const bool blinded = publicObservations_.read(observer, frame, &sightState) &&
-		services_->service_globals()->time < sightState.blindUntil;
+	const bool blinded = publicObservations_.isBlinded(observer, frame, services_->service_globals()->time, compatibility);
 	const int observerTeam = resolvePlayerTeam(handle.entity);
 	const int maxClients = std::max(0, std::min(services_->service_globals()->maxClients, kMaximumClientSlot));
 	for (int slot = 1; slot <= maxClients; ++slot)
@@ -1593,13 +1590,11 @@ bool BotObservationRuntime::observeObjective(
 			return true;
 		}
 	}
-	compat::PublicActorState publicState{};
 	const bool blind = services_->service_globals() != nullptr &&
-		publicObservations_.read({handle.actor.slot, handle.actor.actorGeneration},
+		publicObservations_.isBlinded({handle.actor.slot, handle.actor.actorGeneration},
 			{services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
 				services_->service_adapterFrameCount()},
-			&publicState) &&
-		services_->service_globals()->time < publicState.blindUntil;
+			services_->service_globals()->time, compatibility);
 	bool visible = !compatibility;
 	const auto &observer = handle.entity->v;
 	if (compatibility && !blind && services_->service_engineFunctions()->pfnTraceLine != nullptr &&
@@ -1771,12 +1766,14 @@ void BotObservationRuntime::probeMapProvider()
 {
 	nativeWeaponSources_ = {};
 	optionalObservations_.probeLoadedGameDll();
-	optionalObservations_.connectBlindEvents([](void *context, const void *player, float duration) {
+	const bool blindEventsAvailable = optionalObservations_.connectBlindEvents([](void *context, const void *player, float duration) {
 		auto &observer = *static_cast<BotObservationRuntime *>(context);
-		observer.observeGameDllBlind(player, duration, [&observer](const char *name) {
+		return observer.prepareGameDllBlind(player, duration, [&observer](const char *name) {
 			return observer.optionalObservations_.findClientObject(name);
 		});
 	}, this);
+	const auto *engine = services_->service_engineFunctions();
+	publicObservations_.setGameDllBlindEventsAvailable(blindEventsAvailable && engine && engine->pfnPvEntPrivateData);
 	optionalObservations_.connectDamageEvents([](void *context, const void *player, const entvars_t *inflictor) {
 		auto &observer = *static_cast<BotObservationRuntime *>(context);
 		observer.observeGameDllDamage(player, inflictor, [&observer](const char *name) {
@@ -1829,6 +1826,13 @@ bool BotObservationRuntime::hasNativeWeaponEvents(const edict_t *source, int slo
 
 void BotObservationRuntime::observeGameDllBotEvent(NativeBotEvent kind, const void *player)
 {
+	if (kind == NativeBotEvent::PlayerSpawned)
+	{
+		const auto receipt = resolveGameDllClient(player, {}, true);
+		if (receipt.actor.isValid())
+			publicObservations_.gameDllSpawn(receipt.actor, receipt.frame);
+		return;
+	}
 	if (kind == NativeBotEvent::DefuseEnded)
 	{
 		nativeDefuser_ = {};
@@ -1937,14 +1941,35 @@ void BotObservationRuntime::observeGameDllBotEvent(NativeBotEvent kind, const vo
 	}
 }
 
-void BotObservationRuntime::observeGameDllBlind(const void *player, float duration,
+std::function<void()> BotObservationRuntime::prepareGameDllBlind(const void *player, float duration,
 	const std::function<const void *(const char *)> &findClientObject)
 {
-	if (!std::isfinite(duration) || duration < 0.0f)
-		return;
-	const auto receipt = resolveGameDllClient(player, findClientObject);
-	if (receipt.actor.isValid())
+	const auto *globals = services_->service_globals();
+	const auto *engine = services_->service_engineFunctions();
+	if (!globals || !std::isfinite(duration) || duration < 0.0f)
+		return {};
+	const float now = globals->time;
+	const auto receipt = resolveGameDllClient(player, findClientObject, true);
+	if (!receipt.actor.isValid() || receipt.entity->v.deadflag != DEAD_NO || !(receipt.entity->v.health > 0.0f))
+		return {};
+	return [this, receipt, globals, engine, now, duration] {
+		const auto &life = services_->service_lifecycle();
+		if (!services_->runtimeIsActive() || services_->service_globals() != globals ||
+			services_->service_engineFunctions() != engine || globals->time != now ||
+			!(receipt.frame == world::FrameIdentity{life.mapGeneration(), life.roundGeneration(),
+				services_->service_adapterFrameCount()}) || life.slotGeneration(receipt.actor.slot) != receipt.connection ||
+			publicObservations_.lifeRevision(receipt.actor) != receipt.lifeRevision)
+			return;
+		const auto &current = services_->service_managedBotHandles()[receipt.index];
+		const auto *entity = receipt.entity;
+		if (!services_->service_managedBotSlots()[receipt.index] || current.entity != entity ||
+			current.actor.slot != receipt.actor.slot || current.actor.actorGeneration != receipt.actor.generation ||
+			entity->free || entity->serialnumber != receipt.serial || entity->v.deadflag != DEAD_NO ||
+			!(entity->v.health > 0.0f))
+			return;
+		(void)publicObservations_.gameDllBlind(receipt.actor, receipt.frame, now + duration);
 		services_->behavior_observePlayerBlind(receipt.index, receipt.actor, receipt.frame);
+	};
 }
 
 void BotObservationRuntime::observeGameDllDamage(const void *player, const entvars_t *inflictor,
@@ -1980,12 +2005,15 @@ void BotObservationRuntime::observeGameDllDamage(const void *player, const entva
 }
 
 BotObservationRuntime::GameDllClientReceipt BotObservationRuntime::resolveGameDllClient(
-	const void *player, const std::function<const void *(const char *)> &findClientObject) const
+	const void *player, const std::function<const void *(const char *)> &findClientObject, bool useOpaqueIdentity) const
 {
 	const auto *globals = services_->service_globals();
 	const auto *engine = services_->service_engineFunctions();
-	if (!player || !findClientObject || !globals || !engine || !engine->pfnSzFromIndex || !engine->pfnFindEntityByString ||
-		!engine->pfnIndexOfEdict || !services_->runtimeIsActive())
+	if (!player || !globals || !engine || !services_->runtimeIsActive())
+		return {};
+	const auto opaqueLookup = useOpaqueIdentity ? engine->pfnPvEntPrivateData : nullptr;
+	if (!opaqueLookup && (!findClientObject || !engine->pfnSzFromIndex || !engine->pfnFindEntityByString ||
+			!engine->pfnIndexOfEdict))
 		return {};
 	const auto &life = services_->service_lifecycle();
 	const world::FrameIdentity frame{life.mapGeneration(), life.roundGeneration(), services_->service_adapterFrameCount()};
@@ -2002,34 +2030,48 @@ BotObservationRuntime::GameDllClientReceipt BotObservationRuntime::resolveGameDl
 		const auto &handle = handles[index];
 		const world::ActorKey actor{handle.actor.slot, handle.actor.actorGeneration};
 		auto *entity = handle.entity;
-		if (!actor.isValid() || !services_->service_managedBotSlots()[index] || !entity || entity->free || !entity->v.netname)
+		if (!actor.isValid() || !services_->service_managedBotSlots()[index] || !entity || entity->free ||
+			(!opaqueLookup && !entity->v.netname))
 			continue;
 		const int serial = entity->serialnumber;
 		const auto connection = life.slotGeneration(actor.slot);
+		const auto lifeRevision = publicObservations_.lifeRevision(actor);
 		const auto nameIndex = entity->v.netname;
-		const char *name = engine->pfnSzFromIndex(nameIndex);
-		if (!current())
-			return {};
-		const std::string netname = name ? name : "";
-		if (netname.empty() || findClientObject(netname.c_str()) != player)
+		if (opaqueLookup)
 		{
+			// Compare opaque engine identities without accessing private GameDLL fields.
+			const bool matches = opaqueLookup(entity) == player;
 			if (!current())
 				return {};
-			continue;
+			if (!matches)
+				continue;
 		}
-		// The GameDLL public lookup returns the opaque object for the same engine key.
-		// Report only when that key names exactly one engine entity.
-		if (!current() || engine->pfnFindEntityByString(nullptr, "netname", netname.c_str()) != entity || !current())
-			return {};
-		const auto *other = engine->pfnFindEntityByString(entity, "netname", netname.c_str());
-		if (!current() || (other && engine->pfnIndexOfEdict(other) > 0) || !current())
-			return {};
+		else
+		{
+			const char *name = engine->pfnSzFromIndex(nameIndex);
+			if (!current())
+				return {};
+			const std::string netname = name ? name : "";
+			if (netname.empty() || findClientObject(netname.c_str()) != player)
+			{
+				if (!current())
+					return {};
+				continue;
+			}
+			// Without opaque identities, check that the public name identifies exactly one engine entity.
+			if (!current() || engine->pfnFindEntityByString(nullptr, "netname", netname.c_str()) != entity || !current())
+				return {};
+			const auto *other = engine->pfnFindEntityByString(entity, "netname", netname.c_str());
+			if (!current() || (other && engine->pfnIndexOfEdict(other) > 0) || !current())
+				return {};
+		}
 		const auto &live = services_->service_managedBotHandles()[index];
 		if (!services_->service_managedBotSlots()[index] || live.entity != entity || live.actor.slot != actor.slot ||
 			live.actor.actorGeneration != actor.generation || life.slotGeneration(actor.slot) != connection ||
-			entity->free || entity->serialnumber != serial || entity->v.netname != nameIndex)
+			entity->free || entity->serialnumber != serial || (!opaqueLookup && entity->v.netname != nameIndex) ||
+			lifeRevision != publicObservations_.lifeRevision(actor))
 			return {};
-		return {index, actor, frame};
+		return {index, actor, frame, entity, serial, connection, lifeRevision};
 	}
 	return {};
 }
@@ -2071,6 +2113,7 @@ void BotObservationRuntime::deactivateMapProvider()
 	nativeDefuser_ = {};
 	nativeWeaponSources_ = {};
 	optionalObservations_.reset();
+	publicObservations_.setGameDllBlindEventsAvailable(false);
 }
 
 void BotObservationRuntime::configurePerformance(bool disableVision, bool disableTrace)

@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <functional>
 
 namespace
 {
@@ -11,7 +12,12 @@ class TestBlindRegistry final : public IReGameHookRegistry_CBasePlayer_Blind
 {
 public:
 	hookfunc_t hook = nullptr;
-	void registerHook(hookfunc_t callback, int) override { hook = callback; }
+	int registrations = 0;
+	void registerHook(hookfunc_t callback, int) override
+	{
+		hook = callback;
+		++registrations;
+	}
 	void unregisterHook(hookfunc_t callback) override
 	{
 		if (hook == callback)
@@ -57,12 +63,20 @@ class TestBlindChain final : public IReGameHook_CBasePlayer_Blind
 {
 public:
 	int calls = 0;
-	astrabot::metamod::ReGameDllObservationProvider *resetOnNext = nullptr;
-	void callNext(CBasePlayer *, float, float, float, int) override
+	CBasePlayer *player = nullptr;
+	float duration = 0.0f, hold = 0.0f, fade = 0.0f;
+	int alpha = 0;
+	std::function<void()> onNext;
+	void callNext(CBasePlayer *victim, float time, float holdTime, float fadeTime, int opacity) override
 	{
 		++calls;
-		if (resetOnNext)
-			resetOnNext->reset();
+		player = victim;
+		duration = time;
+		hold = holdTime;
+		fade = fadeTime;
+		alpha = opacity;
+		if (onNext)
+			onNext();
 	}
 	void callOriginal(CBasePlayer *, float, float, float, int) override { calls += 100; }
 };
@@ -165,34 +179,88 @@ bool testBlindEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 			? reinterpret_cast<CBaseEntity *>(&botObject) : nullptr;
 	};
 	provider.probe(factory);
-	struct Notice { int count = 0; const void *player = nullptr; float duration = 0; } notice;
-	if (!provider.connectBlindEvents([](void *context, const void *player, float duration) {
-			auto &event = *static_cast<Notice *>(context);
-			++event.count;
-			event.player = player;
-			event.duration = duration;
-		}, &notice) || !api.hooks.blind.hook)
+	TestBlindChain chain;
+	struct Notice
+	{
+		TestBlindChain &chain;
+		astrabot::metamod::ReGameDllObservationProvider &provider;
+		int preparations = 0, completions = 0;
+		int callsAtPreparation = -1, callsAtCompletion = -1;
+		const void *player = nullptr;
+		float duration = 0.0f;
+		bool dispatchingAtPreparation = false, dispatchingAtCompletion = false;
+		bool resetOnPrepare = false, hookRetainedAfterReset = false;
+	} notice{chain, provider};
+	const auto prepare = [](void *context, const void *player, float duration) -> std::function<void()> {
+		auto &event = *static_cast<Notice *>(context);
+		++event.preparations;
+		event.callsAtPreparation = event.chain.calls;
+		event.dispatchingAtPreparation = event.provider.dispatchingEvents();
+		event.player = player;
+		event.duration = duration;
+		if (event.resetOnPrepare)
+		{
+			event.provider.reset();
+			event.hookRetainedAfterReset = api.hooks.blind.hook != nullptr;
+		}
+		if (duration == 0.0f)
+			return {};
+		return [&event] {
+			++event.completions;
+			event.callsAtCompletion = event.chain.calls;
+			event.dispatchingAtCompletion = event.provider.dispatchingEvents();
+		};
+	};
+	if (!provider.connectBlindEvents(prepare, &notice) || !api.hooks.blind.hook)
 	{
 		std::fputs("failed to subscribe to the public ReGameDLL player blindness hook\n", stderr);
 		return false;
 	}
-	TestBlindChain chain;
 	auto *player = reinterpret_cast<CBasePlayer *>(&botObject);
 	api.hooks.blind.hook(&chain, player, 1.25f, 2.0f, 3.0f, 255);
-	if (chain.calls != 1 || notice.count != 1 || notice.player != player || notice.duration != 1.25f ||
+	if (chain.calls != 1 || chain.player != player || chain.duration != 1.25f || chain.hold != 2.0f ||
+		chain.fade != 3.0f || chain.alpha != 255 || notice.preparations != 1 || notice.completions != 1 ||
+		notice.player != player || notice.duration != 1.25f || notice.callsAtPreparation != 0 ||
+		notice.callsAtCompletion != 1 || !notice.dispatchingAtPreparation || !notice.dispatchingAtCompletion ||
+		provider.dispatchingEvents() ||
 		provider.findClientObject("Test Bot") != player || provider.findClientObject("Other Bot") != nullptr)
 		return false;
-	chain.resetOnNext = &provider;
+
+	api.hooks.blind.hook(&chain, player, 0.0f, 0.0f, 0.0f, 0);
+	api.hooks.blind.hook(&chain, nullptr, 1.0f, 1.0f, 1.0f, 200);
+	if (chain.calls != 3 || chain.player != nullptr || notice.preparations != 2 || notice.completions != 1)
+		return false;
+
+	bool reconnected = false;
+	const int registrations = api.hooks.blind.registrations;
+	chain.onNext = [&] {
+		provider.probe(factory);
+		reconnected = api.hooks.blind.hook && provider.dispatchingEvents() &&
+			provider.connectBlindEvents(prepare, &notice);
+	};
+	api.hooks.blind.hook(&chain, player, 1.0f, 1.0f, 1.0f, 200);
+	if (chain.calls != 4 || notice.preparations != 3 || notice.completions != 1 || !reconnected ||
+		api.hooks.blind.registrations != registrations || !api.hooks.blind.hook || provider.dispatchingEvents())
+		return false;
+
+	chain.onNext = {};
+	api.hooks.blind.hook(&chain, player, 1.0f, 1.0f, 1.0f, 200);
+	if (chain.calls != 5 || notice.preparations != 4 || notice.completions != 2 || notice.callsAtCompletion != 5)
+		return false;
+
+	notice.resetOnPrepare = true;
 	api.hooks.blind.hook(&chain, player, 1.0f, 1.0f, 1.0f, 200);
 	api.enableHooks = false;
-	return chain.calls == 2 && notice.count == 1 && !api.hooks.blind.hook;
+	return chain.calls == 6 && notice.preparations == 5 && notice.completions == 2 &&
+		notice.hookRetainedAfterReset && !api.hooks.blind.hook && !provider.dispatchingEvents();
 }
 
 bool testDamageEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 {
 	api.enableHooks = true;
 	provider.probe(factory);
-	if (!provider.connectBlindEvents([](void *, const void *, float) {}, nullptr) || !api.hooks.blind.hook)
+	if (!provider.connectBlindEvents([](void *, const void *, float) -> std::function<void()> { return {}; }, nullptr) ||
+		!api.hooks.blind.hook)
 		return false;
 	struct Notice
 	{
@@ -296,8 +364,12 @@ bool testBotEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 	api.hooks.weapon.hook(&chain, EVENT_BOMB_DEFUSED, source, nullptr);
 	if (notice.count != 7 || notice.event != NativeBotEvent::DefuseEnded)
 		return false;
+	api.hooks.weapon.hook(&chain, EVENT_PLAYER_SPAWNED, source, nullptr);
+	if (notice.count != 8 || notice.event != NativeBotEvent::PlayerSpawned || notice.source != source)
+		return false;
+	api.hooks.weapon.hook(&chain, EVENT_PLAYER_SPAWNED, nullptr, nullptr);
 	provider.reset();
-	if (chain.count != 9 || notice.count != 7 || api.hooks.weapon.hook)
+	if (chain.count != 11 || notice.count != 8 || api.hooks.weapon.hook)
 		return false;
 
 	provider.probe(factory);
@@ -314,7 +386,7 @@ bool testBotEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 		}, &resetNotice))
 		return false;
 	api.hooks.weapon.hook(&chain, EVENT_WEAPON_RELOADED, source, nullptr);
-	return chain.count == 10 && remainedRegistered && !api.hooks.weapon.hook && !provider.dispatchingEvents();
+	return chain.count == 12 && remainedRegistered && !api.hooks.weapon.hook && !provider.dispatchingEvents();
 }
 
 int main()

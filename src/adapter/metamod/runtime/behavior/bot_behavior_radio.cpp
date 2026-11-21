@@ -1851,9 +1851,7 @@ void BotBehaviorRuntime::observePlayerDamage(std::size_t index, world::ActorKey 
 					sourceConnection.generation) || !receipt.alive || memory.surprised(receipt))
 				return;
 
-			compat::PublicActorState sight{};
-			const bool blinded = services_->observation_publicObservations().read(actor, frame, &sight) &&
-				receipt.now < sight.blindUntil;
+			const bool blinded = isBlinded(actor, frame, receipt.now);
 			const world::ActorKey sourceActor{sourceConnection.slot, (std::max)(1U, sourceConnection.generation)};
 			perception::VisionObservation visibility{};
 			if (!blinded && (services_->observation_observationAdapter().collectVisibility(
@@ -2122,9 +2120,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 	world::WorldSnapshot belief;
 	world::ActorKey selected{};
 	world::WorldPosition selectedPosition{};
-	compat::PublicActorState ownObservation{};
-	const bool blind = services_->observation_publicObservations().read(input.actor, input.frame, &ownObservation) &&
-		services_->service_globals()->time < ownObservation.blindUntil;
+	const bool blind = isBlinded(input.actor, input.frame, services_->service_globals()->time);
 	const bool haveBelief = !blind && prepareManagedPerception(index, &belief, &selected, &selectedPosition);
 	if (!receiptCurrent())
 		return;
