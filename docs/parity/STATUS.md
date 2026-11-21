@@ -1,3 +1,23 @@
+## MoveToの経路終端後のPlant開始（2026-11-22）
+
+基点 `95aec579`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。CSBot MoveToの発話は経路更新より前に行い、UpdatePathMovementがPROGRESSING以外になってからzone内・C4所持ならPlantへ入る。互換adapterのphaseだけによる早期要求を除去し、進行中／観測不能はMoveToを保持、終端・失敗時には公開zoneとC4所持を取り直す。Actor/edict serial・frame/time・full-update・revision・normal/Attack epoch・target generationを検証し、callbackによる再入後は旧NAV終端処理を続けない。新しいPlantのOnUpdateは同更新で呼ばない。床の視線点は入場時の実yawから設定する。
+
+通常Plant専用処理がある互換モードで旧PlantAttemptを開始しない。これにより、MoveTo中のphase到達だけでC4を選択し移動を停止する裏経路も除去した。正規fixtureのREDでこの停止を確認後に修正した。発話のstrict >2秒境界は維持し、到着fixtureはNAV区間を通過し、actor hullを含め区域外に保った後で2秒ちょうど／2.125秒に到着する。防衛fixtureのC4除去はPlant到達後、後半のFollow移動検証は新しいPlant報告が割り込まない構成にする。自然Follow成立直後の別ケースでFollow→Plant陽性も保持した。
+
+最終オフラインはWindows x86 **171/171・PE7**、終了後の単独Linux x86 **170/170・ELF7** 合格。DLL SHA-256 `f176ab5079cc2e6b4debbe27c64e95c76d73b3675c727ee30bbb5661d1dbc003`、ELF `609201ff9e46859d202be10691f3f6bf4d6cfdf513949f7461480e1093860aef`。製品・PDB・採録・保持指紋は `artifacts/local/debug/csbot-move-plant-order-20261122`、全ログと実行手順は `C:/Temp/astrabot-move-plant-order`。一時LNK1163は既存incremental .ilkを証拠へ退避して再リンクし、ソース/SDK/cache設定変更は行っていない。
+
+最終DLLの隔離HLDS0/7/8/11と読取専用CDB11は全て実PID終了0・forced=false。0は14.546655秒、自然NAV11は74.637466秒に実設置成功。7は11.629729秒に区域外へ移動、8は11.489011秒に実drop entity99・hasC4=0。CDB11はmodule-load後にBPを置き、60.29094315秒・full0x1d9でNAV終端outcome2→旧MoveToからPlantの順を直接採録した。固定nativeは実UpdatePathMovementのPATH_FAILURE=2→Plantを58.207436秒に採録。旧95aec579は64.39331818秒に経路評価前のPlant入場を採録した。軌跡や絶対時刻を同値とは主張しない。fixtureの明示的C4在庫bit同期は残り、自然拾得や標準GameDLL全体の受入れではない。
+
+固定履歴baselineは再生成せず、両OS同じ19か所のoffset/前後hash限定補正で152248→152258行を全行照合。終端後の公開zone再観測で32行増え、旧PlantAttemptの重複geometry走査を除去して22行減る。RNG510行は各OSの親履歴と順序・値とも全一致。途中候補・失敗CDBは最終合格に流用せず保持する。
+
+残件は次の5群。入場fullのNAV末尾入力はnative buttons14と最終Astra buttons4で差が残り、この単位では変更しない。
+
+1. Plant前Idleの一般経路準備、Plant入場更新のNAV末尾移動入力。
+2. 通常Idle/Buyの視線供給、Combat/Guardを含む共有角速度、C4初回未装備・実水没条件。
+3. Hunt/NAV移動、同一area/fallback、味方待機、cs_assaultのはしご、経路失敗。
+4. 視認した敵をAimせず通過する問題、旋回カクつき、多人数の継続性能。
+5. 標準GameDLLの公開観測経路、未網羅のCSBot参照差分。
+
 ## Plant開始前の状態判断とAhead供給（2026-11-22）
 
 基点 `3cde77b`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。Idleおよび有効leaderを持つFollowはC4所持・bomb zone内なら直接Plantへ入る。Huntは共有設置期限、またはzone内かつ最後の実敵接触からstrict >3秒でIdleへ戻り、その更新の経路・target/RNG処理を行わない。次のIdle更新でzone内ならPlant、区域外で期限後なら最寄りの到達可能siteへMoveToとする。設置判断を `managedBombApproaches.finished` の更新待ちにしない。短いround残時間も共有期限の代用にしない。

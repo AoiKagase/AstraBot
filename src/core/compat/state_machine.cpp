@@ -427,7 +427,12 @@ StateResult CompatibilityStateMachine::finishNavigation(
 		}
 		return StateResult::Updated;
 	}
-	updateBehavior(value);
+	const auto epoch = normalStateEpoch_;
+	const auto attack = attackEntryEpoch_;
+	const bool transitioned = updateBehavior(value);
+	if (context.transitionExecution && (!context.transitionExecution->current() ||
+		(!transitioned && (normalStateEpoch_ != epoch || attackEntryEpoch_ != attack))))
+		return StateResult::InvalidContext;
 	return before == state_ ? StateResult::Updated : StateResult::Transitioned;
 }
 
@@ -645,7 +650,10 @@ bool CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context
 		{
 			if (input.navigation.outcome == NavigationStepOutcome::EndOfPath ||
 				input.navigation.outcome == NavigationStepOutcome::PathFailure)
-				next = task_ == CompatibilityTaskId::DefuseBomb && input.defuseGoalKnown && input.withinDefuseRange &&
+				next = task_ == CompatibilityTaskId::PlantBomb && input.plantCarryingKnown && input.plantCarrying &&
+						input.inInteractionRange
+					? CompatibilityStateId::PlantBomb
+					: task_ == CompatibilityTaskId::DefuseBomb && input.defuseGoalKnown && input.withinDefuseRange &&
 						(input.reloadKnown || input.reloadInferred) && !input.reloading
 					? CompatibilityStateId::DefuseBomb
 					: CompatibilityStateId::Idle;
@@ -749,9 +757,11 @@ bool CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context
 		behaviorDecision_.clearPath = true;
 		behaviorDecision_.clearMovement = true;
 		behaviorDecision_.action = StateAction::None;
-		transitionInternal(next,
+		const auto result = transitionInternal(next,
 			input.pathFailed ? StateTransitionReason::PathFailure : StateTransitionReason::ObjectiveChanged,
 			StateTransitionId::ExplicitStateChange, context, false);
+		if (context.transitionExecution && result == StateResult::InvalidContext)
+			return false;
 	}
 	return true;
 }

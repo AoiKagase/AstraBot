@@ -88,6 +88,22 @@ bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 	if (currentState == compat::CompatibilityStateId::DefuseBomb ||
 		currentState == compat::CompatibilityStateId::PlantBomb || currentState == compat::CompatibilityStateId::Buy)
 		step.outcome = Outcome::NotEvaluated;
+	const bool plantPathEnded = currentState == compat::CompatibilityStateId::MoveTo &&
+		actors_[index].managedBotStateMachines.task() == compat::CompatibilityTaskId::PlantBomb &&
+		!actors_[index].managedBotStateMachines.attackOverlayActive() &&
+		(step.outcome == Outcome::EndOfPath || step.outcome == Outcome::PathFailure);
+	const auto plantReceipt = plantPathEnded ? reactionContext(index) : compat::ReactionContext{};
+	const auto plantRevision = actors_[index].executionRevision;
+	const auto plantEpoch = actors_[index].managedBotStateMachines.normalStateEpoch();
+	const auto plantAttack = actors_[index].managedBotStateMachines.attackEntryEpoch();
+	const auto plantCurrent = [&] {
+		return executionCurrent(index, plantReceipt, plantRevision) && plantReceipt.actor == context.actor &&
+			plantReceipt.frame == context.frame && actors_[index].managedBotStateMachines.normalStateEpoch() == plantEpoch &&
+			actors_[index].managedBotStateMachines.attackEntryEpoch() == plantAttack &&
+			!actors_[index].managedBotStateMachines.attackOverlayActive() &&
+			services_->service_managedBotFullUpdateSequences()[index] == step.fullUpdateSequence &&
+			actors_[index].managedBotObjectiveTargets.generation == step.goalGeneration;
+	};
 	step.pathDestroyedAfterMovement = step.outcome == Outcome::Progressing &&
 		decision.recomputeReason == runtime::NavRecomputeReason::PathInvalidated;
 	input.navigation = step;
@@ -125,6 +141,19 @@ bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 			context.actor, context.frame, timing, &observation) == ObservationAdapterResult::Accepted &&
 		observation.weapon.reloadState.isAvailable())
 		reload = observation.weapon.reloadState.value;
+	if (plantPathEnded)
+	{
+		if (!plantCurrent()) return false;
+		input.inInteractionRange = managedActorAtBombSite(index);
+		if (!plantCurrent()) return false;
+		compat::CompatibilityObservation plantObservation{};
+		const bool observed = input.inInteractionRange && services_->observation_observationAdapter().collectActor(
+			services_->service_managedBotHandles()[index].entity, context.actor, context.frame, timing,
+			&plantObservation) == ObservationAdapterResult::Accepted;
+		if (!plantCurrent()) return false;
+		input.plantCarryingKnown = observed && plantObservation.objective.carryingC4.isAvailable();
+		input.plantCarrying = input.plantCarryingKnown && plantObservation.objective.carryingC4.value;
+	}
 	if (reload == combat::ReloadState::Unknown && currentState == compat::CompatibilityStateId::MoveTo &&
 		input.defuseGoalKnown && input.withinDefuseRange && input.navigationOwned &&
 		!actors_[index].managedBotStateMachines.attackOverlayActive() &&
@@ -165,8 +194,29 @@ bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 	const auto pursuitTarget = pursuitPathEnded ? actor.managedTaskEntity : world::EntityKey{};
 	const auto receipt = pursuitTarget.isValid() ? reactionContext(index) : compat::ReactionContext{};
 	const auto revision = actor.executionRevision;
+	struct PlantNavigationExecution final : compat::IStateTransitionExecution
+	{
+		std::function<bool()> valid;
+		bool current() const override { return valid(); }
+	} plantExecution;
+	if (plantPathEnded)
+	{
+		plantExecution.valid = [&] {
+			const auto nextEpoch = plantEpoch + 1U == 0U ? 1U : plantEpoch + 1U;
+			return executionCurrent(index, plantReceipt, plantRevision) && machine.attackEntryEpoch() == plantAttack &&
+				!machine.attackOverlayActive() && services_->service_managedBotFullUpdateSequences()[index] == step.fullUpdateSequence &&
+				actor.managedBotObjectiveTargets.generation == step.goalGeneration &&
+				(machine.normalStateEpoch() == plantEpoch || (machine.normalStateEpoch() == nextEpoch &&
+					(machine.state() == compat::CompatibilityStateId::PlantBomb || machine.state() == compat::CompatibilityStateId::Idle)));
+		};
+		context.transitionExecution = &plantExecution;
+		if (!plantCurrent()) return false;
+	}
 	const auto transition = step.outcome == Outcome::ObjectivePathPrepared
 		? compat::StateResult::NoOp : machine.finishNavigation(context, lookAfterFetchFailure);
+	context.transitionExecution = nullptr;
+	if (plantPathEnded && transition == compat::StateResult::InvalidContext)
+		return false;
 	if (transition == compat::StateResult::InvalidContext && step.outcome == Outcome::FetchPathBuildFailed)
 		return false;
 	const auto resultingEpoch = machine.normalStateEpoch();
@@ -179,6 +229,13 @@ bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 		services_->applyNavigationRequest({index, NavigationRequestKind::PublishStep, step});
 	if (machine.state() != previous)
 	{
+		if (machine.state() == compat::CompatibilityStateId::PlantBomb)
+		{
+			const auto &entity = services_->service_managedBotHandles()[index].entity->v;
+			const float yaw = entity.v_angle.y * 0.017453292519943295f;
+			actor.plantFloorLook = {entity.origin.x + 10.0f * std::cos(yaw),
+				entity.origin.y + 10.0f * std::sin(yaw), entity.origin.z - 18.0f};
+		}
 		if (previous == compat::CompatibilityStateId::FetchBomb)
 			actor.fetchBombGoal = {};
 		actors_[index].enemyReaction.onStateChange(reactionContext(index), previous, machine.state());
@@ -1844,7 +1901,9 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 			{
 				objectiveKind = objective.objective.kind;
 			}
-			if (objectives::PlantAttemptController::canBeginObjective(hasPlantAssignment, carryingBomb,
+			// Compatibility Plant actions belong to PlantBomb::OnUpdate above.
+			// A completed approach phase cannot start the legacy attempt during MoveTo.
+			if (!compatibility && objectives::PlantAttemptController::canBeginObjective(hasPlantAssignment, carryingBomb,
 					teamRole == objectives::TeamRole::Terrorist,
 					haveSelectedPlantTarget && actors_[index].managedBombApproaches.finished))
 			{

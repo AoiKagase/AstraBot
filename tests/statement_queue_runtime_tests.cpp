@@ -1737,7 +1737,7 @@ bool testProductionNavCenters(astrabot::metamod::PluginRuntime &runtime)
 	return ok;
 }
 bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalvars_t &globals, float arrivalAge = 0.0f,
-	bool defendAtSpot = false, bool stoppedCover = false)
+	bool defendAtSpot = false, bool stoppedCover = false, bool plantFollowerControl = false)
 {
 	using namespace astrabot;
 	globals.mapname = 6;
@@ -1830,12 +1830,16 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 				arrived = true;
 				observeUntil = (std::max)(observeUntil, globals.time + 12.0f);
 			}
-			else if (nextAge >= arrivalAge - .25f)
-				gEntities[0].v.origin.x = 194;
+			else
+				// Cross NAV segments without entering the site's bounds (including the actor hull).
+				gEntities[0].v.origin.x = (std::min)(199.0f, 112.0f + 112.0f * nextAge / arrivalAge);
 		}
 		tick();
 		sawDefendHide |= arrived && receiver.state() == compat::CompatibilityStateId::Hide;
-		if (defendAtSpot && arrived && !queueHelpSamples.empty())
+		// The planting report precedes path movement. Let the real terminal result
+		// enter Plant before this defense fixture removes the carrier's C4.
+		if (defendAtSpot && arrived &&
+			(sawPlantState || sender.state() == compat::CompatibilityStateId::PlantBomb) && !queueHelpSamples.empty())
 		{
 			gEntities[0].v.weapons &= ~(1 << 6);
 			gEntities[0].v.origin.x = 64;
@@ -1906,6 +1910,23 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 	if (!check(sawPlantMove, "real C4 carrier enters MoveTo with the PlantBomb task") ||
 		!check(followed, "natural completion of the production plant plan starts teammate Follow"))
 		return false;
+	if (plantFollowerControl)
+	{
+		// Check admission while the natural Follow receipt is current, before
+		// the separate ten-second route/gait exercise can leave that state.
+		const bool following = check(receiver.state() == compat::CompatibilityStateId::Follow,
+			"carrier control begins in Follow with its live managed leader");
+		gEntities[1].v.weapons |= 1 << 6;
+		gEntities[1].v.origin = Vector(224, 32, 36);
+		tick();
+		queueHelpRecording = false;
+		return check(receiver.state() == compat::CompatibilityStateId::PlantBomb &&
+			receiver.task() == compat::CompatibilityTaskId::PlantBomb && receiver.stateTimestamp() == globals.time,
+			"Follow with a valid leader and carried C4 enters Plant directly at the site") && following;
+	}
+	// The remaining exercise tests Follow locomotion. Prevent a later scripted
+	// leader teleport back into the site from issuing a new planting defense order.
+	gEntities[0].v.weapons &= ~(1 << 6);
 	gEntities[0].v.origin = Vector(168, 32, 36);
 	if (stoppedCover)
 	{
@@ -1996,17 +2017,6 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 	bool ok = heardPlan && heardReply &&
 		check(routedAhead, "Follow paths toward the nearest eligible NAV center ahead of the moving leader") &&
 		check(retargeted && moved, "follower routes to the moving source and dispatches actual movement");
-	if (arrivalAge > 2.0f)
-	{
-		ok = check(receiver.state() == compat::CompatibilityStateId::Follow,
-			"carrier control begins in Follow with its live managed leader") && ok;
-		gEntities[1].v.weapons |= 1 << 6;
-		gEntities[1].v.origin = Vector(224, 32, 36);
-		tick();
-		ok = check(receiver.state() == compat::CompatibilityStateId::PlantBomb &&
-			receiver.task() == compat::CompatibilityTaskId::PlantBomb && receiver.stateTimestamp() == globals.time,
-			"Follow with a valid leader and carried C4 enters Plant directly at the site") && ok;
-	}
 	if (arrivalAge == 0)
 	{
 		auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
@@ -3906,6 +3916,7 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		testActualHelpMovement(runtime, engine, globals, false, false, true, false, true) &&
 		testActualFollowMovement(runtime, globals, 2.0f) && testActualFollowMovement(runtime, globals, 2.0f, true) &&
 		testActualFollowMovement(runtime, globals, 2.125f) &&
-		testActualFollowMovement(runtime, globals) && testActualFollowMovement(runtime, globals, 0.0f, false, true);
+		testActualFollowMovement(runtime, globals) && testActualFollowMovement(runtime, globals, 0.0f, false, true) &&
+		testActualFollowMovement(runtime, globals, 2.125f, false, false, true);
 }
 }

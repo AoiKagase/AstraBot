@@ -710,6 +710,76 @@ bool testNavigationCannotUpdateIdleTwice()
 		"navigation completion cannot run a newly entered Idle OnUpdate in the same frame");
 }
 
+bool testGuardedNavigationRejectsNestedPlant()
+{
+	CompatibilityStateMachine machine({1U, 7U});
+	auto tick = context(1U, 1.0f, 1U);
+	machine.initialize(tick);
+	tick.moveToTask = CompatibilityTaskId::PlantBomb;
+	machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+		StateTransitionId::ExplicitStateChange, tick);
+	struct Guard final : IStateTransitionExecution { bool current() const override { return true; } } guard;
+	struct EnterReentry final : IStateTraceSink
+	{
+		CompatibilityStateMachine *machine = nullptr;
+		StateUpdateContext nested{};
+		bool handled = false;
+		void record(const StateTraceRecord &record) override
+		{
+			if (!handled && record.callbackState == CompatibilityStateId::PlantBomb && record.event == StateTraceEvent::OnEnter)
+			{
+				handled = true;
+				machine->transition(CompatibilityStateId::PlantBomb, StateTransitionReason::ExplicitRequest,
+					StateTransitionId::ExplicitStateChange, nested);
+			}
+		}
+	} trace;
+	StateBehaviorInput input{};
+	input.navigationOwned = input.plantCarryingKnown = input.plantCarrying = input.inInteractionRange = true;
+	tick = context(2U, 1.125f, 2U);
+	tick.behavior = &input;
+	input.navigation = {tick.actor, tick.frame, 1U, 1U, tick.fullUpdateSequence, NavigationStepOutcome::EndOfPath, false};
+	trace.machine = &machine;
+	trace.nested = tick;
+	machine.setTraceSink(&trace);
+	tick.transitionExecution = &guard;
+	return check(machine.finishNavigation(tick) == StateResult::InvalidContext && trace.handled &&
+		machine.state() == CompatibilityStateId::PlantBomb,
+		"finishNavigation reports rejected outer entry instead of borrowing an exact-target nested Plant transition");
+}
+
+bool testPlantWaitsForNavigationResult()
+{
+	const auto run = [](NavigationStepOutcome outcome, bool carrying, bool atSite, CompatibilityStateId expected) {
+		CompatibilityStateMachine machine({1U, 7U});
+		auto tick = context(1U, 1.0f, 1U);
+		machine.initialize(tick);
+		tick.moveToTask = CompatibilityTaskId::PlantBomb;
+		machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, tick);
+		StateBehaviorInput input{};
+		input.navigationOwned = input.goalAvailable = input.objectiveActive = true;
+		input.plantCarryingKnown = true;
+		input.plantCarrying = carrying;
+		input.inInteractionRange = atSite;
+		tick = context(2U, 1.125f, 2U);
+		tick.behavior = &input;
+		machine.update(tick);
+		input.navigation = {tick.actor, tick.frame, 1U, 1U, tick.fullUpdateSequence, outcome, false};
+		machine.finishNavigation(tick);
+		return check(machine.state() == expected &&
+			(expected != CompatibilityStateId::PlantBomb || machine.stateTimestamp() == tick.timestamp),
+			"Plant task checks possession and bomb zone only after an evaluated non-progressing path");
+	};
+	return run(NavigationStepOutcome::Progressing, true, true, CompatibilityStateId::MoveTo) &&
+		run(NavigationStepOutcome::NotEvaluated, true, true, CompatibilityStateId::MoveTo) &&
+		run(NavigationStepOutcome::ObservationUnavailable, true, true, CompatibilityStateId::MoveTo) &&
+		run(NavigationStepOutcome::EndOfPath, true, true, CompatibilityStateId::PlantBomb) &&
+		run(NavigationStepOutcome::PathFailure, true, true, CompatibilityStateId::PlantBomb) &&
+		run(NavigationStepOutcome::EndOfPath, false, true, CompatibilityStateId::Idle) &&
+		run(NavigationStepOutcome::PathFailure, true, false, CompatibilityStateId::Idle);
+}
+
 bool testGuardedExitCannotClearNewLook()
 {
 	CompatibilityStateMachine machine({1U, 7U});
@@ -793,7 +863,7 @@ bool testGuardedResetPathCannotOverwriteNewTask()
 
 int main()
 {
-	return testGuardedExitCannotClearNewLook() && testGuardedResetPathCannotOverwriteNewTask() && testNavigationCannotUpdateIdleTwice() && testRetainedTaskCompletion() &&
+	return testGuardedNavigationRejectsNestedPlant() && testPlantWaitsForNavigationResult() && testGuardedExitCannotClearNewLook() && testGuardedResetPathCannotOverwriteNewTask() && testNavigationCannotUpdateIdleTwice() && testRetainedTaskCompletion() &&
 			testNormalEntryEpochAndRetainedMoveTask() && testNoiseInvestigationNavigationCompletion() &&
 			testFetchBombNavigationCompletion() &&
 			testPlantCallbackInvalidation() && testNativePlantTerminalOrder() && testPlantTimeoutDoesNotAssignBombGuard() && testReferenceIdleAndHuntOwnTheirLifecycle() &&

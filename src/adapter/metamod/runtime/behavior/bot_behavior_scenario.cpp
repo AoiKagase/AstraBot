@@ -2054,6 +2054,17 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 			const auto &origin = carrier->v.origin;
 			plantMove->reportPosition = {origin.x, origin.y, origin.z};
 		}
+		if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+			machine.state() == compat::CompatibilityStateId::MoveTo && machine.task() == compat::CompatibilityTaskId::PlantBomb)
+		{
+			// MoveTo's chatter precedes UpdatePathMovement. Only its evaluated
+			// non-progressing result may admit Plant, independently of approach phase.
+			stateBehavior.objectiveActive = true;
+			stateBehavior.inInteractionRange = atBombsite;
+			if (context.requestedState == compat::CompatibilityStateId::PlantBomb)
+				context.requestTransition = false;
+			return;
+		}
 		const auto &teammate = actors_[index].teammateFollow;
 		const bool followingTeammate = teammate.entity.isValid() && stateBehavior.leaderAvailable &&
 			teammate.entity == actors_[index].scenarioPlanners.followLeader() &&

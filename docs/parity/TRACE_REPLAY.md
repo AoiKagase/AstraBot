@@ -1,5 +1,16 @@
 # P11 differential trace comparison
 
+## MoveTo terminal navigation before Plant, 2026-11-22
+
+Base95aec579, fixed native b088984. Final DLL `f176ab5079cc2e6b4debbe27c64e95c76d73b3675c727ee30bbb5661d1dbc003`, ELF `609201ff9e46859d202be10691f3f6bf4d6cfdf513949f7461480e1093860aef`. Windows171/171+PE7, then Linux170/170+ELF7 passed serially. See STATUS's latest section and `artifacts/local/debug/csbot-move-plant-order-20261122/README.md` for source/fixture limits and evidence identity.
+
+`C:/Temp/astrabot-move-plant-order/run.py final-natural <frozen-DLL> 0 7 8 11` verifies actual HLDS exit before every next launch. Mode11 prepares real de_dust2 NAV area41 at35s, past the shared plant deadline, and does not force pose/input/goal thereafter. Explicit fixture-only C4 inventory synchronization remains. Modes0/11 plant successfully;7 leaves the zone after arming;8 records real drop entity99 and lost possession. All five final trials, including read-only `final-route-debug`11, exit0/forced=false with identical DLL/PDB hashes.
+
+CDB waits for ld:astrabot_mm.dll then installs symbol-based BP. Layouts are verified by dt/disassembly: StateUpdateContext.behavior+0x28, StateBehaviorInput.navigation+0xc, NavigationStep.outcome+0x20. In final debugger.log lines8395–8413, post-path result1 is adapted to EndOfPath2; core finishNavigation still sees MoveTo/PlantBomb, then invokeEnter Plant runs at60.29094315/full0x1d9. Pinned native records real UpdatePathMovement return2(PATH_FAILURE) then Plant at58.207436. Baseline95aec579 records Plant before its following NAV result at64.39331818. Earlier candidate raw-debug used Idle→Plant and is only a negative boundary control. Failed candidate-route-debug used an invalid CDB expression and is excluded; its script/log/forced-exit manifest are preserved.
+
+`csbot-move-plant-order-{platform}.json.gz` pins19 blocks by original offset, exact before/after rows and chain/output SHA.32 added rows are8 fresh terminal zone observations;22 removed rows are11 legacy PlantAttempt duplicate geometry scans. Final traces152258 rows: Windows2854d213daf889fde4056badf94b5dc09541afe4d938c5c5add00a7cae0c88ac, Linuxc8fbb6d78179a6029db535e3890ab759bd0d62571e4cb1169adbd923fc7c88b1. RNG510 rows are unchanged in ordered per-platform comparison. Baselines remain immutable. Native entry buttons14 vs finalAstra4 remains a separate NAV-tail command issue, along with initial Idle path preparation.
+
+
 ## Plant pre-entry admission / retained Ahead, 2026-11-22
 
 Base `3cde77b`; native pin `b0889847fe6d03898be88acc9e366660efb40ab5`. Final-v2 DLL `fee8c705b979e8e2dfc35c29a15d54a68313d628127d05a23e71517812daef04`, ELF `1789fb95da504f22021204723b887c3140affd8025603183b845a0e05dd1a1bb`. Windows171/171+PE7 then Linux170/170+ELF7 passed serially. Source, binaries and preserved user-file fingerprints are under `artifacts/local/debug/csbot-plant-ahead-supply-20261122/final-v2`; raw evidence and scripts are in `C:/Temp/astrabot-plant-ahead-supply`.

@@ -18,7 +18,7 @@ CSBot側のファイルは `regamedll/dlls/bot/states/cs_bot_<略称>.cpp`。Ast
 | Hunt | `hunt` 32、47、219行 | 状態の30秒境界とローミング。参照版の巡回先とC4分岐の網羅照合は残件。 |
 | Idle | `idle` 37、52行 | 状態のリセット、Huntへの遷移、シナリオの優先順位。狙撃地点の割り当ては残件。 |
 | InvestigateNoise | `investigate_noise` 52、58、135行 | 音源の接地判定とNAV距離を修正。記憶の消費、接近、再選択は既存実行時テストで確認。 |
-| MoveTo | `move_to` 32、66、317行 | タスクの保持、経路完了、発話、視認による遷移。全タスクの遷移順照合は残件。 |
+| MoveTo | `move_to` 32、66、317行 | Plant発話→経路更新→非PROGRESSING時のzone/C4再確認→Plant入場を照合。互換旧PlantAttemptの先行装備/停止を除去。入場更新のNAV末尾入力と全タスク遷移順は残件。 |
 | PlantBomb | `plant_bomb` 32、45、75行、`cs_bot_weapon.cpp:411–470` | 公開弾薬・許可クラス・水没条件と共通5秒装備時計を使用。末尾はPrimaryAttack/即時SelectC4→所持喪失→strict5秒超、退出前EquipBest→起立→ResetStuck→Engage→注視取消の順へ接続した。喪失による新Hide timestampを古いPlant ageで上書きしない。通常設置・区域外timeout・実C4ドロップでAKに残る最終Attackと次fullまでの保持、退出fullのUpkeep実角保持を確認。次lightの通常look-goal/spring再開と後段NAV供給、私有複数スロット先頭、Plant初回C4未装備の直接実機は残件。 |
 | UseEntity | `use_entity` 33、38、69行、`player.cpp:9415` | 状態に入ったときの人質を保持する。コマンド更新ごとに視線を動かし、現在のyawとpitchが両方とも許容角20度未満のときにUSEを送る。コマンドが受理されると試行を記録してIdleへ移る。ネイティブの人質護送カウンターと追従者の照合は残件。 |
 
@@ -49,3 +49,15 @@ Windows170/170・Linux169/169、PE/ELF公開7関数と直列隔離実機11試行
 | プロファイル | `game_shared/bot/bot_profile.h:133–170`。各テンプレートは `Default` から生成し、適用時は `Default` と異なる値を順番に継承する。武器候補の継承は `Default` との件数差で判定する。 |
 
 実参照での判断・イベント・乱数順の再生は24、実機の照準・多人数FPS・ラグの受入れは25で扱う。
+
+## MoveToのPlant開始順序（2026-11-22追補）
+
+基点 `95aec579`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。CSBot MoveToの発話は経路更新より前に行い、UpdatePathMovementがPROGRESSING以外になってからzone内・C4所持ならPlantへ入る。互換adapterのphaseだけによる早期要求を除去し、進行中／観測不能はMoveToを保持、終端・失敗時には公開zoneとC4所持を取り直す。Actor/edict serial・frame/time・full-update・revision・normal/Attack epoch・target generationを検証し、callbackによる再入後は旧NAV終端処理を続けない。新しいPlantのOnUpdateは同更新で呼ばない。床の視線点は入場時の実yawから設定する。
+
+通常Plant専用処理がある互換モードで旧PlantAttemptを開始しない。これにより、MoveTo中のphase到達だけでC4を選択し移動を停止する裏経路も除去した。正規fixtureのREDでこの停止を確認後に修正した。発話のstrict >2秒境界は維持し、到着fixtureはNAV区間を通過し、actor hullを含め区域外に保った後で2秒ちょうど／2.125秒に到着する。防衛fixtureのC4除去はPlant到達後、後半のFollow移動検証は新しいPlant報告が割り込まない構成にする。自然Follow成立直後の別ケースでFollow→Plant陽性も保持した。
+
+最終オフラインはWindows x86 **171/171・PE7**、終了後の単独Linux x86 **170/170・ELF7** 合格。DLL SHA-256 `f176ab5079cc2e6b4debbe27c64e95c76d73b3675c727ee30bbb5661d1dbc003`、ELF `609201ff9e46859d202be10691f3f6bf4d6cfdf513949f7461480e1093860aef`。製品・PDB・採録・保持指紋は `artifacts/local/debug/csbot-move-plant-order-20261122`、全ログと実行手順は `C:/Temp/astrabot-move-plant-order`。一時LNK1163は既存incremental .ilkを証拠へ退避して再リンクし、ソース/SDK/cache設定変更は行っていない。
+
+最終DLLの隔離HLDS0/7/8/11と読取専用CDB11は全て実PID終了0・forced=false。0は14.546655秒、自然NAV11は74.637466秒に実設置成功。7は11.629729秒に区域外へ移動、8は11.489011秒に実drop entity99・hasC4=0。CDB11はmodule-load後にBPを置き、60.29094315秒・full0x1d9でNAV終端outcome2→旧MoveToからPlantの順を直接採録した。固定nativeは実UpdatePathMovementのPATH_FAILURE=2→Plantを58.207436秒に採録。旧95aec579は64.39331818秒に経路評価前のPlant入場を採録した。軌跡や絶対時刻を同値とは主張しない。fixtureの明示的C4在庫bit同期は残り、自然拾得や標準GameDLL全体の受入れではない。
+
+固定履歴baselineは再生成せず、両OS同じ19か所のoffset/前後hash限定補正で152248→152258行を全行照合。終端後の公開zone再観測で32行増え、旧PlantAttemptの重複geometry走査を除去して22行減る。RNG510行は各OSの親履歴と順序・値とも全一致。途中候補・失敗CDBは最終合格に流用せず保持する。

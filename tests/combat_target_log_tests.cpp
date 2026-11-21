@@ -531,7 +531,73 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			return check(state.state() == (recognized ? CompatibilityStateId::Hunt : CompatibilityStateId::Idle),
 				"only real enemy contact postpones Hunt's safe-at-site yield; a fresh candidate does not");
 		};
-		return contactControl(false) && contactControl(true);
+		if (!contactControl(false) || !contactControl(true)) return false;
+		enemy.v.flags |= FL_NOTARGET;
+		const auto moveControl = [&](int mutation) {
+		stepRifle(1, 0, 6);
+		auto moving = std::make_unique<metamod::BotBehaviorRuntime>();
+		moving->bindServices(ports);
+		moving->onActorRemembered(0, handle);
+		auto &moveState = const_cast<CompatibilityStateMachine &>(moving->managedBotStateMachines(0));
+		auto moveContext = start;
+		moveContext.frame.tick = ports.service_adapterFrameCount();
+		moveContext.timestamp = globals.time - .125f;
+		moveContext.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0] - 1U;
+		moveContext.moveToTask = CompatibilityTaskId::PlantBomb;
+		moveState.initialize(moveContext);
+		moveState.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, moveContext);
+		EntryTrace moveTrace;
+		moveState.setTraceSink(&moveTrace);
+		if (!check(moving->buildManagedObjectiveTarget(0, &target, nullptr, nullptr),
+			"MoveTo control has a selected plant target and completed approach phase")) return false;
+		moving->updateManagedBotCompatibilityState(0, before, false);
+		if (!check(moveState.state() == CompatibilityStateId::MoveTo,
+			"being inside a plant zone with a finished phase cannot preempt the MoveTo navigation step")) return false;
+		runtime::NavRoamDecision path{};
+		path.pathSequence = 1;
+		path.goalPresent = true;
+		nav::LocomotionIntent intent{};
+		intent.speed = 240;
+		if (!moving->finishManagedBotNavigation(0, before, runtime::NavRoamResult::IntentReady, path, &intent, {}) ||
+			!check(moveState.state() == CompatibilityStateId::MoveTo && intent.speed == 240,
+				"a progressing path retains MoveTo and its movement inside the bomb zone")) return false;
+		stepRifle(1, 0, 6);
+		moving->updateManagedBotCompatibilityState(0, before, false);
+		const auto serial = gEntities[0].serialnumber;
+		const auto weapons = gEntities[0].v.weapons;
+		plantZonePrediction = mutation;
+		if (mutation)
+			combatGameDll->pfnUpdateClientData = [](const edict_t *, int, clientdata_t *data) {
+				data->m_iId = 6;
+				data->iuser3 = 1 << 2;
+				if (plantZonePrediction == 1) ++gEntities[0].serialnumber;
+				else gEntities[0].v.weapons &= ~(1 << 6);
+			};
+		const bool accepted = moving->finishManagedBotNavigation(0, before, runtime::NavRoamResult::TargetReached, path, &intent, {});
+		combatGameDll->pfnUpdateClientData = nullptr;
+		gEntities[0].serialnumber = serial;
+		gEntities[0].v.weapons = weapons;
+		if (mutation == 1)
+			return check(!accepted && moveState.state() == CompatibilityStateId::MoveTo && intent.speed == 240,
+				"post-path zone callback replacement rejects the old completion instead of treating it as outside-zone Idle");
+		if (mutation == 2)
+			return check(accepted && moveState.state() == CompatibilityStateId::Idle,
+				"post-path possession is read after the zone callback can drop C4 on the same actor");
+		if (!accepted) return false;
+		const auto plantEntryAction = moving->decideManagedBotAction(0, before, {}, 0);
+		const auto yaw = gEntities[0].v.v_angle.y * 0.017453292519943295f;
+		if (!check(plantEntryAction.kind == metamod::ActionKind::None && moveTrace.plantEntries == 1U &&
+			moveTrace.plantUpdates == 0U && plantEntryAction.hasUseEntityLook &&
+			std::fabs(plantEntryAction.useEntityLookTarget.x - (before.origin.x + 10 * std::cos(yaw))) < .0001f &&
+			std::fabs(plantEntryAction.useEntityLookTarget.y - (before.origin.y + 10 * std::sin(yaw))) < .0001f &&
+			plantEntryAction.useEntityLookTarget.z == before.origin.z - 18,
+			"navigation-owned Plant entry constructs the crouched floor look before the next upkeep")) return false;
+		return check(moveState.state() == CompatibilityStateId::PlantBomb && moveState.stateTimestamp() == globals.time &&
+			intent.speed == 240,
+			"the evaluated terminal path enters Plant with a completed timestamp without erasing its existing navigation intent");
+		};
+		return moveControl(2) && moveControl(1) && moveControl(0);
 	}
 	if (clearLookFixture)
 	{
