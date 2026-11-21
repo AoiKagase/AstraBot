@@ -161,6 +161,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].obstaclePathActive = false;
 	actors_[index].reactionQueues.reset();
 	actors_[index].recognizedTargets = {};
+	actors_[index].recognizedReloading = false;
 	actors_[index].bombGuardPlanners.reset();
 	actors_[index].guardLook.reset();
 	actors_[index].huntApproaches = {};
@@ -222,6 +223,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	actors_[index].noiseLookUpdate = 0U;
 	actors_[index].reactionQueues.reset();
 	actors_[index].recognizedTargets = {};
+	actors_[index].recognizedReloading = false;
 	actors_[index].recognitionSequences = 0U;
 	const world::ActorKey actor = {handle.actor.slot, handle.actor.actorGeneration};
 	actors_[index].guardLook.reset();

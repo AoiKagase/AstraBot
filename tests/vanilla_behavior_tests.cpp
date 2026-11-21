@@ -41,6 +41,19 @@ int main()
 	compat::ThreatCandidate candidate = {{2U, 1U}, {100.0f, 0.0f, 32.0f}, 100.0f, false};
 	compat::ThreatCandidate selected = {};
 	const world::ActorKey observer = {1U, 1U};
+	compat::ReactionQueue reloadQueue;
+	unsigned completedSamples = 0;
+	auto completeReload = [](void *context, compat::ThreatCandidate &sample) {
+		++*static_cast<unsigned *>(context);
+		sample.reloading = true;
+		return true;
+	};
+	if (!check(!reloadQueue.update(observer, {1,1,1}, 1.0f, .1f, &candidate, 1, false, &selected, true,
+			completeReload, &completedSamples) &&
+			reloadQueue.update(observer, {1,1,2}, 1.1f, .1f, nullptr, 0, false, &selected, true,
+				completeReload, &completedSamples) && selected.reloading && completedSamples == 1U,
+			"selected threat reload is sampled once and survives into delayed recognition"))
+		return 1;
 	bool ok = encounterChecks && check(!queue.update(observer, {1U, 1U, 1U}, 0.0f, 0.2f, &candidate, 1U, false, &selected),
 		"new contact waits for reaction");
 	ok &= check(!queue.update(observer, {1U, 1U, 2U}, 0.1f, 0.2f, &candidate, 1U, false, &selected),

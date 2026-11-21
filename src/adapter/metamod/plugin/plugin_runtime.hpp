@@ -496,7 +496,10 @@ private:
 	bool observation_activeSniper(world::ActorKey actor, world::FrameIdentity frame, int observerTeam) const override;
 	bool readGameDllActiveWeapon(edict_t *source, int &weapon, bool &silenced) const override;
 	combat::ReloadState observation_activeWeaponReloadState(edict_t *source) const override;
-	bool readGameDllWeaponPrediction(edict_t *source, int &weapon, bool &silenced, combat::ReloadState *reload) const;
+	bool observation_shieldState(edict_t *source, bool &hasShield, bool &protectedByShield,
+		combat::ReloadState &reload) const override;
+	bool readGameDllWeaponPrediction(edict_t *source, int &weapon, bool &silenced, combat::ReloadState *reload,
+		bool *hasShield = nullptr, bool *protectedByShield = nullptr) const;
 	bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const override
 	{
 		return observation_.readManagedWorldSnapshot(index, snapshot);

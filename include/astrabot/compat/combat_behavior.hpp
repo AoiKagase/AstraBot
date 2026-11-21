@@ -23,6 +23,7 @@ struct ThreatCandidate
 	float speedSquared = 0.0f;
 	std::uint8_t visibleParts = world::VisibleNone;
 	bool crouching = false;
+	bool reloading = false;
 };
 
 struct NativeThreatAttention
@@ -117,7 +118,7 @@ public:
 
 	bool update(world::ActorKey observer, world::FrameIdentity frame, float now, float reactionSeconds,
 		const ThreatCandidate *candidates, std::size_t count, bool blind, ThreatCandidate *selected,
-		bool nativeTiming = false)
+		bool nativeTiming = false, bool (*completeSample)(void *, ThreatCandidate &) = nullptr, void *context = nullptr)
 	{
 // Keep literal evaluation precision on x87; each macro is undefined below.
 #define ASTRABOT_COMBAT_BEHAVIOR_REACTION_TIME_TOLERANCE_SECONDS 0.00001f
@@ -178,6 +179,8 @@ public:
 				sample.threat = previous && !(nearest->distance < previous->distance * 0.7f) ? *previous : *nearest;
 			}
 		}
+		if (sample.hasThreat && completeSample && !completeSample(context, sample.threat))
+			return false;
 		const std::size_t capacity = nativeTiming ? kNativeReactionHistoryCapacity : samples_.size();
 		samples_[head_] = sample;
 		head_ = (head_ + 1U) % capacity;

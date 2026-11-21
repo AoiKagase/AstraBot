@@ -103,6 +103,42 @@ struct CombatMovementDecision
 	bool active = false, entered = false, crouch = false, jump = false;
 	float forward = 0, side = 0;
 };
+class AttackShieldControl
+{
+public:
+	bool forceOpen() const { return forceOpen_; }
+	void enter(float deadline)
+	{
+		deadline_ = deadline;
+		forceOpen_ = false;
+	}
+
+	bool update(float now, bool hasShield, bool protectedByShield, bool visible, bool recognizedReloading,
+		bool selfReloading, bool lookingAtUs, RandomActor actor, RandomTimingContext timing,
+		ICompatibilityRandomSource &random, bool (*current)(const void *) = nullptr, const void *receipt = nullptr)
+	{
+		if (!hasShield)
+			return false;
+		const bool close = visible && !forceOpen_ && !recognizedReloading && !selfReloading && lookingAtUs;
+		const bool secondary = close != protectedByShield;
+		if (now > deadline_)
+		{
+			const auto draw = random.nextFloat(
+				RandomRequest::floatRequest("Attack.ShieldToggle", actor, timing, .5f, 2.0f));
+			if (draw.status != RandomStatus::Ok || !std::isfinite(draw.value) ||
+				(current && !current(receipt)))
+				return false;
+			deadline_ = now + draw.value;
+			forceOpen_ = !forceOpen_;
+		}
+		return secondary;
+	}
+
+private:
+	float deadline_ = 0;
+	bool forceOpen_ = false;
+};
+
 class CombatMovementPlanner
 {
 public:

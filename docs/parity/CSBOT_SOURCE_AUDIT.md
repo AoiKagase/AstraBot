@@ -8,7 +8,7 @@ CSBot側のファイルは `regamedll/dlls/bot/states/cs_bot_<略称>.cpp`。Ast
 
 | 状態 | CSBot | AstraBotで確認した経路・残件 |
 |---|---|---|
-| Attack | `attack` 32、156、565行 | 攻撃オーバーレイと戦闘更新。FFAで被弾後の再選択と発砲を修正。通常のFFA索敵と盾の判定は残件。 |
+| Attack | `attack` 32、156、276–308、565行 | 攻撃オーバーレイと戦闘更新。盾所持・実際の閉状態と遅延認識した敵のリロードを公開観測し、継続開閉・入力後の期限反転・終了時の開要求を実装。通常のFFA索敵と敵の盾を考慮した脅威選択は残件。 |
 | Buy | `buy` 48、238、542行 | 購入コントローラと公開購入エリア。武器プリセットを修正。盾の購入可否は別途確認が必要。 |
 | DefuseBomb | `defuse_bomb` 32、40、91行、`cs_bot_event.cpp` 221–262行、`cs_bot_pathfind.cpp` 1296–1328、1399–1458行、`game_shared/bot/bot.cpp` 71行 | 設置・近距離ビープによるCTの記憶、最終区間の歩行を照合。解除へ向かうMoveToは現在視線で移動軸を決め、次の軽更新で経路先読みに向く。解除進入では経路視線を保持し、最初のUSE更新でC4への視線を設定する。隔離ReHLDSで通常設置から解除開始・完了まで確認。 |
 | EscapeFromBomb | `escape_from_bomb` 31、40、68行 | 退避・武器持ち替え。失敗または到達時の逃走先再選択は残件。 |
@@ -28,7 +28,7 @@ CSBot側のファイルは `regamedll/dlls/bot/states/cs_bot_<略称>.cpp`。Ast
 |---|---|
 | NAV | `game_shared/bot/nav_area.cpp:4318,4773,4823`。音源とChatterで接地の規則を共有し、通常の床検索をスナップショット単位の300ユニットの空間索引に変更した。メッシュ外での最近傍検索は参照版の定義順を使う。 |
 | 経路コスト | `cs_bot_listen.cpp:60`、`cs_bot.h:1577`、`game_shared/bot/nav_area.h:860`。音源との高低差が120ユニットを超える場合に、最後のNAVエリアから最も安全な経路を引き、はしごと参照版のエリア中心を使って距離を合計する。Helpは既に同じNAV距離APIを使う。 |
-| 戦闘・武器 | `game_shared/bot/bot.h:431`、`states/cs_bot_attack.cpp:467`、`cs_bot_weapon.cpp:849`。FFAで視認できる同チームの加害者に再照準できるようにし、その相手への発砲を許可する。一般のFFA索敵、FFA以外の `mp_friendlyfire` 判定と発砲線のトレース条件、盾の判定は残件。 |
+| 戦闘・武器 | `game_shared/bot/bot.h:431`、`states/cs_bot_attack.cpp:276–308,467,578–580`、`cs_bot_weapon.cpp:849`。FFAで視認できる同チームの加害者に再照準し、その相手への発砲を許可する。本人の盾継続制御は実装済み。一般のFFA索敵、FFA以外の `mp_friendlyfire` 判定と発砲線、敵の盾を考慮した脅威選択は残件。 |
 | 管理・コマンド | `cs_bot_manager.cpp:423–512`。4種の武器プリセットが公開CVarに反映される。個別kickのfillモードと、対象が空の場合を含む全体kickでのquotaを修正。自動quota調整の死亡Bot優先と生成失敗時のquota補正は残件。 |
 | プロファイル | `game_shared/bot/bot_profile.h:133–170`。各テンプレートは `Default` から生成し、適用時は `Default` と異なる値を順番に継承する。武器候補の継承は `Default` との件数差で判定する。 |
 

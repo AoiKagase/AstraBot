@@ -113,7 +113,7 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		compat::ThreatCandidate threat{};
 		const bool blinded = services_->service_globals() != nullptr &&
 			isBlinded(observer, belief.identity().frame, services_->service_globals()->time);
-		const auto findThreatEntity = [&](world::ActorKey key) -> const edict_t *
+		const auto findThreatEntity = [&](world::ActorKey key) -> edict_t *
 		{
 			const auto *engine = services_->service_engineFunctions();
 			return engine && engine->pfnPEntityOfEntIndex ? engine->pfnPEntityOfEntIndex(static_cast<int>(key.slot))
@@ -166,11 +166,33 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		if (!blinded && candidateCount != 0U && services_->service_globals() != nullptr)
 			actors_[index].lastVisibleEnemyTimes = services_->service_globals()->time;
 		const float delay = actors_[index].managedProfiles.effectiveReactionSeconds(compatibility);
+		const auto sampleExecution = actor.executionRevision;
+		const auto sampleUpdate = services_->service_managedBotFullUpdateSequences()[index];
+		auto completeSample = [&](compat::ThreatCandidate &candidate) {
+			if (!compatibility)
+				return true;
+			auto *entity = findThreatEntity(candidate.actor);
+			if (!executionCurrent(index, reaction, sampleExecution) || !isLiveThreat(candidate, entity))
+				return false;
+			bool ownsShield = false, shieldDrawn = false;
+			auto reload = combat::ReloadState::Unknown;
+			(void)services_->observation_shieldState(entity, ownsShield, shieldDrawn, reload);
+			candidate.reloading = reload == combat::ReloadState::Reloading;
+			return executionCurrent(index, reaction, sampleExecution) &&
+				services_->service_managedBotFullUpdateSequences()[index] == sampleUpdate && isLiveThreat(candidate, entity);
+		};
 		const bool sampled = services_->service_globals() != nullptr &&
 			actors_[index].reactionQueues.update(observer, belief.identity().frame, services_->service_globals()->time,
 				delay, candidates.data(), candidateCount, blinded,
-				&threat, compatibility);
+				&threat, compatibility,
+				[](void *context, compat::ThreatCandidate &candidate) {
+					return (*static_cast<decltype(completeSample) *>(context))(candidate);
+				}, &completeSample);
+		if (!executionCurrent(index, reaction, sampleExecution) ||
+			services_->service_managedBotFullUpdateSequences()[index] != sampleUpdate)
+			return false;
 		const world::ActorObservation *seen = nullptr;
+		actor.recognizedReloading = sampled && threat.reloading;
 		bool recognized = sampled;
 		if (sampled)
 		{

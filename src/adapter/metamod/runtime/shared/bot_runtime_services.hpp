@@ -118,6 +118,8 @@ public:
 	virtual bool observation_activeSniper(
 		world::ActorKey actor, world::FrameIdentity frame, int observerTeam) const = 0;
 	virtual combat::ReloadState observation_activeWeaponReloadState(edict_t *source) const = 0;
+	virtual bool observation_shieldState(edict_t *source, bool &hasShield, bool &protectedByShield,
+		combat::ReloadState &reload) const = 0;
 	virtual bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const = 0;
 	virtual const std::uint32_t &observation_externalDefuserEntityIndex() const = 0;
 	virtual unsigned observation_nativeDefuserSlot() const = 0;

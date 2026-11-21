@@ -284,6 +284,7 @@ private:
 		world::WorldPosition targetPosition{};
 		int team = 0;
 		float closeFootstepDistance = -1;
+		compat::KnownWeaponFlag shield{};
 	};
 	struct SniperWarningTiming
 	{
@@ -339,6 +340,8 @@ private:
 	bool selfDefenseThreatCurrent(std::size_t index, const SelfDefenseThreat &threat) const;
 	void tryBombObjectiveAttack(std::size_t index, const compat::StateUpdateContext &context);
 	bool prepareNativeAttack(std::size_t index, world::ActorKey target, std::uint16_t weapon);
+	bool applyAttackShield(ManagedActionContext &context, bool visible, bool knife);
+	bool enemyLookingAtUs(std::size_t index, const edict_t *enemy, world::FrameIdentity frame);
 	void applyAttackPosture(std::size_t index, ActionProposal &proposal);
 	bool updateCombatRetreat(std::size_t index, int team);
 	bool turnToThreateningGunfire(const ManagedActionContext &ctx, const compat::StateUpdateContext &stateContext);
@@ -652,6 +655,7 @@ private:
 		float retryAfter = -1;
 		AttackVisibility visibility{};
 		compat::AttackEntryPlan posture{};
+		compat::AttackShieldControl shield{};
 		std::uint64_t postureNormalEpoch = 0;
 	};
 	enum class LeaderMotion { Unknown, Stopped, Walking, Running };
@@ -692,6 +696,7 @@ private:
 		nav::NavVector obstaclePathGoal{};
 		compat::ReactionQueue reactionQueues{};
 		world::ActorKey recognizedTargets{};
+		bool recognizedReloading = false;
 		world::WorldPosition recognizedPoints{};
 		struct OccludedRecognition
 		{

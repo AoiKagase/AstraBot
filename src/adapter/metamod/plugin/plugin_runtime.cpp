@@ -1125,8 +1125,17 @@ combat::ReloadState PluginRuntime::observation_activeWeaponReloadState(edict_t *
 	return reload;
 }
 
+bool PluginRuntime::observation_shieldState(edict_t *source, bool &hasShield, bool &protectedByShield,
+	combat::ReloadState &reload) const
+{
+	int weapon = 0;
+	bool silenced = false;
+	return readGameDllWeaponPrediction(source, weapon, silenced, &reload, &hasShield, &protectedByShield);
+}
+
 bool PluginRuntime::readGameDllWeaponPrediction(
-	edict_t *source, int &weapon, bool &silenced, combat::ReloadState *reload) const
+	edict_t *source, int &weapon, bool &silenced, combat::ReloadState *reload,
+	bool *hasShield, bool *protectedByShield) const
 {
 	const auto *dll = gameDllFunctions_ ? gameDllFunctions_->dllapi_table : nullptr;
 	if (!dll || !dll->pfnUpdateClientData || !source || source->v.iuser1 != 0)
@@ -1146,6 +1155,11 @@ bool PluginRuntime::readGameDllWeaponPrediction(
 	if (!current())
 		return false;
 	weapon = data.m_iId;
+	const bool shield = (data.iuser3 & (1 << 3)) != 0;
+	if (hasShield)
+		*hasShield = shield;
+	if (protectedByShield)
+		*protectedByShield = false;
 	silenced = false;
 	constexpr int kUsp = 16;
 	constexpr int kM4a1 = 22;
@@ -1161,13 +1175,15 @@ bool PluginRuntime::readGameDllWeaponPrediction(
 	if (!dll->pfnGetWeaponData(source, weapons) || !current() || weapons[weapon].m_iId != weapon)
 		return false;
 	const auto &active = weapons[weapon];
+	if (protectedByShield)
+		*protectedByShield = shield && (active.m_iWeaponState & (1 << 5)) != 0;
 	if (canSilence)
 	{
 		const int silencerMask = weapon == kUsp ? (1 << 0) : (1 << 2);
 		silenced = (active.m_iWeaponState & silencerMask) != 0;
 	}
 	if (reload != nullptr)
-		*reload = active.m_fInReload || active.m_fInSpecialReload
+		*reload = active.m_fInReload || (!protectedByShield && active.m_fInSpecialReload)
 			? combat::ReloadState::Reloading : combat::ReloadState::NotReloading;
 	return true;
 }

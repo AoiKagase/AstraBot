@@ -6,8 +6,11 @@
 namespace
 {
 bool testCombatTargetLog(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
+DLL_FUNCTIONS *combatGameDll = nullptr;
+void captureCombatGameDll(DLL_FUNCTIONS &table) { combatGameDll = &table; }
 }
 #define ASTRABOT_EXTRA_ACTOR_TEST testCombatTargetLog
+#define ASTRABOT_ACTOR_GAMEDLL_SETUP captureCombatGameDll
 #include "compat_actor_command_tests.cpp"
 
 namespace
@@ -37,6 +40,7 @@ unsigned attackDeadlineDraws = 0;
 unsigned attackAimRefreshDraws = 0;
 unsigned retreatTimerDraws = 0;
 float forcedNoticeFixtureRoll = -1.0f;
+bool shieldOwned = true, shieldClosed = false, shieldSelfReload = false, shieldEnemyReload = false;
 std::vector<Vector> *occludedAimTraces = nullptr;
 struct SelfDefenseTrace
 {
@@ -196,9 +200,127 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool noticeFixture = scenario && std::strcmp(scenario, "notice") == 0;
 	const bool occludedFixture = scenario && std::strcmp(scenario, "occluded") == 0;
 	const bool selfDefenseFixture = scenario && std::strcmp(scenario, "self-defense") == 0;
+	const bool shieldFixture = scenario && std::strcmp(scenario, "shield") == 0;
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
+	if (shieldFixture)
+	{
+		using namespace astrabot;
+		using namespace astrabot::compat;
+		auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+		auto &enemy = gEntities[1];
+		runtime.onClientPutInServer(&enemy);
+		enemy.free = false;
+		enemy.v.flags = FL_CLIENT | FL_ONGROUND;
+		enemy.v.deadflag = DEAD_NO;
+		enemy.v.health = 100;
+		enemy.v.team = 2;
+		enemy.v.origin = gEntities[0].v.origin + Vector(320, 0, 0);
+		enemy.v.velocity = Vector(250, 0, 0);
+		enemy.v.view_ofs = Vector(0, 0, 19);
+		enemy.v.v_angle = Vector(0, 180, 0);
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(2);
+		runtime.onWriteString("CT");
+		runtime.onMessageEnd();
+		auto &game = *combatGameDll;
+		game.pfnUpdateClientData = [](const edict_t *entity, int, clientdata_t *client) {
+			client->m_iId = 22;
+			client->iuser3 = entity == &gEntities[0] && shieldOwned ? 1 << 3 : 0;
+		};
+		game.pfnGetWeaponData = [](edict_t *entity, weapon_data_t *weapons) {
+			weapons[22].m_iId = 22;
+			weapons[22].m_iWeaponState = entity == &gEntities[0] && shieldClosed ? 1 << 5 : 0;
+			weapons[22].m_fInReload = entity == &gEntities[0] ? shieldSelfReload : shieldEnemyReload;
+			return 1;
+		};
+		runtime.beginRoundGeneration();
+		stepRifle(30);
+		auto behavior = std::make_unique<metamod::BotBehaviorRuntime>();
+		behavior->bindServices(ports);
+		behavior->onActorRemembered(0, ports.service_managedBotHandles()[0]);
+		auto profile = static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0);
+		profile.csbotReactionSeconds = .1f;
+		behavior->assignProfile(0, profile);
+		auto &machine = const_cast<CompatibilityStateMachine &>(behavior->managedBotStateMachines(0));
+		StateUpdateContext context{};
+		const auto &handle = ports.service_managedBotHandles()[0];
+		const auto &life = ports.service_lifecycle();
+		context.actor = {handle.actor.slot, handle.actor.actorGeneration};
+		context.frame = {life.mapGeneration(), life.roundGeneration(), ports.service_adapterFrameCount()};
+		context.timestamp = globals.time;
+		context.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0];
+		context.fullUpdate = true;
+		context.lifeAvailability = context.roundAvailability = ObservationAvailability::Available;
+		context.attackObservation = ObservationAvailability::Available;
+		context.alive = context.roundActive = true;
+		machine.initialize(context);
+		(void)machine.transition(CompatibilityStateId::Hunt, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, context);
+		runtime::MovementPhysicsState before{};
+		before.grounded = true;
+		before.origin = {gEntities[0].v.origin.x, gEntities[0].v.origin.y, gEntities[0].v.origin.z};
+		const auto action = [&] {
+			const auto trace = selfDefenseTrace;
+			selfDefenseTrace = nullptr;
+			stepRifle(30);
+			selfDefenseTrace = trace;
+			if (trace)
+				trace->eyeChecks = 0;
+			return behavior->decideManagedBotAction(0, before, {}, 0);
+		};
+		(void)action();
+		SelfDefenseTrace eye{true, false};
+		selfDefenseTrace = &eye;
+		const auto close = action();
+		if (!check(behavior->managedBotStateMachines(0).attackOverlayActive() && close.secondaryAttack && eye.eyeChecks > 0,
+				"recognized facing enemy closes an owned open shield through the normal combat path"))
+			return false;
+		shieldClosed = true;
+		shieldSelfReload = true;
+		eye.eyeChecks = 0;
+		const auto recognizedReload = action();
+		if (!check(recognizedReload.secondaryAttack && eye.eyeChecks == 0,
+				"actual self reload opens the shield without querying enemy eyes"))
+			return false;
+		shieldSelfReload = false;
+		shieldEnemyReload = true;
+		const auto beforeRecognition = action();
+		if (!check(!beforeRecognition.secondaryAttack,
+				"current enemy reload does not replace the delayed recognized sample"))
+			return false;
+		eye.eyeChecks = 0;
+		if (!check(action().secondaryAttack && eye.eyeChecks == 0,
+				"recognized reload opens the shield without querying enemy eyes"))
+			return false;
+		shieldEnemyReload = false;
+		(void)action();
+		(void)action();
+		shieldOwned = false;
+		eye.eyeChecks = 0;
+		(void)action();
+		selfDefenseTrace = nullptr;
+		if (!check(eye.eyeChecks == 0, "no shield avoids the shield eye query"))
+			return false;
+		shieldOwned = true;
+		shieldClosed = false;
+		eye.replaceEnemy = true;
+		selfDefenseTrace = &eye;
+		const auto serial = enemy.serialnumber;
+		const auto replaced = action();
+		selfDefenseTrace = nullptr;
+		enemy.serialnumber = serial;
+		if (!check(eye.eyeChecks == 1 && !replaced.secondaryAttack,
+				"edict replacement in the eye callback discards the shield command"))
+			return false;
+		shieldClosed = true;
+		enemy.v.health = 0;
+		enemy.v.deadflag = DEAD_DEAD;
+		const auto stopped = action();
+		return check(!machine.attackOverlayActive() && stopped.secondaryAttack,
+			"Attack exit requests an open shield after losing the enemy");
+	}
 	if (selfDefenseFixture)
 	{
 		using namespace astrabot;

@@ -605,6 +605,24 @@ bool BotBehaviorRuntime::selfDefenseThreatCurrent(std::size_t index, const SelfD
 		actor.enemyWeaponSource == threat.source && !actor.enemyReaction.enemyDead(threat.receipt);
 }
 
+bool BotBehaviorRuntime::enemyLookingAtUs(std::size_t index, const edict_t *entity, world::FrameIdentity frame)
+{
+	const auto &enemy = entity->v;
+	const auto toEnemy = enemy.origin - services_->service_managedBotHandles()[index].entity->v.origin;
+	const float distanceSquared = DotProduct(toEnemy, toEnemy);
+	const float distance = std::sqrt(distanceSquared);
+	constexpr float radiansPerDegree = .01745329251994329577f;
+	const float pitch = (enemy.v_angle.x + enemy.punchangle.x) * radiansPerDegree;
+	const float yaw = (enemy.v_angle.y + enemy.punchangle.y) * radiansPerDegree;
+	const float horizontal = std::cos(pitch);
+	// Normalize the full displacement, then use the world-horizontal dot as CSBot does.
+	const bool facing = distance > 0.0f &&
+		(horizontal * std::cos(yaw)) * (toEnemy.x / distance) +
+			(horizontal * std::sin(yaw)) * (toEnemy.y / distance) < -.9f;
+	const auto eye = enemy.origin + enemy.view_ofs;
+	return facing && canSeePoint(index, {eye.x, eye.y, eye.z}, frame, false);
+}
+
 BotBehaviorRuntime::SelfDefenseThreat BotBehaviorRuntime::evaluateSelfDefense(
 	std::size_t index, world::ActorKey target, bool visible)
 {
@@ -621,20 +639,9 @@ BotBehaviorRuntime::SelfDefenseThreat BotBehaviorRuntime::evaluateSelfDefense(
 	if (!selfDefenseThreatCurrent(index, threat))
 		return {};
 
-	const auto &enemy = threat.entity->v;
-	const auto toEnemy = enemy.origin - services_->service_managedBotHandles()[index].entity->v.origin;
+	const auto toEnemy = threat.entity->v.origin - services_->service_managedBotHandles()[index].entity->v.origin;
 	const float distanceSquared = DotProduct(toEnemy, toEnemy);
-	const float distance = std::sqrt(distanceSquared);
-	constexpr float radiansPerDegree = .01745329251994329577f;
-	const float pitch = (enemy.v_angle.x + enemy.punchangle.x) * radiansPerDegree;
-	const float yaw = (enemy.v_angle.y + enemy.punchangle.y) * radiansPerDegree;
-	const float horizontal = std::cos(pitch);
-	// Normalize the full displacement, then use the world-horizontal dot as CSBot does.
-	const bool facing = distance > 0.0f &&
-		(horizontal * std::cos(yaw)) * (toEnemy.x / distance) +
-			(horizontal * std::sin(yaw)) * (toEnemy.y / distance) < -.9f;
-	const auto eye = enemy.origin + enemy.view_ofs;
-	const bool lookingAtUs = facing && canSeePoint(index, {eye.x, eye.y, eye.z}, receipt.frame, false);
+	const bool lookingAtUs = enemyLookingAtUs(index, threat.entity, receipt.frame);
 	constexpr float closeRangeSquared = 750.0f * 750.0f;
 	constexpr float retaliationWindow = 1.0f;
 	if (!selfDefenseThreatCurrent(index, threat) ||
@@ -736,6 +743,7 @@ bool BotBehaviorRuntime::prepareNativeAttack(std::size_t index, world::ActorKey 
 	}
 	retreat.attackEpoch = attack;
 	retreat.posture = entry;
+	retreat.shield.enter(entry.shieldToggleAfter);
 	retreat.postureNormalEpoch = epoch;
 	retreat.updateSequence = 0;
 	return true;
@@ -765,7 +773,82 @@ void BotBehaviorRuntime::applyAttackPosture(std::size_t index, ActionProposal &p
 		}
 	}
 	if (!attacking)
+	{
+		const auto receipt = reactionContext(index);
+		const auto execution = actor.executionRevision;
+		const auto attack = machine.attackEntryEpoch();
+		const auto normal = machine.normalStateEpoch();
+		bool hasShield = false, protectedByShield = false;
+		auto reload = combat::ReloadState::Unknown;
+		const bool observed = services_->observation_shieldState(
+			services_->service_managedBotHandles()[index].entity, hasShield, protectedByShield, reload);
+		if (!executionCurrent(index, receipt, execution) || machine.attackEntryEpoch() != attack ||
+			machine.normalStateEpoch() != normal || machine.attackOverlayActive())
+			return;
+		if (observed && hasShield && protectedByShield)
+			proposal.secondaryAttack = true;
 		retreat.posture = {};
+	}
+}
+
+bool BotBehaviorRuntime::applyAttackShield(ManagedActionContext &context, bool visible, bool knife)
+{
+	const auto index = context.index;
+	auto &actor = actors_[index];
+	const auto &machine = actor.managedBotStateMachines;
+	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility ||
+		!machine.attackOverlayActive() || knife)
+		return true;
+	const auto receipt = reactionContext(index);
+	const auto execution = actor.executionRevision;
+	const auto attack = machine.attackEntryEpoch();
+	const auto normal = machine.normalStateEpoch();
+	const auto target = actor.enemyReaction.enemy(receipt);
+	const auto source = currentEnemySource(index);
+	const edict_t *observedEnemy = nullptr;
+	const auto current = [&] {
+		return executionCurrent(index, receipt, execution) && machine.attackOverlayActive() &&
+			machine.attackEntryEpoch() == attack && machine.normalStateEpoch() == normal &&
+			actor.enemyReaction.enemy(receipt) == target && currentEnemySource(index) == source &&
+			(!observedEnemy || (!observedEnemy->free && observedEnemy->serialnumber >= 0 &&
+				observedEnemy->v.health > 0.0f && observedEnemy->v.deadflag == DEAD_NO &&
+				source == world::EntityKey{target.slot, static_cast<unsigned>(observedEnemy->serialnumber) + 1U}));
+	};
+	bool hasShield = false, protectedByShield = false;
+	auto reload = combat::ReloadState::Unknown;
+	if (!services_->observation_shieldState(context.handle->entity, hasShield, protectedByShield, reload))
+		return current();
+	if (!current())
+		return false;
+	context.shield = {true, hasShield};
+	if (!hasShield)
+		return true;
+	bool looking = false;
+	if (visible && !actor.combatRetreat.shield.forceOpen() &&
+		!actor.recognizedReloading && reload != combat::ReloadState::Reloading)
+	{
+		const auto *engine = services_->service_engineFunctions();
+		const auto *enemy = engine && engine->pfnPEntityOfEntIndex
+			? engine->pfnPEntityOfEntIndex(static_cast<int>(target.slot)) : nullptr;
+		observedEnemy = enemy;
+		if (!current() || !enemy || enemy->free || enemy->serialnumber < 0 ||
+			!(source == world::EntityKey{target.slot, static_cast<unsigned>(enemy->serialnumber) + 1U}))
+			return false;
+		looking = enemyLookingAtUs(index, enemy, receipt.frame);
+	}
+	if (!current())
+		return false;
+	const bool secondary = actor.combatRetreat.shield.update(receipt.now, hasShield, protectedByShield, visible,
+		actor.recognizedReloading, reload == combat::ReloadState::Reloading, looking,
+		{receipt.actor.slot, receipt.actor.generation},
+		{services_->command_managedBotCommandSequences(index), receipt.frame.tick,
+			services_->service_managedBotFullUpdateSequences()[index]},
+		services_->service_compatibilityRandomSource(),
+		[](const void *guard) { return (*static_cast<const decltype(current) *>(guard))(); }, &current);
+	if (!current())
+		return false;
+	context.proposal.secondaryAttack = secondary;
+	return true;
 }
 
 void BotBehaviorRuntime::tryBombObjectiveAttack(std::size_t index, const compat::StateUpdateContext &context)
@@ -1275,6 +1358,8 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	}
 	if (!executionCurrent(index, retreatReceipt, retreatExecution) || state.normalStateEpoch() != retreatEpoch)
 		return proposal;
+	if (!applyAttackShield(ctx, combatVisible, weapon.kind == combat::WeaponKind::Knife))
+		return ctx.proposal;
 	if (weapon.kind != combat::WeaponKind::Knife && weapon.kind != combat::WeaponKind::Grenade &&
 		updateCombatAmbush(ctx, stateContext, combatVisible))
 	{
@@ -1317,6 +1402,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 		proposal.viewAngles = {decision.aim.pitch, decision.aim.yaw, movementAngles.roll};
 	}
 	compat::WeaponActionInput weaponInput{};
+	weaponInput.shield = ctx.shield;
 	weaponInput.actor = actor;
 	weaponInput.frame = frame;
 	weaponInput.timestamp = services_->service_globals()->time;
@@ -1508,7 +1594,8 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 		proposal.kind = ActionKind::Fire;
 	if (weaponDecision.switchToPistol && havePistol)
 		proposal.kind = ActionKind::SelectPistol;
-	proposal.secondaryAttack = weaponDecision.secondary;
+	if (!ctx.shield.known || !ctx.shield.value)
+		proposal.secondaryAttack = weaponDecision.secondary;
 	proposal.stopForWeapon = proposal.stopForWeapon || weaponDecision.stopMovement;
 	if (weaponDecision.hasRetainedGrenadeAim)
 	{

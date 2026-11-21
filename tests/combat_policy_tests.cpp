@@ -72,6 +72,34 @@ bool testAimPolicy()
 
 bool testCrouchHold()
 {
+	compat::AttackShieldControl shield;
+	shield.enter(12.0f);
+	compat::ScriptedRandomSource shieldRandom({draw("Attack.ShieldToggle", .5f, 2, 1)});
+	const auto actor = compat::RandomActor{1, 1};
+	compat::ScriptedRandomSource unused({});
+	if (!check(!shield.update(20, false, false, true, false, false, true, actor, {}, unused) &&
+			unused.verifyComplete(),
+			"unowned shields do not consume a toggle draw after the deadline"))
+		return false;
+	for (unsigned gate = 0; gate < 4; ++gate)
+		if (!check(shield.update(11, true, true, gate != 0, gate == 1, gate == 2, gate != 3, actor, {}, unused) &&
+				unused.verifyComplete(), "visibility, delayed reload, self reload and facing each require an open shield"))
+			return false;
+	if (!check(shield.update(12, true, false, true, false, false, true, actor, {}, shieldRandom) &&
+			shieldRandom.position() == 0,
+			"shield closes at the exact deadline before any force-open toggle"))
+		return false;
+	if (!check(shield.update(12.1f, true, true, true, false, false, true, actor, {}, shieldRandom) == false &&
+			shieldRandom.verifyComplete() &&
+			shield.update(12.2f, true, true, true, false, false, true, actor, {}, shieldRandom),
+			"expired shield timer affects the next update after the current close decision"))
+		return false;
+	shield.enter(0);
+	compat::ScriptedRandomSource cancelled({draw("Attack.ShieldToggle", .5f, 2, 1)});
+	if (!check(!shield.update(1, true, false, true, false, false, true, actor, {}, cancelled,
+			[](const void *) { return false; }) && !shield.forceOpen() && cancelled.verifyComplete(),
+			"a cancelled random callback cannot retain a force-open toggle or shield command"))
+		return false;
 	compat::CombatMovementPlanner initialized;
 	for (unsigned round : {1U, 2U})
 	{
