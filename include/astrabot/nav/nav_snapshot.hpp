@@ -31,6 +31,7 @@ public:
 	std::uint64_t revision() const;
 	std::uint32_t mapGeneration() const;
 	const NavDocument *document() const;
+	const NavHidingSpot *findHidingSpot(std::uint32_t id) const;
 	// Indices are in file order. A null result requests the linear fallback.
 	const std::vector<std::size_t> *areaIndicesInCell(const NavVector &position) const;
 

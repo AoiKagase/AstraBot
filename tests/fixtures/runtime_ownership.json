@@ -152,6 +152,11 @@
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
+    "member": "huntEncounter"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
     "member": "huntApproaches"
   },
   {
@@ -1438,6 +1443,21 @@
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
     "member": "huntApproachLookActive"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "huntEncounterLook"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "huntEncounterAlignedAt"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "huntEncounterUpkeepAt"
   },
   {
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",

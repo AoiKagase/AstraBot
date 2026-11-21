@@ -228,6 +228,40 @@ int main()
 	updateHunt();
 	if (!check(!command.hasHuntApproachLook(0U), "clearing the approach spot restores path look on the next upkeep"))
 		return 1;
+
+	command.resetManagedBotCommandTemplate(0U);
+	handle.entity->v.origin = waitOrigin;
+	handle.entity->v.v_angle = Vector(0, 90, 0);
+	const auto eye = waitOrigin + handle.entity->v.view_ofs;
+	endpoint.huntApproachLook = {HuntApproachLookUpdate::TrackEncounter, {eye.x, eye.y + 200.0f, eye.z}};
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	updateHunt();
+	const float glanceForward = services.lastForward, glanceSide = services.lastSide;
+	if (!check(command.hasHuntApproachLook(0U) && services.lastYaw == 90.0f &&
+			glanceForward == 0.0f && glanceSide == 240.0f,
+			"the selecting update keeps the current view and local movement"))
+		return 1;
+	for (int tick = 0; tick < 2; ++tick)
+	{
+		handle.entity->v.origin = waitOrigin;
+		services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+		command.advanceUpkeepLook(0U, handle);
+		command.executeManagedBotCommand(0U, handle);
+		if (!check(command.hasHuntApproachLook(0U) == (tick == 0) &&
+				services.lastForward == glanceForward && services.lastSide == glanceSide &&
+				std::fabs(services.lastYaw - 90.0f) < 10.0f,
+				"encounter holds through the first aligned upkeep and releases after the next while keeping the axes"))
+			return 1;
+	}
+
+	handle.entity->v.origin = waitOrigin;
+	endpoint.huntApproachLook.spot = {waitOrigin.x, waitOrigin.y + 90.0f, waitOrigin.z};
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	updateHunt();
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.advanceUpkeepLook(0U, handle);
+	if (!check(!command.hasHuntApproachLook(0U), "an encounter target within 100 units clears before turning"))
+		return 1;
 	endpoint.huntApproachLook.update = HuntApproachLookUpdate::Unchanged;
 
 	endpoint.roamDecision.huntWaitingForFriend = true;

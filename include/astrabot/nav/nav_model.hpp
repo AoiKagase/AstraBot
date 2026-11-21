@@ -138,6 +138,7 @@ public:
 
 	const NavSourceIdentity &sourceIdentity() const;
 	const NavArea *findArea(AreaId id) const;
+	const NavHidingSpot *findHidingSpot(std::uint32_t id) const;
 	const std::vector<NavArea> &areas() const;
 	const std::vector<NavPlace> &places() const;
 	std::size_t areaCount() const;
@@ -148,7 +149,6 @@ private:
 	static bool isValidName(const char *name);
 	static bool isValidArea(const NavArea &area);
 	static bool isValidPlace(const NavPlace &place);
-	static bool hasHidingSpot(const std::vector<NavArea> &areas, std::uint32_t id);
 
 	std::vector<NavArea> areas_;
 	// Store vector indices, not pointers: reallocation and value copies keep

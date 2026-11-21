@@ -1383,6 +1383,73 @@ bool testDirectHuntStartsTowardTheNativePortal()
 		"direct Hunt approaches the portal and inhibits look strictly inside the 3D corner radius");
 }
 
+bool testHuntEncounterFollowsCurrentWaypoint()
+{
+	using namespace astrabot::nav;
+	NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto from = area(1U, 0, 100, 0);
+	auto middle = area(2U, 100, 300, 0);
+	auto to = area(3U, 300, 600, 0);
+	to.extent.lo.y = 32.0f;
+	to.extent.hi.y = 96.0f;
+	from.connections[1] = {2U};
+	middle.connections[3] = {1U};
+	middle.connections[1] = {3U};
+	to.connections[3] = {2U};
+	to.hidingSpots.push_back({42U, {500, 40, 0}, 1U});
+	middle.encounters.push_back({3U, 1, 1U, 3, {{42U, .5f}}});
+	middle.encounters.push_back({1U, 3, 3U, 1, {{42U, .75f}}});
+	document.addArea(from);
+	document.addArea(middle);
+	document.addArea(to);
+	const auto snapshot = snapshotFor(&document, 1U);
+	NavCorridor route{};
+	NavPathFollower follower;
+	if (!check(NavQuery(snapshot).buildHuntCorridor(1U, 3U, &route, nullptr) == NavQueryResult::Found &&
+			follower.start(route) == NavFollowerResult::Started && !follower.huntEncounter(snapshot).encounter,
+			"an encounter requires both the incoming and outgoing path waypoint"))
+		return false;
+
+	NavVector target{};
+	AreaId targetArea = 0;
+	const auto update = [&](NavVector position)
+	{
+		follower.update(snapshot, position, 20, 64, &target, &targetArea);
+	};
+	const auto directed = [&]
+	{
+		const auto selected = follower.huntEncounter(snapshot);
+		return selected.middle && selected.middle->id == 2U && selected.encounter &&
+			selected.encounter->fromArea == 1U && selected.encounter->toArea == 3U &&
+			selected.encounter->spots.front().t == .75f &&
+			snapshot.findHidingSpot(selected.encounter->spots.front().hidingSpotId);
+	};
+	update({50, 32, 0});
+	if (!check(!follower.huntEncounter(snapshot).encounter, "the first ground leg has no encounter"))
+		return false;
+	update({170, 39, 0});
+	if (!check(directed() && !follower.huntEncounter(snapshotFor(&document, 2U)).encounter,
+			"the area follower selects the directed encounter and resolves its spot across the snapshot"))
+		return false;
+	update({450, 64, 0});
+	if (!check(!follower.huntEncounter(snapshot).encounter, "a finished ground path clears the encounter"))
+		return false;
+
+	route.hasEndpoint = true;
+	route.huntEndpointSteering = true;
+	route.endpoint = {500, 64, 0};
+	route.huntWaypoints = {{{50, 32, 0}, 0U}, {{105, 32, 0}, 1U},
+		{{305, 48, 0}, 2U}, {route.endpoint, 2U}};
+	if (!check(follower.start(route) == NavFollowerResult::Started, "the projected Hunt route starts"))
+		return false;
+	update({170, 39, 0});
+	if (!check(directed(), "projected Hunt uses the actual waypoint index rather than the movement area index"))
+		return false;
+	update({425, 58, 0});
+	return check(!follower.huntEncounter(snapshot).encounter, "a repeated terminal waypoint removes the encounter");
+}
+
 bool testHuntFallbackKeepsPortalUntilItPasses()
 {
 	using namespace astrabot::nav;
@@ -1607,7 +1674,8 @@ bool testHuntFallbackPrefersVisibleSegments()
 
 int main()
 {
-	if (!testDirectHuntStartsTowardTheNativePortal() || !testHuntFallbackKeepsPortalUntilItPasses() ||
+	if (!testDirectHuntStartsTowardTheNativePortal() || !testHuntEncounterFollowsCurrentWaypoint() ||
+		!testHuntFallbackKeepsPortalUntilItPasses() ||
 		!testHuntFallbackSamplesEndpointFloor() ||
 		!testHuntEndpointDoesNotInventPortalStep() || !testHuntFallbackPrefersVisibleSegments())
 		return 1;

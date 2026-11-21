@@ -1,4 +1,5 @@
 #include "astrabot/compat/combat_behavior.hpp"
+#include "astrabot/compat/hunt_encounter.hpp"
 #include <cmath>
 #include <cstdio>
 
@@ -14,11 +15,33 @@ bool check(bool v, const char *message)
 int main()
 {
 	using namespace astrabot;
+	compat::HuntEncounterPlanner encounter;
+	bool encounterChecks = check(!encounter.beginPeripheralScan(0.25f) && encounter.beginPeripheralScan(0.3f) &&
+		!encounter.beginPeripheralScan(0.5f), "peripheral scans use the native interval even without an encounter");
+	const nav::NavVector from{0, 0, 30}, to{120, 0, 190};
+	encounterChecks &= check(compat::huntEncounterProgress(from, to, {30, 100, 0}) == .5f &&
+		compat::huntEncounterProgress(to, from, {200, 0, 0}) == 0.0f &&
+		compat::huntEncounterProgress(from, to, {120, 0, 0}) == 1.0f,
+		"encounter progress uses the dominant horizontal axis and 3D lead length with clamping");
+	nav::NavEncounter path{};
+	for (std::uint32_t i = 1; i <= 10; ++i)
+		path.spots.push_back({i, .5f});
+	encounter.markChecked(2, 1.0f);
+	auto spots = encounter.eligible(path, .5f, 11.0f);
+	encounterChecks &= check(spots.count == 8 && spots.ids[0] == 10 && spots.ids[1] == 3,
+		"checked age includes the ten-second boundary and the most recent eight candidates retain ring order");
+	for (std::uint32_t i = 20; i < 84; ++i)
+		encounter.markChecked(i, 11.0f);
+	encounterChecks &= check(!encounter.recentlyChecked(2, 11.0f) && encounter.recentlyChecked(83, 11.0f),
+		"a full shared visibility history replaces the least recent entry");
+	encounter.schedule(12.0f, .5f, 16.0f);
+	encounterChecks &= check(!encounter.selectionDue(12.99f) && encounter.selectionDue(13.0f),
+		"encounter interval scales by the fourth power of one minus skill");
 	compat::ReactionQueue queue;
 	compat::ThreatCandidate candidate = {{2U, 1U}, {100.0f, 0.0f, 32.0f}, 100.0f, false};
 	compat::ThreatCandidate selected = {};
 	const world::ActorKey observer = {1U, 1U};
-	bool ok = check(!queue.update(observer, {1U, 1U, 1U}, 0.0f, 0.2f, &candidate, 1U, false, &selected),
+	bool ok = encounterChecks && check(!queue.update(observer, {1U, 1U, 1U}, 0.0f, 0.2f, &candidate, 1U, false, &selected),
 		"new contact waits for reaction");
 	ok &= check(!queue.update(observer, {1U, 1U, 2U}, 0.1f, 0.2f, &candidate, 1U, false, &selected),
 		"reaction has not elapsed");

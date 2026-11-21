@@ -1851,6 +1851,12 @@ void PluginRuntime::updateManagedBots()
 		{
 			behavior_.updatePublicBuying(index);
 		}
+		const auto peripheralRoute = navigation_.routeRevision(index);
+		if (!stateUpdatePaused && lifecycle_.isCurrent(token) && handle.entity &&
+			!behavior_.updateEncounterPeripheralVision(index, before, navigation,
+				navigation_.huntEncounter(index, navigation),
+				[&] { return navigation_.routeRevision(index) == peripheralRoute; }))
+			continue;
 		const auto preparation = navigation_.prepareMovement(index, handle, before, movementUnavailable);
 		if (preparation.kind != MovementPreparationKind::Ready)
 		{
@@ -1877,7 +1883,8 @@ void PluginRuntime::updateManagedBots()
 		const auto routeCurrent = [&] { return navigation_.routeRevision(index) == routeRevision; };
 		HuntApproachLook approach{};
 		if (!navigation_.entersHuntWithoutUpdate(index, globals_->time) &&
-			!behavior_.updateHuntApproachLook(index, before, navigation, routeCurrent, approach))
+			!behavior_.updateHuntApproachLook(index, before, navigation, navigation_.huntEncounter(index, navigation),
+				command_.hasHuntApproachLook(index), routeCurrent, approach))
 			continue;
 		NavigationUpdate movement =
 			navigation_.updateNavigation(index, handle, before, navigation, performanceDisablePathSearch_);
@@ -1904,7 +1911,7 @@ void PluginRuntime::updateManagedBots()
 			navigation_.logMovementDiagnostic(index, "roam_no_intent", &roamDecision);
 			const bool hunt = behavior_.managedBotStateMachines(index).state() == compat::CompatibilityStateId::Hunt;
 			if (!roamDecision.huntWaitingForFriend && !(hunt && (command_.hasHuntApproachLook(index) ||
-				movement.huntApproachLook.update == HuntApproachLookUpdate::Track)))
+				movement.huntApproachLook.tracking())))
 			{
 				prepareNeutralManagedBotCommand(index, handle, before);
 				const runtime::CommandReceipt receipt = command_.executeManagedBotCommand(index, handle);

@@ -143,6 +143,10 @@ public:
 	}
 	std::size_t currentCorridorIndex() const;
 	bool hasHuntWaypointSuccessor() const { return pathFollower_.hasHuntWaypointSuccessor(); }
+	NavHuntEncounter huntEncounter(const NavSnapshot &snapshot) const
+	{
+		return active_ ? pathFollower_.huntEncounter(snapshot) : NavHuntEncounter{};
+	}
 
 private:
 	static bool isValidConfig(const LocomotionConfig &config);

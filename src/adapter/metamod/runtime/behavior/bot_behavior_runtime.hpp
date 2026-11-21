@@ -11,6 +11,7 @@
 #include "astrabot/compat/friend_death.hpp"
 #include "astrabot/compat/noise_investigation.hpp"
 #include "astrabot/compat/guard_look.hpp"
+#include "astrabot/compat/hunt_encounter.hpp"
 #include "astrabot/compat/weapon_equipment.hpp"
 #include "astrabot/compat/chatter_voice.hpp"
 #include "astrabot/compat/noise_look.hpp"
@@ -82,8 +83,11 @@ public:
 	void applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command, bool upkeepOnly);
 	bool refreshHuntApproaches(std::size_t index, const runtime::MovementPhysicsState &before,
 		const nav::NavSnapshot &navigation);
+	bool updateEncounterPeripheralVision(std::size_t index, const runtime::MovementPhysicsState &before,
+		const nav::NavSnapshot &navigation, nav::NavHuntEncounter path, const std::function<bool()> &routeCurrent);
 	bool updateHuntApproachLook(std::size_t index, const runtime::MovementPhysicsState &before,
-		const nav::NavSnapshot &navigation, const std::function<bool()> &routeCurrent, HuntApproachLook &look);
+		const nav::NavSnapshot &navigation, nav::NavHuntEncounter path, bool lookingAtSpot,
+		const std::function<bool()> &routeCurrent, HuntApproachLook &look);
 	void inhibitHuntApproachLook(std::size_t index, HuntApproachLook &look);
 	void applyObstacleCommand(std::size_t index, runtime::BotCommand &command);
 	void resetObstacleMaterials();
@@ -685,6 +689,7 @@ private:
 		std::uint32_t noiseLookUpdate = 0U;
 		compat::BombGuardPlanner bombGuardPlanners{};
 		compat::GuardLookPlanner guardLook{};
+		compat::HuntEncounterPlanner huntEncounter{};
 		struct HuntApproaches
 		{
 			nav::NavVector viewPosition{};

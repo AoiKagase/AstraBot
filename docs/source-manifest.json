@@ -897,6 +897,12 @@
       "reference_only": false
     },
     {
+      "path": "include/astrabot/compat/hunt_encounter.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
       "path": "include/astrabot/compat/navigation_step.hpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",

@@ -231,12 +231,17 @@ enum class HuntApproachLookUpdate
 {
 	Unchanged,
 	Clear,
-	Track
+	Track,
+	TrackEncounter
 };
 struct HuntApproachLook
 {
 	HuntApproachLookUpdate update = HuntApproachLookUpdate::Unchanged;
 	nav::NavVector spot{};
+	bool tracking() const
+	{
+		return update == HuntApproachLookUpdate::Track || update == HuntApproachLookUpdate::TrackEncounter;
+	}
 };
 struct NavigationUpdate
 {

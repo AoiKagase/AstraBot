@@ -52,6 +52,10 @@ public:
 		return actors_[index].managedBotMovement.routeRevision();
 	}
 	bool entersHuntWithoutUpdate(std::size_t index, float now) const;
+	nav::NavHuntEncounter huntEncounter(std::size_t index, const nav::NavSnapshot &snapshot) const
+	{
+		return actors_[index].managedBotMovement.huntEncounter(snapshot);
+	}
 
 	float pathDistanceRemaining(std::size_t index, const nav::NavSnapshot &snapshot) const
 	{

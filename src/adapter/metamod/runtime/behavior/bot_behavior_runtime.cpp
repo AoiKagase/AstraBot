@@ -157,6 +157,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].bombGuardPlanners.reset();
 	actors_[index].guardLook.reset();
 	actors_[index].huntApproaches = {};
+	actors_[index].huntEncounter = {};
 	actors_[index].equipment.reset();
 	actors_[index].scenarioEscapeAreas = 0U;
 	actors_[index].bombSearchMemory.reset();
@@ -217,6 +218,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	const world::ActorKey actor = {handle.actor.slot, handle.actor.actorGeneration};
 	actors_[index].guardLook.reset();
 	actors_[index].huntApproaches = {};
+	actors_[index].huntEncounter = {};
 	actors_[index].equipment.reset();
 	actors_[index].managedBotCombat = combat::CombatController(actor);
 	actors_[index].managedBotObjectives = objectives::RoundObjectivePlanner(actor);

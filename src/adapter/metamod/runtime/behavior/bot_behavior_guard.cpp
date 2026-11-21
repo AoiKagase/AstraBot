@@ -185,8 +185,45 @@ bool BotBehaviorRuntime::refreshHuntApproaches(std::size_t index, const runtime:
 	return true;
 }
 
+bool BotBehaviorRuntime::updateEncounterPeripheralVision(std::size_t index,
+	const runtime::MovementPhysicsState &before, const nav::NavSnapshot &navigation,
+	nav::NavHuntEncounter path, const std::function<bool()> &routeCurrent)
+{
+	const auto config = services_->service_compatibilitySurface().configuration();
+	if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0.0f ||
+		config.botStop != 0.0f || before.dead)
+		return true;
+	const auto receipt = reactionContext(index);
+	if (!std::isfinite(receipt.now) || isBlinded(receipt.actor, receipt.frame, receipt.now))
+		return true;
+	auto &actor = actors_[index];
+	auto next = actor.huntEncounter;
+	if (!next.beginPeripheralScan(receipt.now))
+		return true;
+	const auto revision = actor.executionRevision;
+	if (path.encounter)
+	{
+		for (const auto &entry : path.encounter->spots)
+		{
+			const auto *spot = navigation.findHidingSpot(entry.hidingSpotId);
+			if (!spot)
+				continue;
+			const auto &p = spot->position;
+			const bool visible = canSeePoint(index, {p.x, p.y, p.z + 36.0f}, receipt.frame, true);
+			if (!executionCurrent(index, receipt, revision) || !routeCurrent() ||
+				!services_->service_navPublisher().isCurrent(navigation))
+				return false;
+			if (visible)
+				next.markChecked(spot->id, receipt.now);
+		}
+	}
+	actor.huntEncounter = next;
+	return true;
+}
+
 bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime::MovementPhysicsState &before,
-	const nav::NavSnapshot &navigation, const std::function<bool()> &routeCurrent, HuntApproachLook &look)
+	const nav::NavSnapshot &navigation, nav::NavHuntEncounter path, bool lookingAtSpot,
+	const std::function<bool()> &routeCurrent, HuntApproachLook &look)
 {
 	auto &actor = actors_[index];
 	const auto config = services_->service_compatibilitySurface().configuration();
@@ -208,12 +245,9 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 	}
 	constexpr float kStationarySpeed = 10.0f;
 	const auto &velocity = before.velocity;
-	if (velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z >=
-			kStationarySpeed * kStationarySpeed || now < actor.huntApproaches.nextLookAt ||
-		now < actor.huntApproaches.inhibitUntil)
-		return true;
-	const auto areaId = services_->navigation_knownArea(index, receipt.actor, receipt.frame, navigation.revision());
-	if (areaId == 0)
+	const bool moving = velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z >=
+		kStationarySpeed * kStationarySpeed;
+	if (now < actor.huntApproaches.inhibitUntil)
 		return true;
 	const auto revision = actor.executionRevision;
 	const auto epoch = machine.normalStateEpoch();
@@ -224,16 +258,72 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 			controls.botEnable > 0.0f && controls.botStop == 0.0f &&
 			services_->service_navPublisher().snapshot().revision() == navigation.revision();
 	};
+	const compat::RandomTimingContext timing{services_->command_managedBotCommandSequences(index), 0,
+		services_->service_managedBotFullUpdateSequences()[index]};
+	const compat::RandomActor randomActor{receipt.actor.slot, receipt.actor.generation};
+	auto &random = services_->service_compatibilityRandomSource();
+	if (moving)
+	{
+		auto &planner = actor.huntEncounter;
+		const float roundStart = services_->service_roundFreezeGeneration() == receipt.frame.roundGeneration
+			? services_->service_roundFreezeUntil() : 0.0f;
+		const float aggression = static_cast<float>(actor.managedProfiles.aggression) / 100.0f;
+		if (!path.encounter || lookingAtSpot || !planner.selectionDue(now) ||
+			actor.enemyReaction.isSafe(now - roundStart, aggression) || isBlinded(receipt.actor, receipt.frame, now))
+			return true;
+		const auto &encounter = *path.encounter;
+		const auto &document = *navigation.document();
+		const auto *from = document.findArea(encounter.fromArea);
+		const auto *to = document.findArea(encounter.toArea);
+		if (!from || !to)
+			return true;
+		auto start = compat::guardApproachPoint(*path.middle, *from, encounter.fromDirection);
+		auto end = compat::guardApproachPoint(*path.middle, *to, encounter.toDirection);
+		start.z += 36.0f;
+		end.z += 36.0f;
+		const float progress = compat::huntEncounterProgress(start, end,
+			{before.origin.x, before.origin.y, before.origin.z});
+		const auto wait = random.nextFloat(compat::RandomRequest::floatRequest(
+			"LookAround.EncounterInterval", randomActor, timing, 10.0f, 30.0f));
+		if (!current())
+			return false;
+		if (wait.status != compat::RandomStatus::Ok || !(wait.value >= 10.0f && wait.value <= 30.0f))
+			return true;
+		const float skill = static_cast<float>(actor.managedProfiles.skill) / 100.0f;
+		planner.schedule(now, skill, wait.value);
+		const auto eligible = planner.eligible(encounter, progress, now);
+		if (eligible.count == 0)
+			return true;
+		const auto which = random.nextLong(compat::RandomRequest::longRequest(
+			"LookAround.EncounterSpot", randomActor, timing, 0, eligible.count - 1));
+		if (!current())
+			return false;
+		if (which.status != compat::RandomStatus::Ok || which.value < 0 || which.value >= eligible.count)
+			return true;
+		const auto *spot = navigation.findHidingSpot(eligible.ids[which.value]);
+		if (!spot)
+			return true;
+		look = {HuntApproachLookUpdate::TrackEncounter, spot->position};
+		look.spot.z += 36.0f;
+		planner.markChecked(spot->id, now);
+		if (services_->service_runtimeProfiler().enabled())
+			runtime_detail::profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
+				"hunt encounter look slot=%u update=%u now=%.6f areas=%u/%u/%u t=%.6f count=%d id=%u spot=(%.3f %.3f %.3f)",
+				receipt.actor.slot, timing.fullUpdateSequence, now, from->id, path.middle->id, to->id, progress,
+				eligible.count, spot->id, look.spot.x, look.spot.y, look.spot.z);
+		return current();
+	}
+	if (now < actor.huntApproaches.nextLookAt)
+		return true;
+	const auto areaId = services_->navigation_knownArea(index, receipt.actor, receipt.frame, navigation.revision());
+	if (areaId == 0)
+		return true;
 	const auto &weapon = services_->observation_managedBotCurrentWeapons(index);
 	const bool sniper = weapon.available && weapon.active &&
 		(weapon.weaponId == kScoutWeaponId || weapon.weaponId == kSg550WeaponId || weapon.weaponId == kAwpWeaponId ||
 			weapon.weaponId == kG3sg1WeaponId);
-	const compat::RandomTimingContext timing{services_->command_managedBotCommandSequences(index), 0,
-		services_->service_managedBotFullUpdateSequences()[index]};
-	const compat::RandomActor randomActor{receipt.actor.slot, receipt.actor.generation};
 	const float minimumInterval = sniper ? 5.0f : 1.0f;
 	const float maximumInterval = sniper ? 10.0f : 2.0f;
-	auto &random = services_->service_compatibilityRandomSource();
 	const auto wait = random.nextFloat(compat::RandomRequest::floatRequest(
 		"LookAround.StateInterval", randomActor, timing, minimumInterval, maximumInterval));
 	if (!current())

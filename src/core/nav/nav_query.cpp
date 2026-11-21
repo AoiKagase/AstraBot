@@ -1738,6 +1738,32 @@ std::size_t NavPathFollower::currentIndex() const
 	return currentIndex_;
 }
 
+NavHuntEncounter NavPathFollower::huntEncounter(const NavSnapshot &snapshot) const
+{
+	if (!active_ || !snapshot.isValid() ||
+		snapshot.revision() != navRevision_ || snapshot.mapGeneration() != mapGeneration_)
+		return {};
+
+	// Full Hunt corridors can also use the area follower. Its index already
+	// names the next area, while projected paths can repeat an area at two waypoints.
+	const bool usesWaypoints = !huntWaypoints_.empty();
+	const auto index = usesWaypoints ? huntWaypointIndex_ : currentIndex_;
+	if (index < 2U || index >= (usesWaypoints ? huntWaypoints_.size() : corridor_.size()))
+		return {};
+	const auto areaIndex = [&](std::size_t node) { return usesWaypoints ? huntWaypoints_[node].areaIndex : node; };
+	const auto from = areaIndex(index - 2U);
+	const auto middle = areaIndex(index - 1U);
+	const auto to = areaIndex(index);
+	if (from >= corridor_.size() || middle >= corridor_.size() || to >= corridor_.size())
+		return {};
+	const auto *area = snapshot.document()->findArea(corridor_[middle]);
+	if (area)
+		for (const auto &encounter : area->encounters)
+			if (encounter.fromArea == corridor_[from] && encounter.toArea == corridor_[to])
+				return {area, &encounter};
+	return {};
+}
+
 bool NavPathFollower::nearHuntCorner(const NavVector &origin, const NavVector &target)
 {
 	constexpr float range = 100.0f;

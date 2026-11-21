@@ -127,6 +127,9 @@ private:
 		float navigationLookYaw = std::numeric_limits<float>::quiet_NaN();
 		nav::NavVector huntApproachLookSpot{};
 		bool huntApproachLookActive = false;
+		bool huntEncounterLook = false;
+		float huntEncounterAlignedAt = -1.0f;
+		float huntEncounterUpkeepAt = std::numeric_limits<float>::quiet_NaN();
 		bool huntWaitNavigationLook = false;
 		float descentLookAt = std::numeric_limits<float>::quiet_NaN();
 		nav::NativeLadderPhase descentLookPhase = nav::NativeLadderPhase::None;
@@ -156,6 +159,7 @@ private:
 	};
 	runtime::ViewAngles stepNavigationLook(const edict_t &entity, ActorState &actor, bool useHuntApproachLook);
 	void advanceLadderDescentLook(std::size_t index, FakeClientHandle &handle);
+	void advanceHuntEncounterLook(std::size_t index, edict_t &entity);
 	void applyUseEntityLook(std::size_t index, const edict_t &entity, const ActionProposal &action,
 		runtime::BotCommand &command);
 	void observeHostageUse(std::size_t index, const runtime::BotCommand &command,

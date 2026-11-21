@@ -301,6 +301,10 @@ public:
 	void observeMotion(ActorId actor, world::FrameIdentity frame, const nav::LocomotionObservation &observation);
 	bool isActive() const;
 	bool hasPath() const;
+	nav::NavHuntEncounter huntEncounter(const nav::NavSnapshot &snapshot) const
+	{
+		return hasPath() && !nativeLadder_.active() ? locomotion_.huntEncounter(snapshot) : nav::NavHuntEncounter{};
+	}
 	bool hasNativeLadderPath() const;
 	float pathDistanceRemaining(const nav::NavSnapshot &snapshot) const;
 

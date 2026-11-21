@@ -19,6 +19,8 @@ public:
 		const auto &areas = document.areas();
 		for (std::size_t index = 0; index < areas.size(); ++index)
 		{
+			for (const auto &spot : areas[index].hidingSpots)
+				hidingSpots_.emplace(spot.id, &spot);
 			const auto &extent = areas[index].extent;
 			std::int64_t x0, y0, x1, y1;
 			if (!coordinate(extent.lo.x, &x0) || !coordinate(extent.hi.x, &x1) ||
@@ -46,6 +48,12 @@ public:
 		return cell == cells_.end() ? &empty : &cell->second;
 	}
 
+	const NavHidingSpot *findHidingSpot(std::uint32_t id) const
+	{
+		const auto found = hidingSpots_.find(id);
+		return found == hidingSpots_.end() ? nullptr : found->second;
+	}
+
 private:
 	static bool coordinate(float world, std::int64_t *coordinate)
 	{
@@ -63,6 +71,7 @@ private:
 			static_cast<std::uint32_t>(y);
 	}
 	std::unordered_map<std::uint64_t, std::vector<std::size_t>> cells_;
+	std::unordered_map<std::uint32_t, const NavHidingSpot *> hidingSpots_;
 };
 
 NavSnapshot::NavSnapshot() : document_(), grid_(), revision_(0U), mapGeneration_(0U)
@@ -94,6 +103,13 @@ std::uint32_t NavSnapshot::mapGeneration() const
 const NavDocument *NavSnapshot::document() const
 {
 	return document_.get();
+}
+
+const NavHidingSpot *NavSnapshot::findHidingSpot(std::uint32_t id) const
+{
+	if (grid_)
+		return grid_->findHidingSpot(id);
+	return document_ ? document_->findHidingSpot(id) : nullptr;
 }
 
 const std::vector<std::size_t> *NavSnapshot::areaIndicesInCell(const NavVector &position) const

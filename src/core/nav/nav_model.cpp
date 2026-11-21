@@ -190,7 +190,7 @@ NavModelResult NavDocument::validate() const
 			}
 			for (const NavEncounterSpot &spot : encounter.spots)
 			{
-				if (!hasHidingSpot(areas_, spot.hidingSpotId))
+				if (!findHidingSpot(spot.hidingSpotId))
 				{
 					return NavModelResult::InvalidReference;
 				}
@@ -346,19 +346,13 @@ bool NavDocument::isValidPlace(const NavPlace &place)
 	return place.id != 0U && isValidName(place.name);
 }
 
-bool NavDocument::hasHidingSpot(const std::vector<NavArea> &areas, std::uint32_t id)
+const NavHidingSpot *NavDocument::findHidingSpot(std::uint32_t id) const
 {
-	for (const NavArea &area : areas)
-	{
-		for (const NavHidingSpot &spot : area.hidingSpots)
-		{
+	for (const auto &area : areas_)
+		for (const auto &spot : area.hidingSpots)
 			if (spot.id == id)
-			{
-				return true;
-			}
-		}
-	}
-	return false;
+				return &spot;
+	return nullptr;
 }
 }
 }
