@@ -768,7 +768,43 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			(plantUpdateAction.movementButtons & IN_DUCK) != 0 && moveTrace.plantUpdates == 1,
 			"the following Plant full update consumes the NAV-entry receipt and stops forward/jump while crouching");
 		};
-		return moveControl(2) && moveControl(1) && moveControl(0) && timeoutEntryControl(true);
+		const auto idleAfterBuyControl = [&] {
+			auto &commandPorts = static_cast<metamod::BotCommandServices &>(runtime);
+			auto &liveState = const_cast<CompatibilityStateMachine &>(commandPorts.behavior_managedBotStateMachines(0));
+			auto context = start;
+			context.timestamp = globals.time;
+			context.frame.tick = ports.service_adapterFrameCount();
+			context.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0];
+			(void)liveState.stopAttack(context);
+			(void)liveState.transition(CompatibilityStateId::Buy, StateTransitionReason::ExplicitRequest,
+				StateTransitionId::ExplicitStateChange, context);
+			auto &goal = const_cast<metamod::ManagedObjectiveTargetCache &>(commandPorts.behavior_managedBotObjectiveTargets(0));
+			goal = {};
+			gEntities[0].v.weapons = (1 << 6) | (1 << 28);
+			plantZonePrediction = 1;
+			combatGameDll->pfnUpdateClientData = [](const edict_t *, int, clientdata_t *data) {
+				data->m_iId = 28;
+				data->iuser3 = 1 << 2;
+			};
+			for (auto kind : {metamod::NavigationRequestKind::ResetMovement, metamod::NavigationRequestKind::ClearStep})
+				ports.applyNavigationRequest({0, kind});
+			const auto sentBefore = combatSentInputs.size();
+			stepRifle(1, 30, 28);
+			const auto &step = commandPorts.navigation_managedNavigationSteps(0);
+			const bool idle = liveState.state() == CompatibilityStateId::Idle;
+			const bool noPath = step.pathSequence == 0U && !ports.navigation_hasActivePath(0);
+			const bool noMovement = combatSentInputs.size() == sentBefore + 1 &&
+				std::hypot(combatCommandForward, combatCommandSide) == 0;
+			const bool noTarget = !goal.valid && goal.generation == 0U;
+			stepRifle(1, 30, 28);
+			const bool nextPlants = liveState.state() == CompatibilityStateId::PlantBomb;
+			combatGameDll->pfnUpdateClientData = nullptr;
+			return check(idle, "completed Buy enters Idle before the carrier's next normal update") &&
+				check(nextPlants, "the following Idle update admits Plant directly through the public bomb-zone observation") &&
+				check(noPath && noMovement, "Idle after Buy does not prepare a path or dispatch navigation movement before Plant admission") &&
+				check(noTarget, "Idle's neutral action does not create an unused legacy Plant target after NAV is held");
+		};
+		return moveControl(2) && moveControl(1) && moveControl(0) && timeoutEntryControl(true) && idleAfterBuyControl();
 	}
 	if (clearLookFixture)
 	{

@@ -1039,6 +1039,12 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	observation.actor = handle.actor;
 	observation.frame = {services_->service_lifecycle().mapGeneration(),
 		services_->service_lifecycle().roundGeneration(), services_->service_adapterFrameCount()};
+	const bool compatibility =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	const auto &currentMachine = services_->behavior_managedBotStateMachines(index);
+	// Idle assigns the next state; entering it does not run that state's NAV work.
+	const bool idle = compatibility && currentMachine.state() == compat::CompatibilityStateId::Idle &&
+		!currentMachine.attackOverlayActive();
 	float feetOffset = handle.entity->v.mins.z;
 	if (!std::isfinite(feetOffset) || feetOffset >= 0.0f)
 	{
@@ -1107,7 +1113,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			services_->service_runtimeProfiler(), RuntimeProfilerStage::FullUpdateObjective);
 		RuntimeProfilerScope candidateNavScope(
 			services_->service_runtimeProfiler(), RuntimeProfilerStage::ObjectiveCandidateNavEvaluate);
-		observation.hasObjectiveTarget =
+		observation.hasObjectiveTarget = !idle &&
 			services_->behavior_buildManagedObjectiveTarget(index, &observation.objectiveTarget,
 				services_->service_runtimeProfiler().enabled() ? &objectiveSearchStats : nullptr,
 				services_->service_runtimeProfiler().enabled() ? &objectiveSelectionStats : nullptr,
@@ -1121,7 +1127,6 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		observation.objectiveTargetEntity = objectiveAssignment->targetEntity;
 	}
 	observation.team = static_cast<std::uint8_t>(services_->observation_resolvePlayerTeam(handle.entity));
-	const auto &currentMachine = services_->behavior_managedBotStateMachines(index);
 	if (currentMachine.state() == compat::CompatibilityStateId::InvestigateNoise)
 	{
 		observation.noiseGoalArea = explicitGoalArea;
@@ -1129,8 +1134,6 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		observation.noiseRoute = runtime::NoiseRouteUpdate::Follow;
 		observation.noisePathStartArea = knownArea(index, objectiveActor, observation.frame, navigation.revision());
 	}
-	const bool compatibility =
-		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	observation.plantApproach = compatibility && currentMachine.state() == compat::CompatibilityStateId::MoveTo &&
 		currentMachine.task() == compat::CompatibilityTaskId::PlantBomb && !currentMachine.attackOverlayActive();
 	observation.fetchBombPath = compatibility && currentMachine.state() == compat::CompatibilityStateId::FetchBomb &&
@@ -1170,7 +1173,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	const auto &goalCache = services_->behavior_managedBotObjectiveTargets(index);
 	if (observation.hasObjectiveTarget && goalCache.routeOverride && !observation.fetchBombPath)
 		observation.objectiveRouteType = goalCache.routeType;
-	observation.movementSuppressed = services_->roundFreezeActive();
+	observation.movementSuppressed = idle || services_->roundFreezeActive();
 	const auto &objectiveAction = services_->behavior_managedBotObjectiveActions(index);
 	observation.movementSuppressed = observation.movementSuppressed ||
 		(objectiveAction.active && objectiveAction.kind == team::TeamObjectiveKind::PlantC4 &&

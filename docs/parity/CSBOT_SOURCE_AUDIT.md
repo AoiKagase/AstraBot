@@ -83,3 +83,29 @@ Windows170/170・Linux169/169、PE/ELF公開7関数と直列隔離実機11試行
 CDBはDLL module-loadを待ってBPを設定。最初のPlantは `59.37293243` 秒/full `0x1d3`、MoveTo→EndOfPath2→Plant。生成NAV入力ゼロのためDuck4/AKで入り、その後C4へ移る。固定nativeのPATH_FAILURE時buttons14とは終端結果が異なり、同条件14対4比較とは主張しない。タイムアウト入力保持・callback失効は実フレームのオフライン回帰、実機は到着/区域外/実drop/設置の受入れとして区別する。fixtureの明示的C4在庫bit同期は残る。
 
 固定baseline・既存補正を再生成せず、両OSとも親の152258行と全byte一致。RNG510行も各OSの親と順序・値まで一致し、新規補正なし。既存のOS間丸め差は残る。証拠と指紋は `artifacts/local/debug/csbot-plant-entry-nav-input-20261122/evidence-final-v2/acceptance.json`、製品は同root `final-v2/`、raw試行は `C:/Temp/astrabot-plant-entry-nav-input`。push・実環境配布なし。
+
+## Plant前Idleの不要な経路準備（2026-11-22）
+
+基点 `a924873`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。参照Idle OnEnterはDestroyPathを行い、次のIdle OnUpdateが次状態を選ぶ。Buy→Idleが完了した更新で後続状態の経路更新を先行しない。旧最終実機ではTのBuy終了更新がIdleのままpath1と前進88.4を作っていた（前単位final-v2-natural0、frame817）。Hunt→Idleの設置待ちは既存receiptで止まっており、これと混同していない。
+
+互換モード・非Attack IdleではNAV用objective target選択を呼ばず、movementSuppressedによってground lookaheadとcore経路処理を抑止する。known NAV areaはstate更新前のobserveFullUpdateMotionが独立して更新するため、area発見の循環を作らない。neutral actionにも残っていた旧PlantAttempt専用の目標選択は、実際に消費する非互換モードだけに限定した。互換Plant処理は既存の正規PlantBomb OnUpdateを使う。
+
+正規targetの実onStartFrame回帰は、実runtimeのBuy完了→Idle→次fullのPlantを通し、Idle更新のpathなし・active pathなし・実RunPlayerMove移動ゼロ・cold目標cache未生成を確認する。`red-idle-after-buy.log` はIdle成立後に経路/移動だけ失敗、NAV抑止後の `red-idle-action-target.log` は次fullPlantと経路/移動ゼロが成立して目標生成だけ失敗した。最終 `green-idle-entry.log` はPlant entry/terminal/ClearLookの3/3合格。製品差と履歴補正は別途read-onlyレビュー済み。
+
+最終オフラインはWindows x86 **171/171・PE7**、Linux x86 **170/170・ELF7**。各全targetビルド後、OS間CTestを直列で実行した。初回Windows全CTestとLinux重点履歴が検出した契約差は最終合格と区別する。DLL SHA-256 `a6a1b4ce7db967a90d958f7d0706461ce1ae130795bdc8bb425a10f98197ee08`、PDB `6595a235dad33a183765708264e4065255706d9c79074964150194930a21db47`、ELF `5151074f75de4d3c9bcbfcd9f959b31050a3c663491eee4d7ee73d7b0d3d198f`。
+
+Windows再構築では進行役NMakeだけを一時停止し、既存child targetの完了を待ってから、OBJ/PDBが独立した22targetを4本で処理した。共有lib・固定DLL/PDBの不変と全22件exit0を確認してから進行役を再開し、正規全ビルドと最終全CTestを通した。同じtargetを通常buildと重ねていない。制御・時刻・指紋はcoordinated-build.jsonに記録した。初回snapshotの文字コード失敗は停止操作前、ELFのリンク途中読取りは除外し、全ビルド終了後のelf-final.logを採用した。
+
+両OSとも固定baselineは保持し、既存補正後の152258行から151999行への差だけを105個のoffset編集（629削除・370挿入）として追加した。読取りcallbackの位置移動も含み、単なる削除のみとはしない。純減259行はindexOfEdict98、entityOfIndex72、szFromIndex84、mp_roundtime取得2、Idleで不要になったground lookahead trace3（fixtureのログ名はtraceObjectiveVisibility）。fixture内の読取りcallback以外の3128行と、RNG510行は各OSの親と順序・値まで完全一致し、全byteを親offset・before行・前後SHAで再構成検証した。この読取り分類は当該fixtureの実装に対するもので、任意GameDLLの副作用なし保証ではない。既存OS間の数値表記/丸め差は保持した。
+
+最終DLL/PDBの隔離実機は全て実PID終了0を確認してから次を起動した。
+
+- final-natural-0: PID44112 exit0/forced=false; plant-fixture planted time=14.614705; plant-fixture complete mode=0 planted=1
+- final-natural-7: PID31424 exit0/forced=false; terminal-fixture leave-zone now=11.677335 has=1; plant-fixture complete mode=7 planted=0
+- final-natural-8: PID18608 exit0/forced=false; terminal-fixture actual-drop now=11.850727 entity=99 has=0; plant-fixture complete mode=8 planted=0
+- final-natural-11: PID19236 exit0/forced=false; plant-fixture planted time=70.292488; plant-fixture complete mode=11 planted=1
+- final-idle-debug-0: PID41332 exit0/forced=false; plant-fixture planted time=14.435778; plant-fixture complete mode=0 planted=1
+
+全5試行でTのIdleはpath0・入力(0,0,0)。最終case0のIdle frame742/update70はgoal_generation0、移動ゼロを実RunPlayerMoveで確認した。読取専用CDBはDLL module-load後にBPを置き、初回Idle→Plant `10.36654758` 秒/full `0x41` に保持Ahead **0°** を型付きで直接採録した。入場時はDuck/AK、次の2cached commandもAK、10.498880秒からC4となる。固定参照の初回保持Ahead0°と整合するが、絶対時刻・全経路・全視線軌跡の一致とは主張しない。fixtureの明示的C4在庫bit同期、自然拾得・実水没・標準GameDLL全体の未受入れ範囲は残る。
+
+固定製品は `artifacts/local/debug/csbot-idle-navigation-hold-20261122/final`、受入れ・前後指紋は同root `evidence-final`、全raw試行は `C:/Temp/astrabot-idle-navigation-hold`。push・実環境配布なし。

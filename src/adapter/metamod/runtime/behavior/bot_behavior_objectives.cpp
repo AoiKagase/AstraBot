@@ -1905,7 +1905,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 			const bool hasPlantAssignment =
 				objectiveAssignment != nullptr && objectiveAssignment->kind == team::TeamObjectiveKind::PlantC4;
 			nav::NavVector selectedPlantTarget{};
-			const bool haveSelectedPlantTarget = hasPlantAssignment && carryingBomb &&
+			const bool haveSelectedPlantTarget = !compatibility && hasPlantAssignment && carryingBomb &&
 				teamRole == objectives::TeamRole::Terrorist &&
 				buildManagedObjectiveTarget(index, &selectedPlantTarget, nullptr);
 			objectives::ObjectiveKind objectiveKind = objectives::ObjectiveKind::None;
