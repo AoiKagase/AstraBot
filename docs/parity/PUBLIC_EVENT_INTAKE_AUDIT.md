@@ -39,4 +39,4 @@ Unit 20 reuses the 12A receipt. A qualified voice supplies the accompanying host
 
 Unreachable hiding paths use AstraBot's shared Idle fallback. Native `GuardRandomZone` can still assign the rescue-guard task after `Hide` falls back to Idle. That task difference remains part of the broader state-machine audit in item 23.
 
-Next exact work: evaluate any additional public provider against the required pre-base inflictor/time/order stream and the project boundary before implementation. Native Radio attachment presentation is independently implementable through public SVC_TEMPENTITY/TE_PLAYERATTACHMENT and the host-preloaded radio sprite; its design/tests live in the death-radio-icon feature. The overall remaining CSBot goal stays active.
+2026-11-22更新：被弾等の追加公開providerは、判定前のinflictor/time/orderと現在のruntime境界に照らして引き続き調査する。Radio attachmentは後続のdeath-radio-icon単位で公開SVC_TEMPENTITY/TE_PLAYERATTACHMENT・host sprite・recipient別audio/identity guardまで実装済みであり、設計待ちではない。実音声/UIの受入れは別途残る。標準GameDLL被弾/失明/animation、人質の現在follow/escort観測は [全ソース監査](FULL_SOURCE_AUDIT.md) のPUB-*で追跡する。

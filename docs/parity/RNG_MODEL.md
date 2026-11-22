@@ -1,5 +1,11 @@
 # P03 RNG Reference Model
 
+## 2026-11-22 全ソース監査による現行判定
+
+P03の固定参照148式の語彙的棚卸しは履歴として保持する。一方、以下の「AstraBot production callsiteなし」「actor由来deterministic巡回のみ」は当時の状態であり現行ではない。現在は1本のengine RNG境界を管理・戦闘・シナリオ・NAV・聴覚・発話の実経路が消費する。音声候補shuffleはengineと別のnative CRT既定列を再現し、backlog21は32round対照を含むオフライン解消である。
+
+現行の未完は [全ソース監査](FULL_SOURCE_AUDIT.md) のS01/S02等の選択条件差とV01の固定参照全体順比較で追跡する。Astraの固定履歴に対するRNG510行一致は、native全体列の一致ではない。下表UNKNOWN/no equivalentはP03時点の判定で、現在の実装不在の根拠に使わない。実行型・範囲・分岐・複数Bot順を対応させる受入れは残る。
+
 ## P06 perception callsite note
 
 The pinned reference noise path in cs_bot_event.cpp uses the existing

@@ -1,0 +1,125 @@
+# 全製品ソースと残件の監査（2026-11-22）
+
+従来の5群は優先事項の要約であり、残件の完全な一覧にはなっていなかった。手榴弾・通常装備・狙撃銃、非C4シナリオ、移動幾何、管理/profile等の具体名を追加し、完了済みの旧記録を分離した。以下のIDを現行残件の正本とする。
+
+監査基点はAstraBot `dd1301e35f29a7d3f03b647980187547fec29f6e`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。実装変更はなく、製品は既存検証済み `6fdadbd` のまま。
+
+## 対象と網羅範囲
+
+| 対象 | 件数 | 今回の扱い |
+|---|---:|---|
+| Astra src/includeの製品C/C++ | 198 | 全ファイルに担当・指紋・照合記録。機能実装は全体読取り、結線ヘッダ/大規模pluginは宣言/構造と実行call chain照合を区別 |
+| テストC/C++ | 125 | 一覧と指紋、関連assertion/fixtureを照合。全fixture再帰読取りや再実行は主張しない |
+| SDK/API・資料中のC/C++ | 185 | SDK/API179、過去資料6。依存/履歴の棚卸しでありBot機能の未実装とは数えない |
+| 追加script/build/export | 38 | build/export4、検証27、資料7を分類。CMake/公開7関数の面と検証の責務を確認 |
+| 固定参照C/C++ | 363 | Bot/NAV53＋公開GameDLL文脈4のfull/focused照合、一般GameDLL/SDK/テスト306は依存棚卸し。一般GameDLL全行の意味解析完了とはしない |
+
+全ファイル名・行数・SHA・担当・関連残件は [FULL_SOURCE_INVENTORY.json](FULL_SOURCE_INVENTORY.json)。詳細報告は `artifacts/local/debug/csbot-full-source-audit-20261122/audit-{states,combat,navigation,parent}.json`。ファイルの担当漏れ0は全分岐一致・全パス実行の証明ではない。未確認をMATCHへ昇格しない。
+
+## 現行残件（5群）
+
+台帳は48項目。C15はM05へ統合。S05とNAVの護送入力、C14とS13等の依存関係は残し、独立したバグ件数には換算しない。S14は通常対戦milestone外だが、全ソース棚卸しから隠さない。
+
+### 1. 視線・戦闘・武器
+
+| ID | 状態 | 修正/確認対象 | Astra根拠 | 参照根拠 |
+|---|---|---|---|---|
+| C01 | 差確定 | 全look ownerの角速度共有・Guardの定速旋回 | `include/astrabot/combat/combat_intent.hpp:226`<br>`include/astrabot/compat/guard_look.hpp:98` | `regamedll/dlls/bot/cs_bot_vision.cpp:57`<br>`regamedll/dlls/bot/cs_bot_update.cpp:179` |
+| C02 | 差確定 | 手榴弾開始条件と保持/投擲の実行経路 | `src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1059`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1419` | `regamedll/dlls/bot/cs_bot_update.cpp:347`<br>`regamedll/dlls/bot/cs_bot_update.cpp:490` |
+| C03 | 差確定 | 通常Updateの装備再選択・安全時間中の装備 | `src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:8`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:74` | `regamedll/dlls/bot/cs_bot_update.cpp:519`<br>`regamedll/dlls/bot/cs_bot_update.cpp:526` |
+| C04 | 差確定 | SilencerCheck要求の実行時接続 | `include/astrabot/compat/weapon_actions.hpp:225`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1434` | `regamedll/dlls/bot/cs_bot_weapon.cpp:760`<br>`regamedll/dlls/bot/cs_bot_update.cpp:556` |
+| C05 | 差確定 | 遠距離ショットガンから拳銃への切替 | `include/astrabot/compat/weapon_actions.hpp:236`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1374` | `regamedll/dlls/bot/states/cs_bot_attack.cpp:319` |
+| C06 | 差確定 | 狙撃銃のscope解除/事前zoom/resumeZoom | `include/astrabot/compat/weapon_actions.hpp:250`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1428` | `regamedll/dlls/bot/states/cs_bot_attack.cpp:331`<br>`regamedll/dlls/bot/cs_bot_vision.cpp:453` |
+| C07 | 差確定 | 敵を見失った後の回避・距離調整 | `src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1245`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1281` | `regamedll/dlls/bot/states/cs_bot_attack.cpp:481` |
+| C08 | 差確定 | Combat軽更新/全更新の視認・照準積分順 | `src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:270`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1238` | `regamedll/dlls/bot/cs_bot_update.cpp:46`<br>`regamedll/dlls/bot/cs_bot_update.cpp:441` |
+| C09 | 差確定 | friendly-fire・敵の盾を含む発砲/脅威判定 | `src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1177`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:318` | `regamedll/dlls/bot/cs_bot_weapon.cpp:54`<br>`regamedll/dlls/bot/cs_bot_weapon.cpp:78` |
+| C10 | 差確定 | 破壊物対応の装備時計を共通EquipBestへ接続 | `src/adapter/metamod/runtime/behavior/bot_behavior_obstacles.cpp:44`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_obstacles.cpp:258` | `regamedll/dlls/bot/cs_bot.cpp:318`<br>`regamedll/dlls/bot/cs_bot_weapon.cpp:437` |
+| C11 | 差確定 | 敵非可視で再装填中の最終移動停止 | `src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:186`<br>`src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1399` | `regamedll/dlls/bot/cs_bot_update.cpp:788` |
+| C13 | 差確定 | BendLineOfSightの整数角・地面探索 | `src/adapter/metamod/runtime/behavior/bot_look_geometry.cpp:15`<br>`src/adapter/metamod/runtime/behavior/bot_look_geometry.cpp:48` | `regamedll/dlls/bot/cs_bot_vision.cpp:609` |
+
+### 2. 状態・目的・C4/人質/VIP
+
+| ID | 状態 | 修正/確認対象 | Astra根拠 | 参照根拠 |
+|---|---|---|---|---|
+| S01 | 差確定 | T設置先のzone選択・重複area抽選 | `src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp:1033`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp:1042` | `regamedll/dlls/bot/states/cs_bot_idle.cpp:183`<br>`regamedll/dlls/bot/states/cs_bot_idle.cpp:186` |
+| S02 | 差確定 | CT探索siteの距離・経路コストの区別 | `src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp:1219`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp:1221` | `regamedll/dlls/bot/states/cs_bot_idle.cpp:312`<br>`regamedll/dlls/bot/states/cs_bot_idle.cpp:313` |
+| S03 | 差確定 | Hunt30秒退出時のrogue解除 | `src/core/compat/state_machine.cpp:642`<br>`src/core/compat/state_machine.cpp:769` | `regamedll/dlls/bot/states/cs_bot_hunt.cpp:56`<br>`regamedll/dlls/bot/cs_bot.h:1029` |
+| S04 | 差確定 | 攻撃側Idleの狙撃待機抽選 | `src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp:342`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp:1600` | `regamedll/dlls/bot/states/cs_bot_idle.cpp:205`<br>`regamedll/dlls/bot/states/cs_bot_idle.cpp:529` |
+| S05 | 部分対応 | CT人質収集/救助・護送数・移動比較 | `include/astrabot/compat/scenario_behavior.hpp:613`<br>`include/astrabot/compat/scenario_behavior.hpp:624` | `regamedll/dlls/bot/states/cs_bot_idle.cpp:672`<br>`regamedll/dlls/bot/states/cs_bot_idle.cpp:685` |
+| S06 | 部分対応 | TのHunt/Hide中の人質警備変更 | `src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp:1517`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp:1605` | `regamedll/dlls/bot/states/cs_bot_hunt.cpp:126`<br>`regamedll/dlls/bot/states/cs_bot_hunt.cpp:148` |
+| S07 | 差確定 | TのHide中の解除者迎撃 | `src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp:684`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp:1825` | `regamedll/dlls/bot/states/cs_bot_hide.cpp:190`<br>`regamedll/dlls/bot/states/cs_bot_hide.cpp:195` |
+| S08 | 部分対応 | VIP/Escapeの20秒境界・区域/戦術選択 | `include/astrabot/compat/scenario_behavior.hpp:456`<br>`include/astrabot/compat/scenario_behavior.hpp:462` | `regamedll/dlls/bot/states/cs_bot_idle.cpp:432`<br>`regamedll/dlls/bot/states/cs_bot_idle.cpp:496` |
+| S09 | 差確定 | entityによるscenario判別とCT旧救出地点fallback | `src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp:744`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp:936` | `regamedll/dlls/bot/cs_bot_manager.cpp:1383`<br>`regamedll/dlls/bot/cs_bot_manager.cpp:1399` |
+| S10 | 部分対応 | T爆弾警備の隠れ場所選定・寿命 | `include/astrabot/compat/bomb_guard.hpp:122`<br>`include/astrabot/compat/bomb_guard.hpp:181` | `regamedll/dlls/bot/states/cs_bot_idle.cpp:134`<br>`regamedll/dlls/bot/states/cs_bot_idle.cpp:138` |
+| S11 | 部分対応 | BuyのCareer・状態進入/装備観測の厳密性 | `src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp:113`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp:149` | `regamedll/dlls/bot/states/cs_bot_buy.cpp:48`<br>`regamedll/dlls/bot/states/cs_bot_buy.cpp:68` |
+| S12 | 部分対応 | 人間leaderのauto-follow許可の観測 | `include/astrabot/compat/teamwork_policy.hpp:68`<br>`include/astrabot/compat/teamwork_policy.hpp:206` | `regamedll/dlls/bot/states/cs_bot_idle.cpp:107`<br>`regamedll/dlls/bot/states/cs_bot_follow.cpp:103` |
+| S13 | 実機未受入 | Plant修正後に残る自然拾得/標準GameDLL受入れ | `src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp:1721`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp:2229` | `regamedll/dlls/bot/states/cs_bot_idle.cpp:169`<br>`regamedll/dlls/bot/states/cs_bot_move_to.cpp:263` |
+| S15 | 差確定 | 通常Hideの占有・経路失敗時の場所再選択 | `src/core/compat/state_machine.cpp:397`<br>`src/core/compat/state_machine.cpp:680` | `regamedll/dlls/bot/states/cs_bot_hide.cpp:343`<br>`regamedll/dlls/bot/states/cs_bot_hide.cpp:348` |
+| C12 | 公開観測調査 | 複数武器slotの先頭を確定する公開観測 | `src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:77`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:102` | `regamedll/dlls/bot/cs_bot_weapon.cpp:443`<br>`regamedll/dlls/bot/cs_bot_weapon.cpp:482` |
+| C14 | 実機未受入 | C4初回未装備・実水没の直接受入れ | `src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:74`<br>`src/adapter/metamod/runtime/command/bot_command_runtime.cpp:539` | `regamedll/dlls/bot/cs_bot_weapon.cpp:420` |
+
+### 3. NAV・移動・知覚
+
+| ID | 状態 | 修正/確認対象 | Astra根拠 | 参照根拠 |
+|---|---|---|---|---|
+| NAV-01 | 差確定 | 段差ジャンプ80/30/10と地面probeの順序/方向 | `src/core/nav/locomotion.cpp:336`<br>`src/core/nav/locomotion.cpp:346` | `regamedll/dlls/bot/cs_bot_nav.cpp:126`<br>`regamedll/dlls/bot/cs_bot_nav.cpp:199` |
+| NAV-02 | 差確定 | 足元左右feelerによる壁回避操舵 | `src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp:1211`<br>`src/core/runtime/nav_roam_controller.cpp:2593` | `regamedll/dlls/bot/cs_bot_pathfind.cpp:1169`<br>`regamedll/dlls/bot/cs_bot_pathfind.cpp:1461` |
+| NAV-03 | 差確定 | 生存可能な有痛落下を拒むzero-damage gate | `src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp:1073`<br>`src/core/nav/locomotion.cpp:360` | `regamedll/dlls/bot/cs_bot.h:1632`<br>`regamedll/dlls/bot/cs_bot.h:1640` |
+| NAV-04 | 実行時接続が部分対応 | 人質護送数をpath costへ接続 | `include/astrabot/nav/nav_query.hpp:107`<br>`src/core/nav/nav_query.cpp:770` | `regamedll/dlls/bot/cs_bot.h:1667` |
+| NAV-05 | 差確定 | NAV v1–4の.loc place付随データ読取り | `src/core/nav/legacy_nav_reader.cpp:360`<br>`src/adapter/metamod/navigation/nav_loader.cpp:236` | `regamedll/game_shared/bot/nav_file.cpp:639`<br>`regamedll/game_shared/bot/nav_file.cpp:697` |
+| NAV-06 | 算法差確定・対照未実行 | A* open-node減額→同値時の並び順 | `src/core/nav/nav_query.cpp:825`<br>`src/core/nav/nav_query.cpp:840` | `regamedll/game_shared/bot/nav_area.cpp:2446`<br>`regamedll/game_shared/bot/nav_area.cpp:2494` |
+
+### 4. 公開観測・イベント・発話・管理/profile
+
+| ID | 状態 | 修正/確認対象 | Astra根拠 | 参照根拠 |
+|---|---|---|---|---|
+| S14 | 未実装・現milestone外 | NAV学習/解析/編集/保存（現対戦milestone外） | `docs/parity/IMPLEMENTATION_BACKLOG.md:21` | `regamedll/dlls/bot/cs_bot_learn.cpp:169`<br>`regamedll/dlls/bot/cs_bot_learn.cpp:385` |
+| OBS-01 | 差確定 | 任意/非player soundからの不要な調査音生成 | `src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp:636`<br>`src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp:668` | `regamedll/dlls/bot/cs_bot_event.cpp:275`<br>`regamedll/dlls/bot/cs_bot_event.cpp:280` |
+| OBS-02 | 差確定 | 標準武器eventの受信時listener/局在化処理 | `src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp:503`<br>`src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp:517` | `regamedll/dlls/bot/cs_bot_event.cpp:357`<br>`regamedll/dlls/bot/cs_bot_event.cpp:389` |
+| M01 | 差確定 | quota縮小時の死亡Bot優先 | `src/adapter/metamod/plugin/plugin_runtime.cpp:1657` | `regamedll/game_shared/bot/bot_util.cpp:209` |
+| M02 | 差確定 | 自動追加失敗時のquota補正 | `src/adapter/metamod/plugin/plugin_runtime.cpp:1651`<br>`src/adapter/metamod/plugin/plugin_runtime.cpp:2422` | `regamedll/dlls/bot/cs_bot_manager.cpp:819`<br>`regamedll/dlls/bot/cs_bot_manager.cpp:866` |
+| M03 | 差確定 | Any-team追加前のprofile絞込み | `src/adapter/metamod/config/compat_surface.cpp:93`<br>`src/adapter/metamod/plugin/plugin_runtime.cpp:2422` | `regamedll/dlls/bot/cs_bot_manager.cpp:798`<br>`regamedll/dlls/bot/cs_bot_manager.cpp:818` |
+| M04 | 差確定 | profile Skin/custom Skin・bot_prefix | `include/astrabot/compat/profile_catalog.hpp:43`<br>`src/adapter/metamod/config/profile_loader.cpp:378` | `regamedll/game_shared/bot/bot_profile.cpp:109`<br>`regamedll/game_shared/bot/bot_profile.cpp:347` |
+| M05 | 差確定 | bot_mimic入力複製・診断コマンド面 | `src/core/compat/command_registry.cpp:69`<br>`src/adapter/metamod/config/compat_surface.cpp:128` | `regamedll/game_shared/bot/bot.cpp:278`<br>`regamedll/game_shared/bot/bot.cpp:301` |
+| PUB-STD-DAMAGE | 公開観測調査 | 標準GameDLLの判定前inflictor/被弾時刻の確定観測 | `docs/parity/PUBLIC_EVENT_INTAKE_AUDIT.md:3`<br>`docs/parity/PUBLIC_EVENT_INTAKE_AUDIT.md:16` | `regamedll/dlls/bot/cs_bot.cpp:98` |
+| PUB-STD-BLIND | 公開観測調査 | 標準GameDLLの正確なgameplay失明期限 | `include/astrabot/compat/public_observation.hpp:155`<br>`src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp:1202` | `regamedll/dlls/bot/cs_bot_vision.cpp:1135` |
+| PUB-STD-ANIMATION | 公開観測調査 | 標準GameDLLの武器animationイベント列 | `docs/parity/PUBLIC_EVENT_INTAKE_AUDIT.md:20`<br>`docs/parity/PUBLIC_EVENT_INTAKE_AUDIT.md:22` | `regamedll/game_shared/bot/bot_util.cpp:639` |
+| PUB-HOSTAGE-OWNERSHIP | 公開観測調査 | 人質の現在leader/追従終了/護送数の確定観測 | `docs/parity/PUBLIC_EVENT_INTAKE_AUDIT.md:34`<br>`docs/parity/PUBLIC_EVENT_INTAKE_AUDIT.md:36` | `regamedll/dlls/bot/cs_gamestate.cpp:572` |
+
+### 5. 固定参照/RNG・実機受入れ・継続性能
+
+| ID | 状態 | 修正/確認対象 | Astra根拠 | 参照根拠 |
+|---|---|---|---|---|
+| V01 | 実機未受入 | 全体の固定参照リプレイ・共有RNG順 | `src/adapter/metamod/bridge/engine_random_source.cpp:49`<br>`src/adapter/metamod/plugin/plugin_runtime.cpp:1791` | `regamedll/game_shared/bot/bot.cpp:225`<br>`regamedll/dlls/bot/cs_bot_update.cpp:186` |
+| V02 | 実機未受入 | 両OS実機・照準/旋回・多人数継続性能 | `src/adapter/metamod/diagnostics/runtime_profiler.cpp:314`<br>`src/adapter/metamod/plugin/plugin_runtime.cpp:854` | `regamedll/dlls/bot/cs_bot_vision.cpp:57`<br>`regamedll/dlls/bot/cs_bot_update.cpp:186` |
+
+各IDの条件・実際の差・関連テスト・必要な対照・確信度はJSONの`findings`に保持した。行数が存在するだけの根拠や、型/関数の存在だけで実行時接続を完了扱いにしていない。
+
+## 完了/更新できる旧記録
+
+| 記録 | 現在の判定 | 根拠・残る境界 |
+|---|---|---|
+| 12通常状態＋Attack overlayがない | 実装済み | `compat/state_machine.hpp`と実runtime。各状態の戦術まで一致とはしない（S群） |
+| 30/10Hz分離・cached commandがない | オフライン境界実装済み | `bot_timing_scheduler.cpp`、実pluginのUpkeep→Reset→Full→Execute。C08のCombat積分差は残る |
+| 視線trace/FOV/煙/認識queueがない | 現行実装あり | public adapter/20slot recognition。C09/NAV-/OBS-群の判定差・実機条件は残る |
+| 音源のNAV内局在化・実イベント入力がない | 現行実装あり | native weapon hook/footstep/event経路。標準fallback時刻と任意sound差はNAV-/OBS-群に残す |
+| 動的danger/aggression/crowd/fall/ladderがない | コストモデル/公開梯子実装済み | NAV-query/runtime。護送数接続・物理挙動・tie差はNAV-/OBS-群 |
+| 発話/radio/memeが全面未実装 | 表現済み経路は実装済み | 11 active meme、named Say、compound parts、linked queue、dead/round保持。標準イベント/人質観測と実音声受入れは未完 |
+| backlog21 CRT音声shuffle近似 | オフライン解消 | `chatter_voice_random.hpp`、voice testの2bank/重複/32roundでnative random_shuffle対照。実音声/UIは別受入れ |
+| backlog22 Linux胸部照準既知失敗 | 現在の失敗として解消 | 最新既存証拠 Windows171/171、Linux170/170、PE/ELF7。過去の失敗ログは保持 |
+| ClearLook後の次light視線再開 | 限定完了 | 3cde77b、cached commandと独立CDB。C01の全owner共有は未完 |
+| Idle/Follow早期Plant・Hunt yield/Ahead75 | 限定完了 | 95aec579、実機保持Ahead0。一般の目標/RNG差はS01等に残す |
+| MoveTo→Plantの経路処理順 | 限定完了 | 6546606、非PROGRESSING確認と更新receipt。全NAVの一致とはしない |
+| Plant入場更新のNAV入力/Run/callback | 限定完了 | a924873、製品フレーム回帰・実機到着境界。異なるnative timeout条件の同値入力受入れは残す |
+| Plant前Idleの不要なpath/input | 限定完了 | b75be3a、path0/input0/目標cache抑止の正規回帰と実機 |
+| cold Idle/Buyの通常look供給 | 限定完了 | 6fdadbd、actual cached/light/再接続springと最終DLLのCDBowner確認 |
+| Escape終端後の目標再選択がない | 現行実装あり | objective terminalでcache解除→次更新で再選択。S群の選択metric/実機同値は別 |
+| 盾購入の実装がない | 現行実装あり | public BuyContext→controllerのshield経路。Career/正確な時刻/実機はS11 |
+
+`REPORT_ROUND_END`は固定参照に生成箇所がなく、BotAllHostagesGoneMemeも構築箇所がない。KilledMyEnemyは唯一のcaller/callee条件が矛盾し通常生成へ到達しない。未使用定義を「実装漏れ」として増やさない。round-end/deadの保持規則は既存実装/回帰として扱う。
+
+## 証拠と次の修正単位
+
+最新オフライン合格は既存 `csbot-idle-buy-look-supply-20261122/evidence-final-v2/acceptance.json` と原ログの照合結果であり、今回の再実行ではない。ソース・ユーザーファイル・製品SHAと参照固定SHAを再確認する。今回の変更は監査資料のみで、新しいC++実装・テスト・実機再配備・サーバーコピーを行わない。
+
+次の製品修正はC01の全owner角速度共有を、C08の軽更新/全更新順と切り分けてREDから開始する。以後の実機確認は [LIVE_VERIFICATION.md](LIVE_VERIFICATION.md) の既存実機再配備、必要時のみ固定1コピー再利用を守る。pushなし。

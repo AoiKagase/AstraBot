@@ -1,5 +1,19 @@
 # P00 GameDLL Observation Matrix
 
+## 2026-11-22 全ソース監査による現行判定
+
+以下のP00/Pxx表は当該段階の履歴であり、現行の未実装一覧ではない。現行の [全ソース監査](FULL_SOURCE_AUDIT.md) と [ファイル別台帳](FULL_SOURCE_INVENTORY.json) を正本とする。
+
+| 旧記録 | 更新後の判定 | 残る境界 |
+|---|---|---|
+| 7状態のみ/30・10Hz分離なし | 12通常状態＋Attack overlay、30/10Hz、cached入力は実装済み | 個別戦術S群、Combat積分C08、全体時刻V01 |
+| visibility/FOV/smoke/認識queueがない | 現行public視認・煙・5body probe・認識queueあり | 脅威選択・FFA/盾・scopeや視認cadence C群/NAV-/OBS-群 |
+| active weapon/ammo/reload/イベントがない | 公開messageと任意ReGameDLL5.30 providerを接続 | 標準GameDLLの確定被弾/失明/animation、私有slot先頭、hostage follower/count |
+| noise局在化/梯子/動的path cost/発話がない | 現行実装とオフライン回帰あり | 未対応sound/receipt時刻、escort入力、jump/feeler/tie、実音声/UIと実機 |
+| Plant前path/Ahead75、ClearLook、CRT21、Linux22 | 最新修正/既存合格証拠で限定解消 | 全owner角速度、自然初回C4/実水没、全体参照RNG・両OS実機は未完 |
+
+この更新は古い合格/失敗の実行結果を書き換えない。後続の実装で解消した不在記述と、現在も残る具体差を分離した。SDK/私有APIの取得品質とCSBot動作一致も同義ではない。
+
 ## P06 perception observations
 
 | Observation | Reference consumer | AstraBot source / quality | Result |
@@ -21,7 +35,7 @@ reaction queues, and live GameEvent timing are not MATCH claims.
 
 ## P04 semantic observation inventory
 
-This table is the P04 source of truth. Reference names are stable semantic
+This table records the historical P04 contract. Current implementation and remaining acquisition gaps are updated above and in FULL_SOURCE_AUDIT.md. Reference names are stable semantic
 identities and function/member names; source line numbers are supporting
 evidence only. `EXACT_ENGINE_API` means public collection parity, not CSBot
 behavioral MATCH.

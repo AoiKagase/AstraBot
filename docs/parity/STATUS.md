@@ -1,3 +1,13 @@
+## 2026-11-22 全ソース監査による現行判定
+
+従来の残件5群には具体的な漏れがあった。製品ソース198本をファイル単位で照合した現行正本は [FULL_SOURCE_AUDIT.md](FULL_SOURCE_AUDIT.md)、全パス・SHA・担当・根拠と残件IDは [FULL_SOURCE_INVENTORY.json](FULL_SOURCE_INVENTORY.json)。一般GameDLL全行や全分岐の一致を保証する監査ではなく、full/focused/依存棚卸しを区別した。
+
+残件は、視線/戦闘/武器、状態/目的/人質/VIP、NAV/移動/知覚、公開観測/イベント/発話/管理/profile、固定参照RNG/両OS実機/継続性能の5群へ具体化した。次単位はC01（look owner角速度共有）。実機は既存再配備、隔離が必要でも固定1コピーを再利用する。
+
+旧記録のCRT音声shuffle（21）とLinux胸部照準の既知失敗（22）はオフライン解消へ更新した。ClearLook、早期Plant判断、MoveTo→Plant順、Plant入場NAV入力/Run、Plant前Idle経路抑止、cold Idle/Buy視線供給も完了した限定範囲を現行未完一覧から外す。未実装だった視認/音/状態/発話等のP00/P04/P06記録は、その後の実装と区別する。過去の失敗・当時の実行結果は履歴として保持する。
+
+今回の製品変更・build/CTest再実行・実機起動/再配備・サーバーコピーは0。既存最終製品と合格ログの同一性、ソースとユーザーファイルの保持、全ファイルの担当/根拠/リンクを検証した文書監査である。過去の実機smokeを各新規差分の受入れへ流用しない。pushなし。
+
 ## 実機への再配備と検証方法の変更（2026-11-22）
 
 ユーザー指示により、以後の動作確認は既存実機 `D:/SteamCMD/cstrike_rehlds` への再配備で行う。隔離環境が必要な場合も固定1か所を使い続け、試行ごとのサーバーコピーは作らない。運用手順は [LIVE_VERIFICATION.md](LIVE_VERIFICATION.md)。製品 `6fdadbd` の検証済みDLL/PDBを旧版バックアップ付きで再配備し、実PID31752の配備先DLLロード・Bot参加・ラウンド開始を確認した。既存設定等の指紋は不変、サーバーコピー作成0回。個別挙動の受入れとは区別する。証拠は `artifacts/local/debug/csbot-live-redeploy-20261122/`。この再配備は今回の指示によるもので、以下の過去単位の「実環境配布なし」は当時の記録として保持する。pushなし。
@@ -18,7 +28,7 @@
 
 証拠は `artifacts/local/debug/csbot-idle-buy-look-supply-20261122/evidence-final-v2/acceptance.json` と同ディレクトリの最終ログ・raw履歴監査・実機manifest。元の失敗・旧候補も上書きしていない。push・実環境配布なし。
 
-残件は次の5群：
+当該修正単位完了時の残件要約（履歴。現行正本は [全ソース監査](FULL_SOURCE_AUDIT.md)）：
 
 1. Combat/Guardを含むowner間の角速度共有。
 2. C4初回未装備と実水没条件の直接受入れ。
@@ -52,9 +62,9 @@ Windows再構築では進行役NMakeだけを一時停止し、既存child targe
 
 固定製品は `artifacts/local/debug/csbot-idle-navigation-hold-20261122/final`、受入れ・前後指紋は同root `evidence-final`、全raw試行は `C:/Temp/astrabot-idle-navigation-hold`。push・実環境配布なし。
 
-残件は次の5群（Plant前IdleとMoveTo→Plant順序は完了）。
+当時の残件5群（履歴。現行正本は [全ソース監査](FULL_SOURCE_AUDIT.md)）（Plant前IdleとMoveTo→Plant順序は完了）。
 
-1. 通常Idle/Buyの視線供給。
+1. 通常Idle/Buyの視線供給は後続6fdadbdで限定完了。
 2. Combat/Guardを含む共有角速度、C4初回未装備・実水没条件。
 3. Hunt/NAV移動、同一area/fallback、味方待機、cs_assaultのはしご、経路失敗とタイムアウトの直接実機対照。
 4. 視認した敵をAimせず通過する問題、旋回カクつき、多人数の継続性能。
@@ -82,10 +92,10 @@ CDBはDLL module-loadを待ってBPを設定。最初のPlantは `59.37293243` �
 
 固定baseline・既存補正を再生成せず、両OSとも親の152258行と全byte一致。RNG510行も各OSの親と順序・値まで一致し、新規補正なし。既存のOS間丸め差は残る。証拠と指紋は `artifacts/local/debug/csbot-plant-entry-nav-input-20261122/evidence-final-v2/acceptance.json`、製品は同root `final-v2/`、raw試行は `C:/Temp/astrabot-plant-entry-nav-input`。push・実環境配布なし。
 
-残件は次の5群。
+当時の残件5群（履歴。現行正本は [全ソース監査](FULL_SOURCE_AUDIT.md)）。
 
-1. Plant前Idleの一般経路準備。
-2. 通常Idle/Buyの視線供給、Combat/Guardを含む共有角速度、C4初回未装備・実水没条件。
+1. Plant前Idleの一般経路準備は後続b75be3aで限定完了。
+2. 通常Idle/Buy視線供給は6fdadbdで限定完了。Combat/Guard共有角速度C01とC4初回未装備/実水没C14は未完。
 3. Hunt/NAV移動、同一area/fallback、味方待機、cs_assaultのはしご、経路失敗とタイムアウトの直接実機対照。
 4. 視認した敵をAimせず通過する問題、旋回カクつき、多人数の継続性能。
 5. 標準GameDLLの公開観測経路、未網羅のCSBot参照差分。
@@ -102,10 +112,10 @@ CDBはDLL module-loadを待ってBPを設定。最初のPlantは `59.37293243` �
 
 固定履歴baselineは再生成せず、両OS同じ19か所のoffset/前後hash限定補正で152248→152258行を全行照合。終端後の公開zone再観測で32行増え、旧PlantAttemptの重複geometry走査を除去して22行減る。RNG510行は各OSの親履歴と順序・値とも全一致。途中候補・失敗CDBは最終合格に流用せず保持する。
 
-残件は次の5群。入場fullのNAV末尾入力はnative buttons14と最終Astra buttons4で差が残り、この単位では変更しない。
+当時の残件5群（履歴。現行正本は [全ソース監査](FULL_SOURCE_AUDIT.md)）。当時の入場NAV末尾入力の課題はa924873で生成済み入力保持を修正した。実機のnative PATH_FAILURE/buttons14とAstra EndOfPath/buttons4は異なる終端条件であり、同条件timeout比較は現在も未完。
 
-1. Plant前Idleの一般経路準備、Plant入場更新のNAV末尾移動入力。
-2. 通常Idle/Buyの視線供給、Combat/Guardを含む共有角速度、C4初回未装備・実水没条件。
+1. Plant前Idleの一般経路準備はb75be3a、Plant入場更新の生成済みNAV入力保持はa924873で限定完了。同条件timeoutの実機対照は残る。
+2. 通常Idle/Buy視線供給は6fdadbdで限定完了。Combat/Guard共有角速度C01とC4初回未装備/実水没C14は未完。
 3. Hunt/NAV移動、同一area/fallback、味方待機、cs_assaultのはしご、経路失敗。
 4. 視認した敵をAimせず通過する問題、旋回カクつき、多人数の継続性能。
 5. 標準GameDLLの公開観測経路、未網羅のCSBot参照差分。
@@ -120,14 +130,14 @@ Buyが優先された場合はpending入場とPlant chatterを取消し、Buyの
 
 最終オフラインはWindows x86 **171/171・PE7**、その終了後の単独Linux x86 **170/170・ELF7** が合格。最終v2 DLL SHA-256は `fee8c705b979e8e2dfc35c29a15d54a68313d628127d05a23e71517812daef04`、ELFは `1789fb95da504f22021204723b887c3140affd8025603183b845a0e05dd1a1bb`。証拠は `C:/Temp/astrabot-plant-ahead-supply` と `artifacts/local/debug/csbot-plant-ahead-supply-20261122/README.md`。初回候補・停止前build・レビュー前final/は最終合格と分けて保持する。
 
-最終v2の隔離実機0/7/8と読取専用CDB7は全て実PID終了0・forced=falseを確認して直列実行した。0は実設置成功、7はBarTime3後に区域外へ移動してPlant age5.027まで保持、8は実drop entity99・hasC4=0を確認した。module-load後にBPを置いたCDBでは、初回Plantの10.50985813秒にcommand actor[1]の保持Aheadを直接読み取り **0°**。固定参照の初回Plant8.6012106秒も0°、旧版の75°供給を除去した。ただし直前Idleの一般path1準備は残る。経路全体・設置時刻・絶対視線軌跡の一致は主張しない。
+最終v2の隔離実機0/7/8と読取専用CDB7は全て実PID終了0・forced=falseを確認して直列実行した。0は実設置成功、7はBarTime3後に区域外へ移動してPlant age5.027まで保持、8は実drop entity99・hasC4=0を確認した。module-load後にBPを置いたCDBでは、初回Plantの10.50985813秒にcommand actor[1]の保持Aheadを直接読み取り **0°**。固定参照の初回Plant8.6012106秒も0°、旧版の75°供給を除去した。当時残った直前Idleの一般path1準備は後続b75be3aで限定完了。経路全体・設置時刻・絶対視線軌跡の一致は主張しない。
 
 固定履歴baselineは再生成せず、両OSとも同じ789ブロックの位置/前後hash限定補正で153,320→152,248行を全行照合した。RNGは504→510、順序差は3ブロックに限定される。入場前のTeamwork.AutoFollow[0,1]が省かれ、そのraw drawを先行したSTUCK-JUMP-DELAY[0,.5]が使う。追加のurgent-case31秒/.125秒更新でRogueInterval・RogueChance・AutoFollow・PATH-RETRY・WIGGLE方向/継続/ジャンプ間隔の7件が増えるため差引+6。他のRNG行は各OSの親履歴に対して順序・値が一致する。Windows C4限定のsemantic CDB採録は通常履歴と全byte一致。OS間には親履歴から存在するRNG丸め差1件があり、両OS同値とは主張しない。
 
-残件は次の5群。次単位はMoveToのUpdatePathMovementがPROGRESSING以外になった後にPlant判断する順序であり、今回のphase早期判定には混ぜていない。
+当時の残件5群（履歴。現行正本は [全ソース監査](FULL_SOURCE_AUDIT.md)）。当時の次単位予定だったMoveToの非PROGRESSING後Plant判断は後続6546606で限定完了。
 
-1. Plant前Idleの一般経路準備、MoveTo→Plantの順序。
-2. 通常Idle/Buyの視線供給、Combat/Guardを含む共有角速度、C4初回未装備・実水没条件。
+1. Plant前Idleの一般経路準備はb75be3a、MoveTo→Plantの順序は6546606で限定完了。選定/RNG差S01/S02は別件。
+2. 通常Idle/Buy視線供給は6fdadbdで限定完了。Combat/Guard共有角速度C01とC4初回未装備/実水没C14は未完。
 3. Hunt/NAV移動、同一area/fallback、味方待機、cs_assaultのはしご、経路失敗。
 4. 視認した敵をAimせず通過する問題、旋回カクつき、多人数の継続性能。
 5. 標準GameDLLの公開観測経路、未網羅のCSBot参照差分。
@@ -156,7 +166,7 @@ Buyが優先された場合はpending入場とPlant chatterを取消し、Buyの
 
 実機証拠は `C:/Temp/astrabot-plant-terminal-order`、最終DLL/PDBと索引は `artifacts/local/debug/csbot-plant-terminal-20261121`。最終v2 DLL SHA-256は `fcdd52c9ee91c64404d7cd4ff8013d5c9f263f29f223fb48ac9c24dd9e20e42c`。通常GameDLLの設置開始後、区域外へ一度移動する対照では、旧版は15.522994の移動直後15.648941にMoveToへ早期退出し、AK/buttons0。固定版は5秒超までPlantを保ち、Idleへ移った13.784047から3コマンド、AK/buttons1・IN_DUCKなしを出す。最終v2はPlant age5.022の25.335514にIdleへ移り、25.335514/25.381092/25.426647の3コマンドでAK/buttons1、次の全体更新25.474037で0となった。通常設置成功と実C4ドロップでは、C4が未装備になった最初のPlant更新がSelectC4→退出時EquipBestとなり、末尾に新しいPrimaryAttackは追加しない。参照・最終v2双方の読取専用CDBでこの即時2コマンド順を採録した。
 
-初期候補 `4597335e…` は末尾のyawをnavigation draftの180°へ変え、実active AKに対して遅れたCurWeapon C4からPrimaryAttackを作る境界もあった。最終v2は退出full限定の明示保持契約を追加し、Upkeep直後の実角pitch1.225865/yaw97.783432を末尾へ保持する。実command回帰はNAV draft180°・末尾67°で実RunPlayerMoveを検証し、次のdecisionでは保持を解除する。一方、次lightの通常視線ばねは独立残件。参照は98.221519→94.888183→88.221519と旋回し、v2はpriority floorを取消した後97.783432を保持する。通常look-goal/springの再開、同更新の経路準備、Hide地点と後続経路・RNG列全体の一致は主張しない。Plant初回未装備の直接実機、実水没、独自複数武器スロットも未完のまま保持する。
+初期候補 `4597335e…` は末尾のyawをnavigation draftの180°へ変え、実active AKに対して遅れたCurWeapon C4からPrimaryAttackを作る境界もあった。最終v2は退出full限定の明示保持契約を追加し、Upkeep直後の実角pitch1.225865/yaw97.783432を末尾へ保持する。実command回帰はNAV draft180°・末尾67°で実RunPlayerMoveを検証し、次のdecisionでは保持を解除する。当時の次light通常視線ばねの残件は後続3cde77bで限定解消し、cold Idle/Buy供給も6fdadbdで解消した。全owner速度共有C01/C08は残る。参照は98.221519→94.888183→88.221519と旋回し、v2はpriority floorを取消した後97.783432を保持する。通常look-goal/springの再開、同更新の経路準備、Hide地点と後続経路・RNG列全体の一致は主張しない。Plant初回未装備の直接実機、実水没、独自複数武器スロットも未完のまま保持する。
 
 最終オフラインはWindows x86 169/169・PE公開7関数、終了後の単独Linux x86 168/168・ELF公開7関数が合格。ELF SHA-256は `1ef241017b39b9ba8b540e8826f9e54141456df365504d72dc5359821a1c05f9`。両OSの履歴は固定baselineを保ち、同じ35ブロック・24削除11移動だけの限定補正で153,394→153,320行を全行照合した。Windows補正後SHAは `79270824a2708423424bcfc551729b20a82b5fec21eba39e1cc0c51b15623a04`、Linuxは `ce88e9bced91a27bb0a86f99c8abae587378d8f8f193e52c421c41437082653e`。許可されたcallback文字列以外の差はなく、RNG記録は不変。実機12試行は実ゲーム終了0・forced=falseを各manifestで確認し、最終v2の4試行は同一DLL SHAである。
 

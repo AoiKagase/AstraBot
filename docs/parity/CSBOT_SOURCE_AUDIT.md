@@ -1,5 +1,15 @@
 # 23　CSBot参照実装との差分監査
 
+## 2026-11-22 全ソース監査による現行判定
+
+従来の残件5群には具体的な漏れがあった。製品ソース198本をファイル単位で照合した現行正本は [FULL_SOURCE_AUDIT.md](FULL_SOURCE_AUDIT.md)、全パス・SHA・担当・根拠と残件IDは [FULL_SOURCE_INVENTORY.json](FULL_SOURCE_INVENTORY.json)。一般GameDLL全行や全分岐の一致を保証する監査ではなく、full/focused/依存棚卸しを区別した。
+
+残件は、視線/戦闘/武器、状態/目的/人質/VIP、NAV/移動/知覚、公開観測/イベント/発話/管理/profile、固定参照RNG/両OS実機/継続性能の5群へ具体化した。次単位はC01（look owner角速度共有）。実機は既存再配備、隔離が必要でも固定1コピーを再利用する。
+
+旧記録のCRT音声shuffle（21）とLinux胸部照準の既知失敗（22）はオフライン解消へ更新した。ClearLook、早期Plant判断、MoveTo→Plant順、Plant入場NAV入力/Run、Plant前Idle経路抑止、cold Idle/Buy視線供給も完了した限定範囲を現行未完一覧から外す。未実装だった視認/音/状態/発話等のP00/P04/P06記録は、その後の実装と区別する。過去の失敗・当時の実行結果は履歴として保持する。
+
+今回の製品変更・build/CTest再実行・実機起動/再配備・サーバーコピーは0。既存最終製品と合格ログの同一性、ソースとユーザーファイルの保持、全ファイルの担当/根拠/リンクを検証した文書監査である。過去の実機smokeを各新規差分の受入れへ流用しない。pushなし。
+
 ## 通常Idle/Buyの初回からの視線供給（2026-11-22）
 
 基点 `b75be3a`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。`cs_bot_update.cpp:135–183` のNOT_LOOKING_AT_SPOTは毎Upkeepに保持Ahead・pitch0を供給し、drift後にUpdateLookAnglesを一度積分する。従来adapterはClearLook後だけ既定lookを再開し、coldなIdle/Buyでは供給されなかった。
@@ -16,7 +26,7 @@
 
 証拠は `artifacts/local/debug/csbot-idle-buy-look-supply-20261122/evidence-final-v2/acceptance.json` と同ディレクトリの最終ログ・raw履歴監査・実機manifest。元の失敗・旧候補も上書きしていない。push・実環境配布なし。
 
-残件は次の5群：
+当該修正単位完了時の残件要約（履歴。現行正本は [全ソース監査](FULL_SOURCE_AUDIT.md)）：
 
 1. Combat/Guardを含むowner間の角速度共有。
 2. C4初回未装備と実水没条件の直接受入れ。
@@ -24,7 +34,7 @@
 4. 視認敵をAimせず通過する問題、旋回カクつき、多人数継続性能。
 5. 標準GameDLL公開観測経路と未網羅のCSBot差分。
 
-参照は ReGameDLL-CS `b0889847fe6d03898be88acc9e366660efb40ab5`。AstraBotの監査起点は `8662286`。公開エンジン情報と所有するBotの状態で再現できる範囲を、現行の実装・テストと照合した。
+参照は ReGameDLL-CS `b0889847fe6d03898be88acc9e366660efb40ab5`。AstraBotの当初の監査起点は `8662286`。現行全ソース監査の基点は先頭の記録を参照。公開エンジン情報と所有するBotの状態で再現できる範囲を、現行の実装・テストと照合した。
 
 ## 全13状態の照合
 
@@ -33,9 +43,9 @@ CSBot側のファイルは `regamedll/dlls/bot/states/cs_bot_<略称>.cpp`。Ast
 | 状態 | CSBot | AstraBotで確認した経路・残件 |
 |---|---|---|
 | Attack | `attack` 32、156、276–308、565行 | 攻撃オーバーレイと戦闘更新。盾所持・実際の閉状態と遅延認識した敵のリロードを公開観測し、継続開閉・入力後の期限反転・終了時の開要求を実装。通常のFFA索敵と敵の盾を考慮した脅威選択は残件。 |
-| Buy | `buy` 48、238、542行 | 購入コントローラと公開購入エリア。武器プリセットを修正。盾の購入可否は別途確認が必要。 |
+| Buy | `buy` 48、238、542行 | 購入コントローラ・公開購入エリア・武器プリセット・盾購入経路は実装済み。Career/購入進入時刻/在庫観測と実機はS11に残る。 |
 | DefuseBomb | `defuse_bomb` 32、40、91行、`cs_bot_event.cpp` 221–262行、`cs_bot_pathfind.cpp` 1296–1328、1399–1458行、`game_shared/bot/bot.cpp` 71行 | 設置・近距離ビープによるCTの記憶、最終区間の歩行を照合。解除へ向かうMoveToは現在視線で移動軸を決め、次の軽更新で経路先読みに向く。解除進入では経路視線を保持し、最初のUSE更新でC4への視線を設定する。隔離ReHLDSで通常設置から解除開始・完了まで確認。 |
-| EscapeFromBomb | `escape_from_bomb` 31、40、68行 | 退避・武器持ち替え。失敗または到達時の逃走先再選択は残件。 |
+| EscapeFromBomb | `escape_from_bomb` 31、40、68行 | 退避・武器持ち替え、終端後のcache解除と次更新の逃走先再選択は現行実装あり。選定metric/実機同条件比較は全ソース監査に従う。 |
 | FetchBomb | `fetch_bomb` 32–76行、`hunt` 47–81行、`idle` 205–219行、`cs_bot.cpp` 513行、`cs_bot_pathfind.cpp` 1608–1741行 | Tの専用状態で落下C4への安全経路を保持し、拾得・消失・移動終了でIdleに戻る。経路作成失敗時はHuntを経由する。Idleの攻撃側狙撃抽選の優先順位と、視認もレーダー受領もないTでの再現は残件。 |
 | Follow | `follow` 32、103、214、220、287行。`cs_bot_pathfind.cpp:1582`、`:1608`。`cs_bot_statemachine.cpp:224`、`cs_bot_hide.cpp:115` | 周辺NAVの候補選択と経路計算を既存経路の進行後に行う。状態進入時のアイドル乱数、外側0.5秒と共有0.4–0.6秒の再試行待ち、最後のポータルに沿う接地終点、到達不能時の最寄り到達可能領域への部分経路を実装。停止時は遮蔽への経路を計算してからHideに入り、その経路を保持する。再試行の抑制中はFollowを維持する。Hideへの遷移と乱数の順序、リーダーの再移動で追従を再開する条件を回帰テストで確認。 |
 | Hide | `hide` 33、71、452行 | 守備、被弾による解除、C4や救出地点の警備を確認。警備先の全選定条件の比較は残件。 |
@@ -43,7 +53,7 @@ CSBot側のファイルは `regamedll/dlls/bot/states/cs_bot_<略称>.cpp`。Ast
 | Idle | `idle` 37、52行 | 状態のリセット、Huntへの遷移、シナリオの優先順位。狙撃地点の割り当ては残件。 |
 | InvestigateNoise | `investigate_noise` 52、58、135行 | 音源の接地判定とNAV距離を修正。記憶の消費、接近、再選択は既存実行時テストで確認。 |
 | MoveTo | `move_to` 32、66、317行 | Plant発話→経路更新→非PROGRESSING時のzone/C4再確認→Plant入場を照合。互換旧PlantAttemptの先行装備/停止を除去。Plant入場の期限切れNAV入力/Duck/Runとcallback失効は入場receiptで検証済み。全タスク遷移順とHunt/NAV全体は残件。 |
-| PlantBomb | `plant_bomb` 32、45、75行、`cs_bot_weapon.cpp:411–470` | 公開弾薬・許可クラス・水没条件と共通5秒装備時計を使用。末尾はPrimaryAttack/即時SelectC4→所持喪失→strict5秒超、退出前EquipBest→起立→ResetStuck→Engage→注視取消の順へ接続した。喪失による新Hide timestampを古いPlant ageで上書きしない。通常設置・区域外timeout・実C4ドロップでAKに残る最終Attackと次fullまでの保持、退出fullのUpkeep実角保持を確認。次lightの通常look-goal/spring再開と後段NAV供給、私有複数スロット先頭、Plant初回C4未装備の直接実機は残件。 |
+| PlantBomb | `plant_bomb` 32、45、75行、`cs_bot_weapon.cpp:411–470` | 公開弾薬・許可クラス・水没条件と共通5秒装備時計を使用。末尾はPrimaryAttack/即時SelectC4→所持喪失→strict5秒超、退出前EquipBest→起立→ResetStuck→Engage→注視取消の順へ接続した。喪失による新Hide timestampを古いPlant ageで上書きしない。通常設置・区域外timeout・実C4ドロップでAKに残る最終Attackと次fullまでの保持、退出fullのUpkeep実角保持を確認。次light通常look再開とIdle前段NAV抑止は後続修正で限定完了。全owner速度共有C01、私有複数slot先頭C12、初回未装備/水没C14は残件。 |
 | UseEntity | `use_entity` 33、38、69行、`player.cpp:9415` | 状態に入ったときの人質を保持する。コマンド更新ごとに視線を動かし、現在のyawとpitchが両方とも許容角20度未満のときにUSEを送る。コマンドが受理されると試行を記録してIdleへ移る。ネイティブの人質護送カウンターと追従者の照合は残件。 |
 
 ## ClearLook後の軽更新（2026-11-22追補）
@@ -52,7 +62,7 @@ CSBot側のファイルは `regamedll/dlls/bot/states/cs_bot_<略称>.cpp`。Ast
 
 Windows170/170・Linux169/169、PE/ELF公開7関数と直列隔離実機11試行を確認。検証済みCDBの実goal/spring-beforeから次の実viewを独立計算し、誤差.0001度未満。直前のPlant退出full/末尾入力の修正を保つ。詳細はSTATUS先頭と `artifacts/local/debug/csbot-clear-look-upkeep-20261121/README.md`。
 
-上のPlant行に残していた「次lightの通常look-goal/spring再開」は、このowner解放後の復帰範囲で確認済み。一方、Plant進入前のpath/Ahead供給が参照0・Astra75となる時刻/経路差は独立残件。全Idle/Buyでの既定goal常時供給や全Combat/Guard owner間の単一速度・絶対視線軌跡の一致まで確認済みとはしない。
+上のPlant行に残していた「次lightの通常look-goal/spring再開」は、このowner解放後の復帰範囲で確認済み。当時残ったPlant前path/Ahead75差とcold Idle/Buy供給は後続95aec579/b75be3a/6fdadbdで限定完了。全Combat/Guard owner間の単一速度・絶対視線軌跡はC01/C08に残る。
 
 ## Plant入場判断の優先順位（2026-11-22追補）
 
@@ -60,7 +70,7 @@ Windows170/170・Linux169/169、PE/ELF公開7関数と直列隔離実機11試行
 
 今回のadapterはこの早期分岐をTeamwork・objective target・NAV移動より前へ接続した。Idleから直接Plant、有効leader Follow陽性、Hunt→Idle→次更新のPlant/期限後site選択を正規実行で確認。公開 `client.cpp:5108–5109`の `UpdateClientData.iuser3` bomb-zone bitを優先し、API既知falseをgeometryで覆さず、不明時のregistry発見を到達可能にする。Buy上位要求で入場receipt/chatterを取消す。core任意ガードはcallback後の同一Actor/full-update/epochを検証し、ResetPath後の旧taskとOnExit後の旧ClearLookを再入先へ持ち越さない。
 
-最終v2はWindows171/171+PE7、Linux170/170+ELF7、隔離HLDS0/7/8と読取専用CDB7が合格。初回Plant10.50985813秒の保持Aheadを最終DLL/PDBから0°と直接採録し、旧75°差を解消した。旧段落の「Plant進入前path/Ahead」は不要なHunt供給を除去したこの範囲で確認済みとなる。一方、直前Idleの一般path1準備、MoveToの経路更新後にPlantを判断する順序は未完。標準GameDLLでの直接受入れ、全視線ownerの共有速度、全経路/RNG同等性へ拡張しない。詳しい試行・指紋・履歴補正はSTATUS先頭とTRACE_REPLAYの同日追補を参照。
+最終v2はWindows171/171+PE7、Linux170/170+ELF7、隔離HLDS0/7/8と読取専用CDB7が合格。初回Plant10.50985813秒の保持Aheadを最終DLL/PDBから0°と直接採録し、旧75°差を解消した。旧段落の「Plant進入前path/Ahead」は不要なHunt供給を除去したこの範囲で確認済みとなる。当時未完だった直前Idleのpath1準備はb75be3a、MoveToの経路更新後のPlant判断は6546606で限定完了。目標選定/RNG差S01/S02は別件。標準GameDLLでの直接受入れ、全視線ownerの共有速度、全経路/RNG同等性へ拡張しない。詳しい試行・指紋・履歴補正はSTATUS先頭とTRACE_REPLAYの同日追補を参照。
 
 ## 周辺機能
 
