@@ -190,7 +190,7 @@ public:
 		return true;
 	}
 	bool update(float now, const world::WorldPosition &origin, const world::WorldPosition &eye, float pitch, float yaw,
-		float *outPitch, float *outYaw, float *goalYaw = nullptr)
+		float *outPitch, float *outYaw, float *goalYaw = nullptr, const SharedLookStep &sharedLookStep = {})
 	{
 		if (!active_ || !outPitch || !outYaw || !std::isfinite(now) || now < lastTime_)
 			return false;
@@ -206,7 +206,7 @@ public:
 		const float dx = point_.x - eye.x, dy = point_.y - eye.y, dz = point_.z - eye.z;
 		const float desiredYaw = kDegreesPerRadian * std::atan2(dy, dx);
 		const float desiredPitch = -kDegreesPerRadian * std::atan2(dz, std::hypot(dx, dy));
-		const auto aim = trackAim(
+		const auto aim = sharedLookStep ? sharedLookStep(now, yaw, pitch, desiredYaw, desiredPitch, false, 3U) : trackAim(
 			yaw, pitch, desiredYaw, desiredPitch, runtime::BotTimingScheduler::kCommandInterval, 1.0f, &spring_, false);
 		*outPitch = aim.pitch;
 		*outYaw = aim.yaw;

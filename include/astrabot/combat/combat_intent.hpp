@@ -54,6 +54,9 @@ struct CombatDecisionContext
 	float aimErrorRange = kAutomaticAimErrorRange;
 	bool lookOverride = false, lookPitchOverride = false;
 	float lookYaw = 0, lookPitch = 0;
+	compat::SharedLookStep sharedLookStep{};
+	compat::AimSpringState sharedLookSpring{};
+	bool attackingLook = true;
 
 	bool isValid() const;
 };

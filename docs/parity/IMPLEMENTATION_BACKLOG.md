@@ -1,14 +1,19 @@
 # Remaining CSBot implementation work
 
+## C01共有角速度の限定完了（2026-11-23）
+
+Windows173/173＋PE7、Linux172/172＋ELF7合格。既存実機の最終DLLで2000 step、327非ゼロowner変更、164同時刻置換、1843実RPP角一致を確認した。C01を限定完了へ更新した。共有resultと最終RPPの不一致86件を記録し、既存full公開経路を新残件C16として追加した。C08/V01/V02を閉じない。49歴史項目／48残件。詳細・限界・SHA・証拠は [SHARED_LOOK_C01.md](SHARED_LOOK_C01.md)。次単位はC16、続いてC02。
+
+
 ## 2026-11-22 全ソース監査による現行判定
 
 従来の残件5群には具体的な漏れがあった。製品ソース198本をファイル単位で照合した現行正本は [FULL_SOURCE_AUDIT.md](FULL_SOURCE_AUDIT.md)、全パス・SHA・担当・根拠と残件IDは [FULL_SOURCE_INVENTORY.json](FULL_SOURCE_INVENTORY.json)。一般GameDLL全行や全分岐の一致を保証する監査ではなく、full/focused/依存棚卸しを区別した。
 
-残件は、視線/戦闘/武器、状態/目的/人質/VIP、NAV/移動/知覚、公開観測/イベント/発話/管理/profile、固定参照RNG/両OS実機/継続性能の5群へ具体化した。次単位はC01（look owner角速度共有）。実機は既存再配備、隔離が必要でも固定1コピーを再利用する。
+残件は、視線/戦闘/武器、状態/目的/人質/VIP、NAV/移動/知覚、公開観測/イベント/発話/管理/profile、固定参照RNG/両OS実機/継続性能の5群へ具体化した。C01の共有ばねは限定完了（[記録](SHARED_LOOK_C01.md)）。次単位はC16（full command視線公開）、続いてC02。実機は既存再配備、隔離が必要でも固定1コピーを再利用する。
 
 旧記録のCRT音声shuffle（21）とLinux胸部照準の既知失敗（22）はオフライン解消へ更新した。ClearLook、早期Plant判断、MoveTo→Plant順、Plant入場NAV入力/Run、Plant前Idle経路抑止、cold Idle/Buy視線供給も完了した限定範囲を現行未完一覧から外す。未実装だった視認/音/状態/発話等のP00/P04/P06記録は、その後の実装と区別する。過去の失敗・当時の実行結果は履歴として保持する。
 
-今回の製品変更・build/CTest再実行・実機起動/再配備・サーバーコピーは0。既存最終製品と合格ログの同一性、ソースとユーザーファイルの保持、全ファイルの担当/根拠/リンクを検証した文書監査である。過去の実機smokeを各新規差分の受入れへ流用しない。pushなし。
+この2026-11-22文書監査時点の製品変更・build/CTest再実行・実機起動/再配備・サーバーコピーは0。既存最終製品と合格ログの同一性、ソースとユーザーファイルの保持、全ファイルの担当/根拠/リンクを検証した文書監査である。過去の実機smokeを各新規差分の受入れへ流用しない。pushなし。
 
 Completed repair units01–06 and the07A NAV-center and07B public-ladder travel prerequisites are recorded below and in STATUS.md, including production compound playback and native one-shot standard/direct radio plus delayed acknowledgement reset and same-plan agreement conversion. Original07 Help transmission/reaction and actual native ladder assistance are implemented and offline verified;07A/07B supplied the required route geometry/topology and read-only range queries. Each unit retains its exact source/test/artifact/commit identity in its session RESULT.json.
 The user goal remains active: proceed through remaining features, commit and locally merge each.

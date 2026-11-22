@@ -1,5 +1,10 @@
 # P11 differential trace comparison
 
+## C01共有角速度の限定完了（2026-11-23）
+
+Windows173/173＋PE7、Linux172/172＋ELF7合格。既存実機の最終DLLで2000 step、327非ゼロowner変更、164同時刻置換、1843実RPP角一致を確認した。C01を限定完了へ更新した。共有resultと最終RPPの不一致86件を記録し、既存full公開経路を新残件C16として追加した。C08/V01/V02を閉じない。49歴史項目／48残件。詳細・限界・SHA・証拠は [SHARED_LOOK_C01.md](SHARED_LOOK_C01.md)。次単位はC16、続いてC02。
+
+
 ## 通常Idle/Buyの初回からの視線供給（2026-11-22）
 
 基点 `b75be3a`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。`cs_bot_update.cpp:135–183` のNOT_LOOKING_AT_SPOTは毎Upkeepに保持Ahead・pitch0を供給し、drift後にUpdateLookAnglesを一度積分する。従来adapterはClearLook後だけ既定lookを再開し、coldなIdle/Buyでは供給されなかった。

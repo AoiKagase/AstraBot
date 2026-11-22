@@ -316,7 +316,7 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 			!std::isfinite(context.fieldOfView) || context.fieldOfView <= 0.0f ||
 			context.fieldOfView > kMaximumFieldOfView)
 			return false;
-		if (!offsetAimPoint(context, target.position, aimSpring_, &aimPoint))
+		if (!offsetAimPoint(context, target.position, context.sharedLookStep ? context.sharedLookSpring : aimSpring_, &aimPoint))
 			return false;
 	}
 	const float deltaX = aimPoint.x - context.origin.x;
@@ -341,7 +341,15 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 	const float usePitch = context.lookOverride && context.lookPitchOverride ? context.lookPitch : intent->pitch;
 	if (!std::isfinite(useYaw) || !std::isfinite(usePitch))
 		return false;
-	if (context.aimTrackingEnabled)
+	if (context.aimTrackingEnabled && context.sharedLookStep)
+	{
+		const auto step = context.sharedLookStep(context.timestamp, context.currentYaw, context.currentPitch,
+			useYaw, usePitch, context.attackingLook, context.lookOverride ? 6U : 5U);
+		intent->yaw = step.yaw;
+		intent->pitch = step.pitch;
+		aimAligned_ = step.aligned;
+	}
+	else if (context.aimTrackingEnabled)
 	{
 		if (!(springActor_ == context.actor) || springFrame_.mapGeneration != context.frame.mapGeneration ||
 			springFrame_.roundGeneration != context.frame.roundGeneration)
@@ -375,6 +383,12 @@ bool CombatController::upkeepLook(
 		!std::isfinite(context.currentYaw) || !std::isfinite(context.currentPitch) || !std::isfinite(context.skill) ||
 		context.skill < 0 || context.skill > 1 || (initialized_ && !(actor_ == context.actor)))
 		return false;
+	if (context.sharedLookStep)
+	{
+		*look = context.sharedLookStep(context.timestamp, context.currentYaw, context.currentPitch,
+			yaw, pitch, attacking, context.lookOverride ? 6U : 5U);
+		return std::isfinite(look->yaw) && std::isfinite(look->pitch);
+	}
 	if (!(springActor_ == context.actor) || springFrame_.mapGeneration != context.frame.mapGeneration ||
 		springFrame_.roundGeneration != context.frame.roundGeneration)
 		aimSpring_ = {};

@@ -390,8 +390,42 @@ bool testLadderLookOverridesEnemySpring()
 		"ladder view goal drives shared combat spring without claiming enemy alignment");
 }
 
+bool testSharedLookKeepsNewTargetFireGate()
+{
+	using namespace astrabot;
+	const auto world = snapshot(300U);
+	auto ctx = context(world);
+	ctx.aimTrackingEnabled = true;
+	ctx.timestamp = 10.0f;
+	ctx.elapsedSeconds = 1.0f / 30.0f;
+	ctx.skill = 1.0f;
+	ctx.fieldOfView = 90.0f;
+	compat::SharedLookState shared{};
+	if (!check(shared.step(10, 0, 0, 0, 0, true, 5U).aligned, "previous upkeep is aligned with its old goal"))
+		return false;
+	ctx.sharedLookStep = [&](float now, float yaw, float pitch, float goalYaw, float goalPitch, bool attacking, unsigned priority) {
+		return shared.step(now, yaw, pitch, goalYaw, goalPitch, attacking, priority);
+	};
+	std::vector<compat::RandomTapeEntry> tape;
+	for (const char *id : {"AimOffsetX", "AimOffsetY", "AimOffsetZ"})
+		tape.push_back(compat::RandomTapeEntry::floatEntry(id, {1, 5}, {}, 0, 0, 0));
+	tape.push_back(compat::RandomTapeEntry::floatEntry("AimOffsetRefresh", {1, 5}, {}, .25f, 1, .5f));
+	compat::ScriptedRandomSource random(tape);
+	ctx.randomSource = &random;
+	auto enemy = target();
+	enemy.position = {0, 128, 0};
+	combat::CombatController controller;
+	combat::CombatDecision decision{};
+	return check(controller.decide(world, inventory(), enemy, ctx, &decision) == combat::CombatResult::NoAction &&
+		decision.hasAim && !decision.hasFire && decision.aim.yaw == 0 && decision.aim.pitch == 0 &&
+		shared.spring.yawVelocity == 0 && shared.spring.pitchVelocity == 0 && random.verifyComplete(),
+		"same-timestamp new target reuses the shared angle but still checks its own geometric firing gate");
+}
+
 int main()
 {
+	if (!testSharedLookKeepsNewTargetFireGate())
+		return 1;
 	if (!testLadderLookOverridesEnemySpring() || !testLadderSpringSurvivesEnemyAcquisition())
 		return 1;
 	for (float skill : {0.5f, 0.501f, 1.0f})

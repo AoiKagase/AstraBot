@@ -655,15 +655,36 @@ bool testFriendDeath(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &e
 	step(.12f);
 	const auto cachedFull = services.service_managedBotFullUpdateSequences()[0];
 	const auto cachedCommand = services.command_managedBotCommandSequences(0);
-	const float rememberedYaw = gLastRunPlayerMoveYaw;
-	killer.v.origin = Vector(-2000, -2000, 36);
+	const auto cachedView = self.v.v_angle;
+	const bool cachedAttacking = navigation.behavior_managedBotStateMachines(0).attackOverlayActive();
+	auto expectedSpring = services.command_lookSpring(0);
+	auto hiddenSpring = expectedSpring;
+	const auto rememberedGoal = metamod::ActionAdapter::useEntityView(
+		1000.0f - self.v.origin.x, -self.v.origin.y, 36.0f - self.v.origin.z);
+	const auto hiddenGoal = metamod::ActionAdapter::useEntityView(
+		200.0f - self.v.origin.x, 2000.0f - self.v.origin.y, 36.0f - self.v.origin.z);
+	const auto expectedLook = compat::trackAim(cachedView.y, cachedView.x, rememberedGoal.yaw, rememberedGoal.pitch,
+		runtime::BotTimingScheduler::kCommandInterval, 1.0f, &expectedSpring, cachedAttacking);
+	const auto hiddenLook = compat::trackAim(cachedView.y, cachedView.x, hiddenGoal.yaw, hiddenGoal.pitch,
+		runtime::BotTimingScheduler::kCommandInterval, 1.0f, &hiddenSpring, cachedAttacking);
+	// This fixture makes negative-X endpoints visible as the teammate. Keep
+	// every killer body trace in the positive-X occluded half-space.
+	killer.v.origin = Vector(200, 2000, 36);
 	step(.04f);
+	const auto cachedSpring = services.command_lookSpring(0);
 	if (!check(services.service_managedBotFullUpdateSequences()[0] == cachedFull &&
 				services.command_managedBotCommandSequences(0) > cachedCommand &&
-				gLastRunPlayerMoveYaw < rememberedYaw && gLastRunPlayerMoveYaw >= 0 &&
+				std::fabs(gLastRunPlayerMoveYaw - expectedLook.yaw) < .0001f &&
+				std::fabs(self.v.v_angle.x - expectedLook.pitch) < .0001f &&
+				std::fabs(cachedSpring.yawVelocity - expectedSpring.yawVelocity) < .0001f &&
+				std::fabs(cachedSpring.pitchVelocity - expectedSpring.pitchVelocity) < .0001f &&
+				std::fabs(compat::normalizedAimAngle(hiddenLook.yaw - expectedLook.yaw)) > .001f &&
 				(gLastRunPlayerMoveButtons & IN_ATTACK) == 0,
-			"cached command keeps aiming at remembered point without hidden-position refresh or firing"))
+			"cached command follows the remembered point's native shared spring, not the hidden moved enemy, without firing"))
 	{
+		std::fprintf(stderr, "remembered shared aim expected=(%.9f %.9f) actual=(%.9f %.9f) spring_expected=(%.9f %.9f) spring_actual=(%.9f %.9f)\n",
+			expectedLook.yaw, expectedLook.pitch, gLastRunPlayerMoveYaw, self.v.v_angle.x,
+			expectedSpring.yawVelocity, expectedSpring.pitchVelocity, cachedSpring.yawVelocity, cachedSpring.pitchVelocity);
 		return false;
 	}
 	begin();

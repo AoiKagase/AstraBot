@@ -1598,5 +1598,20 @@
     "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "nativeLadderGoalGeneration"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "sharedLook"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "guardLookActive"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "guardLookGoal"
   }
 ]

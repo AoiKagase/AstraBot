@@ -39,6 +39,13 @@ public:
 		BlindCommand response, bool crouching);
 	bool hasBlindCommand(std::size_t index) const { return actors_[index].blindCommand; }
 	void advanceUpkeepLook(std::size_t index, FakeClientHandle &handle);
+	compat::AimSpringState lookSpring(std::size_t index) const { return actors_[index].sharedLook.spring; }
+	compat::AimStep stepSharedLook(std::size_t index, float now, float yaw, float pitch, float goalYaw,
+		float goalPitch, bool attacking, unsigned priority)
+	{
+		return actors_[index].sharedLook.step(now, yaw, pitch, goalYaw, goalPitch, attacking, priority);
+	}
+	void resetSharedLook(std::size_t index) { actors_[index].sharedLook = {}; }
 	bool hasHuntApproachLook(std::size_t index) const { return actors_[index].huntApproachLookActive; }
 	const std::uint32_t &managedBotCommandSequences(std::size_t index) const
 	{
@@ -141,6 +148,9 @@ private:
 		// ClearLookAt releases the spot, not the native default goal or angular momentum.
 		float defaultLookAheadYaw = 0.0f;
 		compat::AimSpringState lastLookSpring{};
+		compat::SharedLookState sharedLook{};
+		bool guardLookActive = false;
+		runtime::ViewAngles guardLookGoal{};
 		bool lookOwnerInitialized = false;
 		bool resumedDefaultLook = false;
 		runtime::LifecycleToken resumedLookToken{};

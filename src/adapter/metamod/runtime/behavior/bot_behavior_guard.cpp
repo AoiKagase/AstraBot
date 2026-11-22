@@ -455,7 +455,7 @@ void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 			self->v.v_angle.x, self->v.v_angle.y, services_->service_compatibilityRandomSource(),
 			{services_->command_managedBotCommandSequences(ctx.index), 0,
 				services_->service_managedBotFullUpdateSequences()[ctx.index]},
-			&pitch, &yaw))
+			&pitch, &yaw, services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility))
 	{
 		recordLookGoal(ctx.index, state.guardLook.desiredYaw());
 		ctx.proposal.viewAngles = {pitch, yaw, 0};

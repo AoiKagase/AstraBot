@@ -2092,6 +2092,7 @@ void PluginRuntime::resetManagedBotTiming(std::size_t index, float spawnTime)
 		return;
 	}
 	managedBotTiming_[index].reset(spawnTime);
+	command_.resetSharedLook(index);
 	command_.resetJumpCrouch(index);
 	command_.resetManagedBotCommandTemplate(index);
 }

@@ -9,12 +9,12 @@ namespace metamod
 namespace
 {
 bool advanceNoiseLook(compat::NoiseLookPlanner &look, const edict_t &self, float now, runtime::BotCommand &command,
-	bool localMovement, float *goalYaw)
+	bool localMovement, float *goalYaw, const compat::SharedLookStep &sharedLookStep)
 {
 	float pitch = 0, yaw = 0;
 	const auto eye = self.v.origin + self.v.view_ofs;
 	if (!look.update(now, {self.v.origin.x, self.v.origin.y, self.v.origin.z}, {eye.x, eye.y, eye.z},
-			self.v.v_angle.x, self.v.v_angle.y, &pitch, &yaw, goalYaw))
+			self.v.v_angle.x, self.v.v_angle.y, &pitch, &yaw, goalYaw, sharedLookStep))
 		return false;
 	if (!localMovement)
 	{
@@ -65,7 +65,7 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 	if (upkeepOnly)
 	{
 		float goalYaw = 0.0f;
-		if (advanceNoiseLook(look, *self, globals->time, command, true, &goalYaw))
+		if (advanceNoiseLook(look, *self, globals->time, command, true, &goalYaw, [this, index](float time, float yaw, float pitch, float goalYaw, float goalPitch, bool attack, unsigned priority) { return services_->command_stepLook(index, time, yaw, pitch, goalYaw, goalPitch, attack, priority); }))
 			recordLookGoal(index, goalYaw);
 		return;
 	}
@@ -211,7 +211,7 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 		}
 	}
 	float goalYaw = 0.0f;
-	if (advanceNoiseLook(look, *self, globals->time, command, false, &goalYaw))
+	if (advanceNoiseLook(look, *self, globals->time, command, false, &goalYaw, [this, index](float time, float yaw, float pitch, float goalYaw, float goalPitch, bool attack, unsigned priority) { return services_->command_stepLook(index, time, yaw, pitch, goalYaw, goalPitch, attack, priority); }))
 		recordLookGoal(index, goalYaw);
 }
 } // namespace metamod

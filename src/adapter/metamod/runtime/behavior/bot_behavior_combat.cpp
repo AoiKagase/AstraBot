@@ -1,4 +1,5 @@
 #include "runtime/behavior/bot_behavior_runtime.hpp"
+#include <limits>
 #include "runtime/shared/bot_runtime_support.hpp"
 namespace astrabot
 {
@@ -75,8 +76,30 @@ void BotBehaviorRuntime::applyNativeLadderLookCommand(
 		combat::CombatDecisionContext context{};
 		context.actor = {handle.actor.slot, handle.actor.actorGeneration};
 		context.frame = receipt.frame;
+		context.timestamp = now;
+		context.lookOverride = true;
 		context.origin = {handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z};
 		context.currentYaw = handle.entity->v.v_angle.y;
+	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+	{
+		context.sharedLookSpring = services_->command_lookSpring(index);
+		context.sharedLookStep = [this, index, receipt = reactionContext(index),
+			revision = actors_[index].executionRevision,
+			normalEpoch = actors_[index].managedBotStateMachines.normalStateEpoch(),
+			attackEpoch = actors_[index].managedBotStateMachines.attackEntryEpoch(),
+			attacking = actors_[index].managedBotStateMachines.attackOverlayActive()]
+			(float time, float yaw, float pitch, float goalYaw, float goalPitch, bool attack, unsigned priority) {
+			const auto &machine = actors_[index].managedBotStateMachines;
+			if (!executionCurrent(index, receipt, revision) || machine.normalStateEpoch() != normalEpoch ||
+				machine.attackEntryEpoch() != attackEpoch || machine.attackOverlayActive() != attacking)
+			{
+				const float unavailable = std::numeric_limits<float>::quiet_NaN();
+				return compat::AimStep{unavailable, unavailable, false};
+			}
+			return services_->command_stepLook(index, time, yaw, pitch, goalYaw, goalPitch, attack, priority);
+		};
+	}
+	context.attackingLook = actors_[index].managedBotStateMachines.attackOverlayActive();
 		context.currentPitch = handle.entity->v.v_angle.x;
 		context.elapsedSeconds = state.lastCombatTimes > 0
 			? (std::max)(0.0f, (std::min)(.1f, now - state.lastCombatTimes))
@@ -333,6 +356,26 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	context.aimTrackingEnabled = true;
 	context.currentPitch = handle.entity->v.v_angle.x;
 	context.currentYaw = handle.entity->v.v_angle.y;
+	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+	{
+		context.sharedLookSpring = services_->command_lookSpring(index);
+		context.sharedLookStep = [this, index, receipt = reactionContext(index),
+			revision = actors_[index].executionRevision,
+			normalEpoch = actors_[index].managedBotStateMachines.normalStateEpoch(),
+			attackEpoch = actors_[index].managedBotStateMachines.attackEntryEpoch(),
+			attacking = actors_[index].managedBotStateMachines.attackOverlayActive()]
+			(float time, float yaw, float pitch, float goalYaw, float goalPitch, bool attack, unsigned priority) {
+			const auto &machine = actors_[index].managedBotStateMachines;
+			if (!executionCurrent(index, receipt, revision) || machine.normalStateEpoch() != normalEpoch ||
+				machine.attackEntryEpoch() != attackEpoch || machine.attackOverlayActive() != attacking)
+			{
+				const float unavailable = std::numeric_limits<float>::quiet_NaN();
+				return compat::AimStep{unavailable, unavailable, false};
+			}
+			return services_->command_stepLook(index, time, yaw, pitch, goalYaw, goalPitch, attack, priority);
+		};
+	}
+	context.attackingLook = actors_[index].managedBotStateMachines.attackOverlayActive();
 	context.elapsedSeconds = (std::max)(
 		0.0f, (std::min)(ASTRABOT_BOT_BEHAVIOR_COMBAT_MAXIMUM_COMBAT_ELAPSED_SECONDS, now - state.lastCombatTimes));
 	context.timestamp = now;
@@ -1199,6 +1242,26 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	context.aimTrackingEnabled = true;
 	context.currentPitch = handle.entity->v.v_angle.x;
 	context.currentYaw = handle.entity->v.v_angle.y;
+	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+	{
+		context.sharedLookSpring = services_->command_lookSpring(index);
+		context.sharedLookStep = [this, index, receipt = reactionContext(index),
+			revision = actors_[index].executionRevision,
+			normalEpoch = actors_[index].managedBotStateMachines.normalStateEpoch(),
+			attackEpoch = actors_[index].managedBotStateMachines.attackEntryEpoch(),
+			attacking = actors_[index].managedBotStateMachines.attackOverlayActive()]
+			(float time, float yaw, float pitch, float goalYaw, float goalPitch, bool attack, unsigned priority) {
+			const auto &machine = actors_[index].managedBotStateMachines;
+			if (!executionCurrent(index, receipt, revision) || machine.normalStateEpoch() != normalEpoch ||
+				machine.attackEntryEpoch() != attackEpoch || machine.attackOverlayActive() != attacking)
+			{
+				const float unavailable = std::numeric_limits<float>::quiet_NaN();
+				return compat::AimStep{unavailable, unavailable, false};
+			}
+			return services_->command_stepLook(index, time, yaw, pitch, goalYaw, goalPitch, attack, priority);
+		};
+	}
+	context.attackingLook = actors_[index].managedBotStateMachines.attackOverlayActive();
 	context.elapsedSeconds = actors_[index].lastCombatTimes > 0.0f
 		? (std::max)(0.0f,
 			  (std::min)(ASTRABOT_BOT_BEHAVIOR_COMBAT_MAXIMUM_COMBAT_ELAPSED_SECONDS,

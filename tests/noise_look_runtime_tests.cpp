@@ -209,26 +209,54 @@ bool testNoiseLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &eng
 	enemy.v.deadflag = DEAD_NO;
 	enemy.v.team = 2;
 	enemy.v.origin = Vector(300, 0, 36);
+	enemy.v.velocity = self.v.velocity = Vector(0, 0, 0);
 	self.v.v_angle = Vector(0, 0, 0);
 	self.v.angles = self.v.v_angle;
-	for (unsigned i = 0; i < 4; ++i)
-		step(.08f);
-	if (std::fabs(self.v.v_angle.y) >= 5)
 	{
 		auto &views = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime);
+		auto &navigation = static_cast<astrabot::metamod::BotNavigationServices &>(runtime);
+		for (unsigned i = 0; i < 32 && !navigation.behavior_managedBotStateMachines(0).attackOverlayActive(); ++i)
+			step(.08f);
 		const auto &belief = views.observation_managedBotPerception(0).snapshot();
-		unsigned visible = 0;
+		const astrabot::world::ActorObservation *visibleEnemy = nullptr;
 		for (std::size_t i = 0; i < belief.actorCount(); ++i)
+			if (belief.actorAt(i)->visible && belief.actorAt(i)->relation == astrabot::world::TeamRelation::Hostile)
+				visibleEnemy = belief.actorAt(i);
+		if (!check(visibleEnemy && navigation.behavior_managedBotStateMachines(0).attackOverlayActive(),
+				"a real visible hostile is recognized and accepted by Attack before checking look precedence"))
+			return false;
+		const auto combatView = self.v.v_angle;
+		auto enemySpring = views.command_lookSpring(0), sideNoiseSpring = enemySpring;
+		const auto enemyPoint = astrabot::compat::combatAimPoint({enemy.v.origin.x, enemy.v.origin.y, enemy.v.origin.z},
+			{self.v.origin.x, self.v.origin.y, self.v.origin.z}, visibleEnemy->visibleParts, 22,
+			static_cast<float>(navigation.behavior_managedProfiles(0).skill) / 100.0f,
+			(self.v.flags & FL_DUCKING) ? 18.0f : 36.0f, false, 0);
+		const auto enemyGoal = astrabot::metamod::ActionAdapter::useEntityView(enemyPoint.x - self.v.origin.x,
+			enemyPoint.y - self.v.origin.y, enemyPoint.z - self.v.origin.z);
+		const auto expectedEnemy = astrabot::compat::trackAim(combatView.y, combatView.x, enemyGoal.yaw, enemyGoal.pitch,
+			astrabot::runtime::BotTimingScheduler::kCommandInterval, 1, &enemySpring, true);
+		const auto wrongNoise = astrabot::compat::trackAim(combatView.y, combatView.x, 90, 0,
+			astrabot::runtime::BotTimingScheduler::kCommandInterval, 1, &sideNoiseSpring, true);
+		const auto combatFull = views.service_managedBotFullUpdateSequences()[0];
+		const auto combatCommand = views.command_managedBotCommandSequences(0);
+		step(.04f);
+		const auto selectedSpring = views.command_lookSpring(0);
+		if (!check(views.service_managedBotFullUpdateSequences()[0] == combatFull &&
+				views.command_managedBotCommandSequences(0) > combatCommand &&
+				std::fabs(gLastRunPlayerMoveYaw - expectedEnemy.yaw) < .0001f &&
+				std::fabs(self.v.v_angle.y - expectedEnemy.yaw) < .0001f &&
+				std::fabs(self.v.v_angle.x - expectedEnemy.pitch) < .0001f &&
+				std::fabs(selectedSpring.yawVelocity - enemySpring.yawVelocity) < .0001f &&
+				std::fabs(selectedSpring.pitchVelocity - enemySpring.pitchVelocity) < .0001f &&
+				std::fabs(astrabot::compat::normalizedAimAngle(wrongNoise.yaw - expectedEnemy.yaw)) > .001f,
+				"visible enemy owns the cached shared spring even while inherited noise momentum is still nonzero"))
 		{
-			const auto *contact = belief.actorAt(i);
-			if (contact && contact->visible && contact->relation == astrabot::world::TeamRelation::Hostile)
-				++visible;
+			std::fprintf(stderr, "enemy shared aim expected=(%.9f %.9f) actual=(%.9f %.9f) spring_expected=(%.9f %.9f) spring_actual=(%.9f %.9f)\n",
+				expectedEnemy.yaw, expectedEnemy.pitch, self.v.v_angle.y, self.v.v_angle.x,
+				enemySpring.yawVelocity, enemySpring.pitchVelocity, selectedSpring.yawVelocity, selectedSpring.pitchVelocity);
+			return false;
 		}
-		std::fprintf(stderr, "noise precedence yaw=%g visible=%u activeWeapon=%d\n", self.v.v_angle.y, visible,
-			views.observation_managedBotCurrentWeapons(0).available ? 1 : 0);
 	}
-	if (!check(std::fabs(self.v.v_angle.y) < 5, "visible enemy aim is never displaced by the remembered side noise"))
-		return false;
 	enemy.v.deadflag = DEAD_DEAD;
 	enemy.v.health = 0;
 	round();
@@ -280,12 +308,31 @@ bool testNoiseLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &eng
 	noiseApproachRays = 0;
 	source.v.origin = Vector(224, 32, 0); // The heard point belongs to area4; its route is occluded.
 	emit("player/pl_step1.wav");
+	const auto approachBefore = self.v.v_angle;
+	auto approachSpring = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime).command_lookSpring(0);
+	const auto approachEye = self.v.origin + self.v.view_ofs;
+	const auto approachGoal = astrabot::metamod::ActionAdapter::useEntityView(
+		192.0f - approachEye.x, 32.0f - approachEye.y, 36.0f - approachEye.z);
+	const auto approachLook = astrabot::compat::trackAim(approachBefore.y, approachBefore.x, approachGoal.yaw,
+		approachGoal.pitch, astrabot::runtime::BotTimingScheduler::kCommandInterval, 1, &approachSpring, false);
 	step(.2f);
-	if (!check(noiseApproachRays == 1 && self.v.v_angle.y > 0 && self.v.v_angle.y < 90,
-			"occluded sound uses the nearest visible NAV approach instead of aiming through the wall"))
+	const auto actualApproachSpring = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime).command_lookSpring(0);
+	if (!check(noiseApproachRays == 1 && std::fabs(self.v.v_angle.y - approachLook.yaw) < .0001f &&
+			std::fabs(self.v.v_angle.x - approachLook.pitch) < .0001f &&
+			std::fabs(actualApproachSpring.yawVelocity - approachSpring.yawVelocity) < .0001f &&
+			std::fabs(actualApproachSpring.pitchVelocity - approachSpring.pitchVelocity) < .0001f,
+			"occluded sound follows the visible NAV approach with retained native spring momentum"))
+	{
+		std::fprintf(stderr, "approach shared aim rays=%u expected=(%.9f %.9f) actual=(%.9f %.9f)\n",
+			noiseApproachRays, approachLook.yaw, approachLook.pitch, self.v.v_angle.y, self.v.v_angle.x);
 		return false;
+	}
+	const auto cachedApproachLook = astrabot::compat::trackAim(approachLook.yaw, approachLook.pitch, approachGoal.yaw,
+		approachGoal.pitch, astrabot::runtime::BotTimingScheduler::kCommandInterval, 1, &approachSpring, false);
 	step(.16f);
-	if (!check(noiseApproachRays == 1, "unchanged sound, pose and NAV reuse the validated bend result"))
+	if (!check(noiseApproachRays == 1 && std::fabs(self.v.v_angle.y - cachedApproachLook.yaw) < .0001f &&
+			std::fabs(self.v.v_angle.x - cachedApproachLook.pitch) < .0001f,
+			"unchanged sound, pose and NAV reuse the bend and advance one native spring step"))
 		return false;
 
 	round();

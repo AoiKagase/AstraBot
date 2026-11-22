@@ -388,6 +388,15 @@ private:
 	{
 		return command_.managedBotCommandSequences(index);
 	}
+	compat::AimSpringState command_lookSpring(std::size_t index) const override
+	{
+		return command_.lookSpring(index);
+	}
+	compat::AimStep command_stepLook(std::size_t index, float now, float yaw, float pitch, float goalYaw,
+		float goalPitch, bool attacking, unsigned priority) override
+	{
+		return command_.stepSharedLook(index, now, yaw, pitch, goalYaw, goalPitch, attacking, priority);
+	}
 
 	void navigation_observePublicDeath(std::size_t victim) override
 	{

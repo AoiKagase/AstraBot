@@ -85,7 +85,7 @@ public:
 	float desiredYaw() const { return desiredYaw_; }
 
 	bool update(float now, bool sniper, const nav::NavVector &eye, float currentPitch, float currentYaw,
-		ICompatibilityRandomSource &random, RandomTimingContext timing, float *pitch, float *yaw)
+		ICompatibilityRandomSource &random, RandomTimingContext timing, float *pitch, float *yaw, bool goalOnly = false)
 	{
 		constexpr float kSniperMinimumIntervalSeconds = 5.0f;
 		constexpr float kSniperMaximumIntervalSeconds = 10.0f;
@@ -127,6 +127,13 @@ public:
 						-std::atan2(p.z + kApproachAimHeight - eye.z, range) * ASTRABOT_GUARD_LOOK_RADIANS_TO_DEGREES;
 				}
 			}
+		}
+		if (goalOnly)
+		{
+			lastTime_ = now;
+			*pitch = desiredPitch_;
+			*yaw = desiredYaw_;
+			return true;
 		}
 		const float dt = std::max(0.0f, std::min(ASTRABOT_GUARD_LOOK_MAXIMUM_UPDATE_SECONDS, now - lastTime_));
 		lastTime_ = now;

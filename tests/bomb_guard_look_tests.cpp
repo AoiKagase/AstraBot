@@ -147,10 +147,26 @@ bool testBombGuardLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 		return false;
 	self.v.origin = Vector(coverX, 50, 36);
 	self.v.v_angle = Vector(0, 180, 0);
+	bool sharedGuardTrajectory = true;
 	for (unsigned i = 0; i < 24; ++i)
+	{
+		const float now = globals.time + .1f;
+		auto spring = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime).command_lookSpring(0);
+		const auto expected = astrabot::compat::trackAim(self.v.v_angle.y, self.v.v_angle.x,
+			90.0f + 2.0f * astrabot::metamod::ActionAdapter::csBotCosine(33.0f * now),
+			2.0f * astrabot::metamod::ActionAdapter::csBotCosine(13.0f * now - 90.0f),
+			astrabot::runtime::BotTimingScheduler::kCommandInterval, 1.0f, &spring, false);
 		tick();
+		if (i >= 16 && (std::fabs(self.v.v_angle.y - expected.yaw) > .0001f ||
+			std::fabs(self.v.v_angle.x - expected.pitch) > .0001f))
+		{
+			std::fprintf(stderr, "Guard upkeep %.6f expected=(%.9f %.9f) actual=(%.9f %.9f)\n",
+				now, expected.yaw, expected.pitch, self.v.v_angle.y, self.v.v_angle.x);
+			sharedGuardTrajectory = false;
+		}
+	}
 	bool passed =
-		check(std::fabs(self.v.v_angle.y - 90) < 1, "guard turns away from the wall toward the longest open ray") &&
+		check(sharedGuardTrajectory, "guard uses one shared native spring step toward the open ray plus drift on every upkeep") &&
 		check(gLastRunPlayerMoveForward == 0 && gLastRunPlayerMoveSide == 0, "guard watches without leaving cover");
 	gHookedGameDllTable.pfnClientCommand = &guardGameCommand;
 	self.v.weapons = (1 << 22) | (1 << 6);

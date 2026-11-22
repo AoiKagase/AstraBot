@@ -7878,7 +7878,7 @@
     {
       "id": "C01",
       "title": "Look owners still have separate momentum and guard uses fixed-speed full-update turns",
-      "status": "implementation_gap",
+      "status": "resolved_bounded",
       "astra": [
         "include/astrabot/combat/combat_intent.hpp:226",
         "include/astrabot/compat/guard_look.hpp:98",
@@ -7894,8 +7894,30 @@
       "backlog_mapping": "23/current group1",
       "confidence": "high",
       "title_ja": "全look ownerの角速度共有・Guardの定速旋回",
-      "status_ja": "差確定",
-      "group": 1
+      "status_ja": "限定完了",
+      "group": 1,
+      "resolution": {
+        "date": "2026-11-23",
+        "record": "SHARED_LOOK_C01.md",
+        "scope": "Compatibility shared velocity and one effective fixed native integration; not sole view publication/all-owner live parity",
+        "offline": {
+          "windows": 173,
+          "linux": 172,
+          "PE": 7,
+          "ELF": 7
+        },
+        "live_steps": 2000,
+        "nonzero_owner_transitions": 327,
+        "same_time_replacements": 164,
+        "exact_rpp_matches": 1843,
+        "live_priorities": [
+          0,
+          3,
+          5
+        ],
+        "source_manifest": "artifacts/local/debug/csbot-shared-look-c01-20261122/final/freeze.json",
+        "dll_sha256": "a3a7b7803505abbb5ebd7f4a0efe7c98964dbe27cfa4142f72f47e69a4272936"
+      }
     },
     {
       "id": "C02",
@@ -8611,6 +8633,27 @@
       "title_ja": "人質の現在leader/追従終了/護送数の確定観測",
       "status_ja": "公開観測調査",
       "group": 4
+    },
+    {
+      "id": "C16",
+      "title": "Full movement command can publish raw view outside shared Upkeep result",
+      "status": "implementation_gap",
+      "astra": [
+        "src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1273",
+        "src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1389",
+        "src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1489"
+      ],
+      "reference": [
+        "regamedll/dlls/bot/cs_bot_vision.cpp:57",
+        "regamedll/dlls/bot/cs_bot_update.cpp:179"
+      ],
+      "evidence": "Current source selects pitch0/movementYaw in non-navigation draft and can directly write entity view before executeManagedBotCommand(...,true). SharedLook is neither reset nor integrated by this writer. Final-DLL live3 observed86 prior priority0 SharedResult/final RPP differences; first debugger.log:4690. Exact branch attribution of all86 is not established. Independent read-only review distinguishes this from resolved shared momentum C01 and Combat cadence C08.",
+      "tests": "Require canonical full/light publication RED with actual command and same-actor/time write attribution on redeployed final DLL. Do not merely overwrite final angle.",
+      "backlog_mapping": "new explicit full-command publication residual; next repair unit",
+      "confidence": "high",
+      "title_ja": "full移動commandのUpkeep外raw視線公開",
+      "status_ja": "差確定",
+      "group": 1
     }
   ],
   "reports": [
@@ -8625,5 +8668,20 @@
     "Reference53 bot/NAV +4 public GameDLL files have full/focused detail in reports;306 general GameDLL/SDK/test dependencies are inventory/context, not a claim of complete GameDLL replacement audit.",
     "Test C++125 and script/build/export38 are inventoried; relevant test assertions and pinned historical artifacts are reviewed, not every fixture recursively executed.",
     "No product changes, new builds/CTest, new live acceptance, deployment or server copy during this audit."
+  ],
+  "completion_amendments": [
+    {
+      "date": "2026-11-23",
+      "record": "SHARED_LOOK_C01.md",
+      "historical_inventory_scope": "Original file fingerprints remain at audit astra_commit; current C01 source manifest is separate",
+      "historical_findings": 49,
+      "open_findings": 48,
+      "resolved_bounded": [
+        "C01"
+      ],
+      "new_findings": [
+        "C16"
+      ]
+    }
   ]
 }

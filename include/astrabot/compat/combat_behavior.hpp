@@ -5,6 +5,7 @@
 #include "astrabot/compat/profile_catalog.hpp"
 #include <array>
 #include <cmath>
+#include <functional>
 #include <cstddef>
 
 namespace astrabot
@@ -391,6 +392,43 @@ inline AimStep trackAim(float yaw, float pitch, float desiredYaw, float desiredP
 		std::fabs(desiredPitch - result.pitch) <= kAlignmentToleranceDegrees;
 	return result;
 }
+
+// One native yaw/pitch spring per actor. A higher-priority command look can
+// replace this tick's provisional goal, starting from the same pre-Upkeep state.
+// It never adds another integration to the already integrated result.
+using SharedLookStep = std::function<AimStep(float, float, float, float, float, bool, unsigned)>;
+
+struct SharedLookState
+{
+	AimSpringState spring{};
+	float timestamp = -1.0f;
+	float startYaw = 0.0f, startPitch = 0.0f;
+	AimSpringState startSpring{};
+	AimStep result{};
+	unsigned priority = 0U;
+
+	AimStep step(float now, float yaw, float pitch, float desiredYaw, float desiredPitch,
+		bool attacking, unsigned ownerPriority)
+	{
+		if (!std::isfinite(now) || !std::isfinite(yaw) || !std::isfinite(pitch) ||
+			!std::isfinite(desiredYaw) || !std::isfinite(desiredPitch) ||
+			now < 0.0f || (timestamp >= 0.0f && now < timestamp))
+			return {yaw, pitch, false};
+		if (timestamp != now)
+		{
+			timestamp = now;
+			startYaw = yaw;
+			startPitch = pitch;
+			startSpring = spring;
+		}
+		else if (ownerPriority <= priority)
+			return result;
+		spring = startSpring;
+		priority = ownerPriority;
+		result = trackAim(startYaw, startPitch, desiredYaw, desiredPitch, 1.0f / 30.0f, 1.0f, &spring, attacking);
+		return result;
+	}
+};
 
 inline bool weaponEngagementAllowed(combat::WeaponKind kind, float distance)
 {

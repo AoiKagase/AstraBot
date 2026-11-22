@@ -2,7 +2,7 @@
 
 従来の5群は優先事項の要約であり、残件の完全な一覧にはなっていなかった。手榴弾・通常装備・狙撃銃、非C4シナリオ、移動幾何、管理/profile等の具体名を追加し、完了済みの旧記録を分離した。以下のIDを現行残件の正本とする。
 
-監査基点はAstraBot `dd1301e35f29a7d3f03b647980187547fec29f6e`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。実装変更はなく、製品は既存検証済み `6fdadbd` のまま。
+監査基点はAstraBot `dd1301e35f29a7d3f03b647980187547fec29f6e`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。この監査時点では実装変更はなく、製品は既存検証済み `6fdadbd` のまま。後続のC01修正は [限定完了記録](SHARED_LOOK_C01.md) に追記し、当時のファイル指紋を現在値へ置き換えない。
 
 ## 対象と網羅範囲
 
@@ -18,13 +18,14 @@
 
 ## 現行残件（5群）
 
-台帳は48項目。C15はM05へ統合。S05とNAVの護送入力、C14とS13等の依存関係は残し、独立したバグ件数には換算しない。S14は通常対戦milestone外だが、全ソース棚卸しから隠さない。
+台帳は49歴史項目、C01限定完了を除いて48残件（2026-11-23更新）。C15はM05へ統合。S05とNAVの護送入力、C14とS13等の依存関係は残し、独立したバグ件数には換算しない。S14は通常対戦milestone外だが、全ソース棚卸しから隠さない。
 
 ### 1. 視線・戦闘・武器
 
 | ID | 状態 | 修正/確認対象 | Astra根拠 | 参照根拠 |
 |---|---|---|---|---|
-| C01 | 差確定 | 全look ownerの角速度共有・Guardの定速旋回 | `include/astrabot/combat/combat_intent.hpp:226`<br>`include/astrabot/compat/guard_look.hpp:98` | `regamedll/dlls/bot/cs_bot_vision.cpp:57`<br>`regamedll/dlls/bot/cs_bot_update.cpp:179` |
+| C01 | 限定完了 | [共有角速度・1回相当積分](SHARED_LOOK_C01.md)。live範囲0/3/5、全軌跡は未受入れ | `include/astrabot/compat/combat_behavior.hpp:401`<br>`src/adapter/metamod/runtime/command/bot_command_runtime.hpp` | `regamedll/dlls/bot/cs_bot_vision.cpp:57`<br>`regamedll/dlls/bot/cs_bot_update.cpp:179` |
+| C16 | 差確定 | full移動commandによるUpkeep外のraw view公開。実RPP不一致86件、全branch帰属未検証 | `src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1273`<br>`src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1489` | `regamedll/dlls/bot/cs_bot_vision.cpp:57`<br>`regamedll/dlls/bot/cs_bot_update.cpp:179` |
 | C02 | 差確定 | 手榴弾開始条件と保持/投擲の実行経路 | `src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1059`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1419` | `regamedll/dlls/bot/cs_bot_update.cpp:347`<br>`regamedll/dlls/bot/cs_bot_update.cpp:490` |
 | C03 | 差確定 | 通常Updateの装備再選択・安全時間中の装備 | `src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:8`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:74` | `regamedll/dlls/bot/cs_bot_update.cpp:519`<br>`regamedll/dlls/bot/cs_bot_update.cpp:526` |
 | C04 | 差確定 | SilencerCheck要求の実行時接続 | `include/astrabot/compat/weapon_actions.hpp:225`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1434` | `regamedll/dlls/bot/cs_bot_weapon.cpp:760`<br>`regamedll/dlls/bot/cs_bot_update.cpp:556` |
@@ -107,7 +108,7 @@
 | 発話/radio/memeが全面未実装 | 表現済み経路は実装済み | 11 active meme、named Say、compound parts、linked queue、dead/round保持。標準イベント/人質観測と実音声受入れは未完 |
 | backlog21 CRT音声shuffle近似 | オフライン解消 | `chatter_voice_random.hpp`、voice testの2bank/重複/32roundでnative random_shuffle対照。実音声/UIは別受入れ |
 | backlog22 Linux胸部照準既知失敗 | 現在の失敗として解消 | 最新既存証拠 Windows171/171、Linux170/170、PE/ELF7。過去の失敗ログは保持 |
-| ClearLook後の次light視線再開 | 限定完了 | 3cde77b、cached commandと独立CDB。C01の全owner共有は未完 |
+| ClearLook後の次light視線再開 | 限定完了 | 3cde77b、cached commandと独立CDB。共有ばねC01は後続で限定完了、full公開C16/更新順C08は未完 |
 | Idle/Follow早期Plant・Hunt yield/Ahead75 | 限定完了 | 95aec579、実機保持Ahead0。一般の目標/RNG差はS01等に残す |
 | MoveTo→Plantの経路処理順 | 限定完了 | 6546606、非PROGRESSING確認と更新receipt。全NAVの一致とはしない |
 | Plant入場更新のNAV入力/Run/callback | 限定完了 | a924873、製品フレーム回帰・実機到着境界。異なるnative timeout条件の同値入力受入れは残す |
@@ -120,6 +121,6 @@
 
 ## 証拠と次の修正単位
 
-最新オフライン合格は既存 `csbot-idle-buy-look-supply-20261122/evidence-final-v2/acceptance.json` と原ログの照合結果であり、今回の再実行ではない。ソース・ユーザーファイル・製品SHAと参照固定SHAを再確認する。今回の変更は監査資料のみで、新しいC++実装・テスト・実機再配備・サーバーコピーを行わない。
+以下は2026-11-22監査時の記録。最新C01の再実行/実機受入れは [SHARED_LOOK_C01.md](SHARED_LOOK_C01.md)。監査時のオフライン合格は既存 `csbot-idle-buy-look-supply-20261122/evidence-final-v2/acceptance.json` と原ログの照合結果であり、今回の再実行ではない。ソース・ユーザーファイル・製品SHAと参照固定SHAを再確認する。今回の変更は監査資料のみで、新しいC++実装・テスト・実機再配備・サーバーコピーを行わない。
 
-次の製品修正はC01の全owner角速度共有を、C08の軽更新/全更新順と切り分けてREDから開始する。以後の実機確認は [LIVE_VERIFICATION.md](LIVE_VERIFICATION.md) の既存実機再配備、必要時のみ固定1コピー再利用を守る。pushなし。
+C01の共有ばねは後続で限定完了。次は新規C16のfull/light視線公開順をREDから開始し、その後C02へ進む。C08のCombat軽/full更新順は別残件として保持する。以後の実機確認は [LIVE_VERIFICATION.md](LIVE_VERIFICATION.md) の既存実機再配備、必要時のみ固定1コピー再利用を守る。pushなし。

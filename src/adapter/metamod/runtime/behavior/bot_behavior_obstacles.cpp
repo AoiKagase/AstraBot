@@ -232,7 +232,9 @@ void BotBehaviorRuntime::applyObstacleCommand(std::size_t index, runtime::BotCom
 	const float yaw = kDegreesPerRadian * std::atan2(dy, dx);
 	const float pitch = -kDegreesPerRadian * std::atan2(dz, std::hypot(dx, dy));
 	recordLookGoal(index, yaw);
-	const auto aim = compat::trackAim(look.angles.yaw, look.angles.pitch, yaw, pitch,
+	const auto aim = services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility
+		? services_->command_stepLook(index, globals->time, self->v.v_angle.y, self->v.v_angle.x, yaw, pitch, false, 7U)
+		: compat::trackAim(look.angles.yaw, look.angles.pitch, yaw, pitch,
 		runtime::BotTimingScheduler::kCommandInterval, 1.0f, &look.spring, false);
 	look.angles = {aim.pitch, aim.yaw, 0};
 	if (look.alignedAt < 0 && std::fabs(compat::normalizedAimAngle(yaw - aim.yaw)) <= kLookTolerance &&

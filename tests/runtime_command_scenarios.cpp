@@ -304,6 +304,9 @@ int main()
 	if (!check(services.lastForward == 0.0f && services.lastSide == 96.0f,
 			"fallback first slows on the update that starts on the endpoint leg"))
 		return 1;
+	// A new injected pose belongs to a new command timestamp. Retain the
+	// actor's velocity instead of assuming ResetPath reset a private spring.
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
 	handle.entity->v.movetype = MOVETYPE_FLY;
 	handle.entity->v.flags &= ~FL_ONGROUND;
 	handle.entity->v.v_angle = Vector(60.0f, 90.0f, 0.0f);
@@ -311,41 +314,72 @@ int main()
 	const auto descentDraft = command.beginMovementCommand(0U, handle, token, before, ladder);
 	const ActionProposal descentAction{ActionKind::None, descentDraft.command.viewAngles, 0U};
 	command.finishMovementCommand(0U, handle, token, before, ladder, descentDraft, descentAction);
+	auto referenceSpring = command.lookSpring(0U);
+	runtime::ViewAngles referenceLook{60.0f, 90.0f, 0.0f};
+	const auto nativeStep = [&](float yaw, float pitch = 0.0f, bool ladderOverride = false) {
+		const float now = services.globals.time;
+		if (!ladderOverride)
+		{
+			yaw += 2.0f * ActionAdapter::csBotCosine(33.0f * now);
+			pitch += 2.0f * ActionAdapter::csBotCosine(13.0f * now - 90.0f);
+		}
+		const auto next = compat::trackAim(referenceLook.yaw, referenceLook.pitch, yaw, pitch,
+			runtime::BotTimingScheduler::kCommandInterval, 1.0f, &referenceSpring, false);
+		referenceLook = {next.pitch, next.yaw, 0.0f};
+	};
+	const auto matchesNative = [&]() {
+		const auto spring = command.lookSpring(0U);
+		const bool match = std::fabs(handle.entity->v.v_angle.x - referenceLook.pitch) < .0001f &&
+			std::fabs(services.lastYaw - referenceLook.yaw) < .0001f &&
+			std::fabs(spring.yawVelocity - referenceSpring.yawVelocity) < .0001f &&
+			std::fabs(spring.pitchVelocity - referenceSpring.pitchVelocity) < .0001f;
+		if (!match)
+			std::fprintf(stderr, "native command look expected=(%.9f %.9f) actual=(%.9f %.9f) spring_expected=(%.9f %.9f) spring_actual=(%.9f %.9f)\n",
+				referenceLook.yaw, referenceLook.pitch, services.lastYaw, handle.entity->v.v_angle.x,
+				referenceSpring.yawVelocity, referenceSpring.pitchVelocity, spring.yawVelocity, spring.pitchVelocity);
+		return match;
+	};
 	services.descentDestinationLook = true;
+	nativeStep(90.0f);
 	command.advanceUpkeepLook(0U, handle);
 	command.executeManagedBotCommand(0U, handle);
-	if (!check(std::fabs(handle.entity->v.v_angle.x - 56.6667f) < .001f &&
+	if (!check(matchesNative() &&
 			services.lastForward == 96.0f && services.lastSide == -96.0f,
 			"descending upkeep turns the view while retaining ladder-local movement"))
 		return 1;
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	nativeStep(90.0f);
 	command.advanceUpkeepLook(0U, handle);
 	const auto haltedDescent = command.beginNeutralCommand(0U, handle, before);
 	const ActionProposal haltAction{ActionKind::None, haltedDescent.command.viewAngles, 0U};
 	command.finishNeutralCommand(0U, handle, before, haltedDescent, haltAction);
 	command.executeManagedBotCommand(0U, handle);
-	if (!check(std::fabs(handle.entity->v.v_angle.x - 50.0f) < .001f && services.lastForward == 0.0f &&
+	if (!check(matchesNative() && services.lastForward == 0.0f &&
 			services.lastSide == 0.0f && services.descentFallbackLooks == 0,
 			"a suppressed Hunt move keeps exactly one descent look step and emits zero movement"))
 		return 1;
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	nativeStep(90.0f);
 	command.advanceUpkeepLook(0U, handle);
 	const auto floorYaw = handle.entity->v.v_angle.y;
 	services.descentDestinationLook = false;
 	updateHunt();
-	if (!check(services.lastYaw == floorYaw && std::fabs(handle.entity->v.v_angle.x - 40.0f) < .001f &&
-			services.lastForward == -96.0f && services.lastSide == 0.0f,
+	const auto floorMove = ActionAdapter::projectMovement(0, -1, 96, referenceLook.yaw, true);
+	if (!check(matchesNative() && services.lastYaw == floorYaw &&
+			services.lastForward == floorMove.forward && services.lastSide == floorMove.side,
 			"the first floor decision projects movement into the view already updated by upkeep"))
 		return 1;
 	handle.entity->v.movetype = MOVETYPE_WALK;
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	nativeStep(-90.0f);
 	command.advanceUpkeepLook(0U, handle);
 	command.executeManagedBotCommand(0U, handle);
-	if (!check(std::fabs(handle.entity->v.v_angle.x - 26.6667f) < .001f && services.lastForward == -96.0f &&
-			services.lastSide == 0.0f, "the first detached upkeep keeps the spring and last full update's axes"))
+	if (!check(matchesNative() && services.lastForward == floorMove.forward &&
+			services.lastSide == floorMove.side, "the first detached upkeep keeps the spring and last full update's axes"))
 		return 1;
 	handle.entity->v.flags |= FL_ONGROUND;
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	nativeStep(-90.0f);
 	command.advanceUpkeepLook(0U, handle);
 	updateHunt();
 	const auto takeoffView = handle.entity->v.v_angle;
@@ -357,36 +391,42 @@ int main()
 			"ordinary airborne Hunt holds takeoff view after the ladder handoff ends"))
 		return 1;
 	command.resetManagedBotCommandTemplate(0U);
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
 	handle.entity->v.movetype = MOVETYPE_FLY;
 	handle.entity->v.v_angle = Vector(60.0f, 90.0f, 0.0f);
+	referenceLook = {60.0f, 90.0f, 0.0f};
+	referenceSpring = command.lookSpring(0U);
 	before = services.observation_captureMovementPhysicsState(handle.entity, true, true);
 	const auto stoppedLadderDraft = command.beginMovementCommand(0U, handle, token, before, ladder);
 	const ActionProposal descentMove{ActionKind::None, stoppedLadderDraft.command.viewAngles, 0U};
 	command.finishMovementCommand(0U, handle, token, before, ladder, stoppedLadderDraft, descentMove);
 	services.stoppedHuntLookPhase = nav::NativeLadderPhase::Descend;
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	nativeStep(90.0f, 60.0f, true);
 	command.advanceUpkeepLook(0U, handle);
 	services.stoppedHuntLookPhase = nav::NativeLadderPhase::StoppedHuntLook;
 	const auto stopped = command.beginNeutralCommand(0U, handle, before);
 	const ActionProposal stoppedAction{ActionKind::None, stopped.command.viewAngles, 0U};
 	command.finishNeutralCommand(0U, handle, before, stopped, stoppedAction);
 	command.executeManagedBotCommand(0U, handle);
-	if (!check(handle.entity->v.v_angle.x == 60.0f && services.lastButtons == 0U &&
+	if (!check(matchesNative() && services.lastButtons == 0U &&
 			services.lastForward == 0.0f && services.lastSide == 0.0f,
 			"the successful replan keeps the view from upkeep and sends a neutral command"))
 		return 1;
-	for (const float pitch : {56.6667f, 50.0f})
+	for (unsigned tick = 0; tick < 2; ++tick)
 	{
 		services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+		nativeStep(90.0f);
 		command.advanceUpkeepLook(0U, handle);
 		command.executeManagedBotCommand(0U, handle);
-		if (!check(std::fabs(handle.entity->v.v_angle.x - pitch) < .001f && services.lastButtons == 0U &&
+		if (!check(matchesNative() && services.lastButtons == 0U &&
 				services.lastForward == 0.0f && services.lastSide == 0.0f,
 				"neutral light commands resume ordinary pitch with the same spring on the ladder"))
 			return 1;
 	}
 	handle.entity->v.movetype = MOVETYPE_WALK;
 	handle.entity->v.flags |= FL_ONGROUND;
+	const auto stoppedLook = handle.entity->v.v_angle;
 	before = services.observation_captureMovementPhysicsState(handle.entity, true, true);
 	context.frame.tick++;
 	context.fullUpdateSequence++;
@@ -397,7 +437,8 @@ int main()
 		return 1;
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
 	command.advanceUpkeepLook(0U, handle);
-	if (!check(handle.entity->v.v_angle.x == 50.0f, "Hide does not consume the stopped Hunt look"))
+	if (!check(handle.entity->v.v_angle.x == stoppedLook.x && handle.entity->v.v_angle.y == stoppedLook.y,
+			"Hide does not consume the stopped Hunt look"))
 		return 1;
 	services.stoppedHuntLookPhase = nav::NativeLadderPhase::None;
 	command.resetManagedBotCommandTemplate(0U);
@@ -412,8 +453,11 @@ int main()
 			"Hide starts moving toward cover without snapping to the path yaw"))
 		return 1;
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	referenceLook = {-4.0f, -170.0f, 0.0f};
+	referenceSpring = command.lookSpring(0U);
+	nativeStep(-90.0f);
 	command.executeManagedBotCommand(0U, handle);
-	if (!check(services.lastYaw > -170.0f && services.lastYaw < -160.0f && services.lastSide < 0,
+	if (!check(matchesNative() && services.lastSide < 0,
 			"Hide upkeep turns toward the cover route while retaining the movement command"))
 		return 1;
 	context.frame.tick++;
@@ -439,15 +483,18 @@ int main()
 			"investigation movement starts from the current view"))
 		return 1;
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	referenceLook = {4.0f, 0.0f, 0.0f};
+	referenceSpring = command.lookSpring(0U);
+	nativeStep(180.0f);
 	command.executeManagedBotCommand(0U, handle);
-	const float investigationYaw = services.lastYaw;
-	if (!check(std::fabs(investigationYaw) > 2.0f && std::fabs(investigationYaw) < 5.0f &&
+	if (!check(matchesNative() &&
 			services.lastForward < 0, "investigation upkeep turns without changing the last movement axes"))
 		return 1;
 	investigation.locomotionIntent.direction.x = 1.0f;
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	nativeStep(180.0f);
 	updateInvestigation();
-	if (!check(std::fabs(services.lastYaw - investigationYaw) < 10.0f && services.lastForward > 0,
+	if (!check(matchesNative() && services.lastForward > 0,
 			"an investigation route reversal changes the movement command without snapping the view"))
 		return 1;
 	context.frame.tick++;
@@ -484,10 +531,15 @@ int main()
 			"interaction registers the aim goal without snapping or using"))
 		return 1;
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	referenceLook = {0.0f, 0.0f, 0.0f};
+	referenceSpring = command.lookSpring(0U);
+	const auto useEye = handle.entity->v.origin + handle.entity->v.view_ofs;
+	const auto useGoal = ActionAdapter::useEntityView(facing.useEntityLookTarget.x - useEye.x,
+		facing.useEntityLookTarget.y - useEye.y, facing.useEntityLookTarget.z - useEye.z);
+	nativeStep(useGoal.yaw, useGoal.pitch);
 	command.advanceUpkeepLook(0U, handle);
 	command.executeManagedBotCommand(0U, handle);
-	if (!check(services.lastYaw < 0.0f && services.lastYaw > -20.0f &&
-			handle.entity->v.v_angle.x < 0.0f && (services.lastButtons & IN_USE) == 0U,
+	if (!check(matchesNative() && (services.lastButtons & IN_USE) == 0U,
 			"cached interaction upkeep moves both axes without sending USE"))
 		return 1;
 	const auto useDraft = command.beginNeutralCommand(0U, handle, before);

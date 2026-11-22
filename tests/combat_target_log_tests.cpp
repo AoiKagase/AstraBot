@@ -263,6 +263,8 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool bestEquipmentFixture = scenario && std::strcmp(scenario, "equip-best") == 0;
 	const bool plantTailFixture = scenario && std::strcmp(scenario, "plant-tail") == 0;
 	const bool clearLookFixture = scenario && std::strcmp(scenario, "clear-look") == 0;
+	const bool sharedLookFixture = scenario && std::strcmp(scenario, "shared-look") == 0;
+	const bool sharedReentryFixture = scenario && std::strcmp(scenario, "shared-look-reentry") == 0;
 	const bool plantEntryFixture = scenario && std::strcmp(scenario, "plant-entry") == 0;
 #ifdef _MSC_VER
 	std::free(scenario);
@@ -810,7 +812,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		};
 		return moveControl(2) && moveControl(1) && moveControl(0) && timeoutEntryControl(true) && idleAfterBuyControl();
 	}
-	if (clearLookFixture)
+	if (clearLookFixture || sharedLookFixture)
 	{
 		using namespace astrabot;
 		using namespace astrabot::compat;
@@ -874,6 +876,103 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				std::fabs(combatCommandYaw - expected.yaw) < .0001f &&
 				std::fabs(combatCommandPitch - expected.pitch) < .0001f, label);
 		};
+		if (sharedLookFixture)
+		{
+			state(CompatibilityStateId::Hunt);
+			if (!send(false, false) || !light(0, 0, "NAV supplies momentum before Guard"))
+				return false;
+			state(CompatibilityStateId::Hide);
+			globals.time += .05f;
+			auto draft = command->beginNeutralCommand(0, handle, before);
+			metamod::ActionProposal guard{metamod::ActionKind::None, {0, 90, 0}, 0};
+			guard.hasGuardLook = true;
+			command->finishNeutralCommand(0, handle, before, draft, guard);
+			command->executeManagedBotCommand(0, handle);
+			if (!check(std::fabs(combatCommandYaw - expected.yaw) < .0001f,
+				"Guard publishes a goal without replacing the preceding Upkeep view"))
+				return false;
+			if (!light(90, 0, "Guard integrates its goal with the NAV yaw/pitch velocities"))
+				return false;
+			const auto yaw = combatCommandYaw, pitch = combatCommandPitch;
+			command->advanceUpkeepLook(0, handle);
+			if (!check(handle.entity->v.v_angle.y == yaw && handle.entity->v.v_angle.x == pitch,
+				"Guard cannot integrate twice at one command timestamp"))
+				return false;
+			combat::CombatController combatOwner;
+			combat::CombatDecisionContext aimContext{};
+			aimContext.actor = {handle.actor.slot, handle.actor.actorGeneration};
+			aimContext.frame = {ports.service_lifecycle().mapGeneration(), ports.service_lifecycle().roundGeneration(),
+				ports.service_adapterFrameCount()};
+			aimContext.origin = {before.origin.x, before.origin.y, before.origin.z};
+			aimContext.skill = 1.0f;
+			aimContext.elapsedSeconds = .09f; // A valid multi-step legacy interval; shared native integration is exactly 1/30.
+			aimContext.sharedLookStep = [&](float time, float yaw, float pitch, float goalYaw, float goalPitch, bool attack, unsigned priority) {
+				return command->stepSharedLook(0, time, yaw, pitch, goalYaw, goalPitch, attack, priority);
+			};
+			const auto combatStep = [&](float goalYaw, float goalPitch, bool attacking, bool ladder) {
+				globals.time += .05f;
+				aimContext.timestamp = globals.time;
+				aimContext.currentYaw = expected.yaw;
+				aimContext.currentPitch = expected.pitch;
+				aimContext.lookOverride = ladder;
+				const auto reference = trackAim(expected.yaw, expected.pitch, goalYaw, goalPitch,
+					runtime::BotTimingScheduler::kCommandInterval, 1, &spring, attacking);
+				expected = {reference.pitch, reference.yaw, 0};
+				AimStep look{};
+				if (!combatOwner.upkeepLook(aimContext, goalYaw, goalPitch, attacking, &look))
+				{
+					std::fprintf(stderr, "shared look upkeep rejected: valid=%d elapsed=%.12f yaw=%.9f pitch=%.9f goal=(%.9f %.9f) time=%.9f\n",
+						aimContext.isValid() ? 1 : 0, aimContext.elapsedSeconds, aimContext.currentYaw,
+						aimContext.currentPitch, goalYaw, goalPitch, aimContext.timestamp);
+					return false;
+				}
+				metamod::CombatUpkeepUpdate update{};
+				update.hasAim = true;
+				update.angles = {look.pitch, look.yaw, 0};
+				const auto templateValid = command->managedBotCommandTemplateValid(0);
+				const auto sent = combatSentInputs.size();
+				command->applyCombatUpkeep(0, update);
+				const auto combatReceipt = command->executeManagedBotCommand(0, handle);
+				if (std::fabs(combatCommandYaw - expected.yaw) >= .0001f ||
+					std::fabs(combatCommandPitch - expected.pitch) >= .0001f)
+					std::fprintf(stderr, "shared-look valid=%d receipt=%d sent=%u goal=(%.6f %.6f) expected=(%.9f %.9f) controller=(%.9f %.9f) command=(%.9f %.9f) spring=(%.9f %.9f)\n",
+						templateValid ? 1 : 0, static_cast<int>(combatReceipt.result), static_cast<unsigned>(combatSentInputs.size() - sent),
+						goalYaw, goalPitch, expected.yaw, expected.pitch, look.yaw, look.pitch, combatCommandYaw, combatCommandPitch,
+						command->lookSpring(0).yawVelocity, command->lookSpring(0).pitchVelocity);
+				return check(std::fabs(combatCommandYaw - expected.yaw) < .0001f &&
+					std::fabs(combatCommandPitch - expected.pitch) < .0001f,
+					"Combat and ladder use the command actor's momentum and exactly one native step");
+			};
+			if (!combatStep(-90, 20, true, false) || !combatStep(60, -60, true, true))
+				return false;
+			AimStep duplicate{};
+			if (!combatOwner.upkeepLook(aimContext, -120, 50, true, &duplicate) ||
+				!check(duplicate.yaw == expected.yaw && duplicate.pitch == expected.pitch,
+					"a later Combat goal at the same timestamp cannot add another integration"))
+				return false;
+			state(CompatibilityStateId::UseEntity);
+			if (!send(true, false) || !light(90, -26.565052f,
+				"UseEntity inherits Guard momentum without a reset"))
+				return false;
+			state(CompatibilityStateId::Idle);
+			if (!send(false, false) || !light(0, 0,
+				"Guard to UseEntity to default retains one spring through all owners"))
+				return false;
+			// Higher-priority selection replaces the provisional result from its saved
+			// pre-Upkeep spring; it must not integrate the provisional angle again.
+			globals.time += .05f;
+			const auto wanted = trackAim(expected.yaw, expected.pitch, 120, -40,
+				runtime::BotTimingScheduler::kCommandInterval, 1, &spring, false);
+			command->stepSharedLook(0, globals.time, expected.yaw, expected.pitch, -150, 50, false, 0U);
+			const auto selected = command->stepSharedLook(0, globals.time, -70, 30, 120, -40, false, 7U);
+			if (!check(selected.yaw == wanted.yaw && selected.pitch == wanted.pitch,
+				"late obstacle priority selects one integration from the original spring and angle"))
+				return false;
+			expected = {selected.pitch, selected.yaw, 0};
+			gEntities[0].v.v_angle = Vector(expected.pitch, expected.yaw, 0);
+			command->resetManagedBotCommandTemplate(0);
+			return light(0, 0, "discarding a command template preserves the actor's shared angular velocity");
+		}
 		state(CompatibilityStateId::Hunt);
 		if (!send(false, false) || !light(0, 0, "normal NAV establishes a nonzero angular velocity"))
 			return false;
@@ -1714,7 +1813,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		behavior.service_compatibilityRandomSource().setTraceSink(nullptr);
 		return passed;
 	}
-	if (reacquireFixture)
+	if (reacquireFixture || sharedReentryFixture)
 	{
 		auto &navigation = static_cast<astrabot::metamod::BotNavigationServices &>(runtime);
 		auto &observation = static_cast<astrabot::metamod::BotObservationServices &>(runtime);
@@ -1744,6 +1843,39 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		if (!check(combatAttackCommands > 0 && state.attackOverlayActive(),
 				"the first acquisition clears the profile attack delay and fires"))
 			return false;
+		if (sharedReentryFixture)
+		{
+			using namespace astrabot;
+			auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+			struct ResetAimRound final : compat::IRandomTraceSink
+			{
+				metamod::PluginRuntime *runtime = nullptr;
+				bool fired = false;
+				compat::AimSpringState atRoundChange{};
+				void record(const compat::RandomTraceRecord &draw) override
+				{
+					if (fired || std::strcmp(draw.request.semanticId, "AimOffsetX") != 0)
+						return;
+					fired = true;
+					runtime->beginRoundGeneration();
+					atRoundChange = static_cast<metamod::BotBehaviorServices &>(*runtime).command_lookSpring(0);
+				}
+			} trace;
+			trace.runtime = &runtime;
+			const auto round = runtime.snapshot().roundGeneration;
+			ports.service_compatibilityRandomSource().setTraceSink(&trace);
+			for (unsigned frame = 0; frame < 64 && !trace.fired; ++frame)
+				stepRifle(30, 30.0f); // Keep the enemy in view while stale integration has nonzero yaw error.
+			ports.service_compatibilityRandomSource().setTraceSink(nullptr);
+			const auto spring = ports.command_lookSpring(0);
+			if (spring.yawVelocity != trace.atRoundChange.yawVelocity || spring.pitchVelocity != trace.atRoundChange.pitchVelocity)
+				std::fprintf(stderr, "stale shared look after RNG round change: before=(%.9f %.9f) after=(%.9f %.9f)\n",
+					trace.atRoundChange.yawVelocity, trace.atRoundChange.pitchVelocity, spring.yawVelocity, spring.pitchVelocity);
+			return check(trace.fired && runtime.snapshot().roundGeneration != round,
+				"tracked Combat AimOffsetX synchronously changes the real runtime round receipt") &&
+				check(spring.yawVelocity == trace.atRoundChange.yawVelocity && spring.pitchVelocity == trace.atRoundChange.pitchVelocity,
+					"interrupted old Combat cannot modify shared angular velocity after the round receipt changes");
+		}
 		const auto attackEpoch = state.attackEntryEpoch();
 		enemyBehindCover = true;
 		rejectAmbushRoll = true;
