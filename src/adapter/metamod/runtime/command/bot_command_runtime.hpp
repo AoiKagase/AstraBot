@@ -141,6 +141,7 @@ private:
 		// ClearLookAt releases the spot, not the native default goal or angular momentum.
 		float defaultLookAheadYaw = 0.0f;
 		compat::AimSpringState lastLookSpring{};
+		bool lookOwnerInitialized = false;
 		bool resumedDefaultLook = false;
 		runtime::LifecycleToken resumedLookToken{};
 		int resumedLookSerial{};

@@ -85,6 +85,7 @@ void BotCommandRuntime::applyCombatUpkeep(std::size_t index, const CombatUpkeepU
 	auto &command = actors_[index].managedBotCommandTemplates;
 	if (update.hasAim)
 	{
+		actors_[index].lookOwnerInitialized = true;
 		actors_[index].resetNavigationLook();
 		actors_[index].useEntityLookActive = false;
 		actors_[index].resumedDefaultLook = false;
@@ -327,6 +328,7 @@ void BotCommandRuntime::resetManagedBotCommandTemplate(std::size_t index)
 		actors_[index].resetNavigationLook();
 		actors_[index].useEntityLookActive = false;
 		actors_[index].lastLookSpring = {};
+		actors_[index].lookOwnerInitialized = false;
 		actors_[index].resumedDefaultLook = false;
 		actors_[index].resumedLookAt = std::numeric_limits<float>::quiet_NaN();
 	}
@@ -433,9 +435,22 @@ void BotCommandRuntime::advanceUpkeepLook(std::size_t index, FakeClientHandle &h
 {
 	auto &actor = actors_[index];
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
+	const auto config = services_->service_compatibilitySurface().configuration();
+	const auto &live = services_->service_managedBotHandles()[index];
+	const bool ordinaryIdle = machine.state() == compat::CompatibilityStateId::Idle ||
+		machine.state() == compat::CompatibilityStateId::Buy;
+	if (!actor.lookOwnerInitialized && ordinaryIdle && !machine.attackOverlayActive() &&
+		!actor.useEntityLookActive && !actor.defusePathLook && !actor.blindCommand &&
+		config.mode == compat::RuntimeMode::Compatibility && handle.entity && live.entity == handle.entity &&
+		live.actor.slot == handle.actor.slot && live.actor.actorGeneration == handle.actor.actorGeneration)
+	{
+		actor.lookOwnerInitialized = true;
+		actor.resumedDefaultLook = true;
+		actor.resumedLookSerial = handle.entity->serialnumber;
+		actor.resumedLookToken = services_->service_lifecycle().tokenForSlot(handle.actor.slot);
+	}
 	if (actor.resumedDefaultLook)
 	{
-		const auto config = services_->service_compatibilitySurface().configuration();
 		auto *entity = handle.entity;
 		if (!entity || entity->free || entity->serialnumber != actor.resumedLookSerial ||
 			entity->v.deadflag != DEAD_NO || entity->v.health <= 0.0f || machine.attackOverlayActive() ||
@@ -525,6 +540,9 @@ void BotCommandRuntime::applyUseEntityLook(std::size_t index, const edict_t &ent
 	runtime::BotCommand &command)
 {
 	auto &actor = actors_[index];
+	actor.lookOwnerInitialized = true;
+	const auto state = services_->behavior_managedBotStateMachines(index).state();
+	const bool ordinaryIdle = state == compat::CompatibilityStateId::Idle || state == compat::CompatibilityStateId::Buy;
 	if (action.hasCombatAim || action.hasGuardLook ||
 		services_->behavior_managedBotStateMachines(index).attackOverlayActive())
 		actor.resumedDefaultLook = false;
@@ -540,12 +558,14 @@ void BotCommandRuntime::applyUseEntityLook(std::size_t index, const edict_t &ent
 		command.viewAngles = {entity.v.v_angle.x, entity.v.v_angle.y, entity.v.v_angle.z};
 		command.synchronizeCombatView = true;
 	}
-	else if (actor.useEntityLookActive && !action.hasCombatAim && !action.hasGuardLook &&
+	else if ((actor.useEntityLookActive || (ordinaryIdle && !actor.resumedDefaultLook)) &&
+		!action.hasCombatAim && !action.hasGuardLook &&
 		!services_->behavior_managedBotStateMachines(index).attackOverlayActive() &&
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
 	{
 		// The terminal full command already consumed Upkeep. Resume on the next command tick.
-		actor.lastLookSpring = actor.useEntityLookSpring;
+		if (actor.useEntityLookActive)
+			actor.lastLookSpring = actor.useEntityLookSpring;
 		actor.resumedDefaultLook = true;
 		actor.resumedLookSerial = entity.serialnumber;
 		actor.resumedLookToken = services_->service_lifecycle().tokenForSlot(command.actor.slot);
@@ -1338,6 +1358,8 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 	command.movement.buttons = actionDispatch.buttons;
 	actors_[index].nativeLadderControl = locomotionIntent.nativeLadderControl;
 	actors_[index].nativeLadderJump = locomotionIntent.nativeMustJump;
+	if (locomotionIntent.nativeLadderControl)
+		actor.resumedDefaultLook = false;
 	float commandSpeed = locomotionIntent.speed;
 	actor.navigationWalking = false;
 	if (compatibilityMovement && commandSpeed > 0.0f && std::isfinite(handle.entity->v.maxspeed) &&

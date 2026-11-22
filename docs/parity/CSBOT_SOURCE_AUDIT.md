@@ -1,5 +1,29 @@
 # 23　CSBot参照実装との差分監査
 
+## 通常Idle/Buyの初回からの視線供給（2026-11-22）
+
+基点 `b75be3a`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。`cs_bot_update.cpp:135–183` のNOT_LOOKING_AT_SPOTは毎Upkeepに保持Ahead・pitch0を供給し、drift後にUpdateLookAnglesを一度積分する。従来adapterはClearLook後だけ既定lookを再開し、coldなIdle/Buyでは供給されなかった。
+
+互換Idle/Buyで初回ownerを初期化し、実managed Actor/entity/generationとserial/lifecycleに結び付ける。優先注視・Attack・blind・stop/freezeを既存境界で尊重し、同時刻は一度だけ積分する。neutral fullによる再接続では現在の既定springを保持し、実UseEntity解放時だけそのspringを引き継ぐ。梯子のfullでは既定ownerを解除し、次lightで既定と梯子の二重積分を行わない（参照 `cs_bot_vision.cpp:93–159`）。全Combat/Guard/梯子ownerの角速度統一を完了とはしない。
+
+正規回帰はcold Idle/Buyの実cached RunPlayerMove、同時刻重複、freeze、serial失効後の復活抑止、新neutral fullの速度保持を確認した。実cached対照が再接続時のspringゼロ化をREDで検出し、実梯子対照が競合ownerをREDで検出した。最終重点7/7合格。既存Plant敵無視対照は実FOV内の敵を-45度に置き、20軽更新の全てでPlant/Attack保持、終点で敵方向への接近を確認する。既定Ahead0や後方の床注視では通過できない。Defuse入場はUpkeep後・NAV前の実視線をtraceで採録し、移動軸と次lightの旋回を検証する。胸部照準は射線を味方が塞がない対照の実発砲時pitchを判定し、長い非発砲待機後の既定driftと混同しない。履歴fixtureのタイミングは変更していない。
+
+最終全targetビルド後、Windows x86 **171/171・PE7**、続いてLinux x86 **170/170・ELF7**を直列で確認。DLL SHA-256 `1bdef02f4a3086c5d12c10ee4632ea6de40395fcd72ec17f721d063cc37f1807`、PDB `ead662289491d33e066a57c391ab9b7ecadc4862d200f743e1ffd313549d3a27`、ELF `705c14bbb9eb31d5091696f0d50f1ca54287b70d533bf8d6ecbe5f7b74603557`。candidate1は最終梯子修正前のためオフライン・実機とも除外して保持。最終v2の補正前170/171は履歴差だけであり、最終合格ではない。Ubuntuのcmake不在試行も除外し、既存Debianで全ビルドした。
+
+固定baselineは再生成せず、親補正後151999行を維持する806個のexact offset補正を追加した。差812行はmove779、ground lookahead9、avoidance floor24。moveのactor/roll/up/msecと方向以外のbutton bit、probeの種類/件数/Zは不変。変更フィールド件数はpitch744・yaw428・forward12・side27・方向buttons36。保持Aheadからの角度と既存の水平投影・floor probe経路に整合する。残り151187行とRNG510行は同じ位置/順序/値で完全一致し、各OSのbefore/after SHAと全byte再構成を検証した。任意の移動差を許容するマスクではない。製品差・試験前提・raw履歴はread-onlyレビュー済み、重要な指摘なし。
+
+最終DLL/PDBの隔離HLDSは0/7/8/11と読取りCDB0を直列実行し、全実PID終了0・forced=false。Idleのpath0/input0を維持し、通常/自然NAVの設置、区域外、実dropを確認した。DLL module-load後のCDBは最初のIdle→Plant `10.49649239` 秒/full `0x3e` の保持Ahead0と、初期化済み・有効な通常look ownerを直接採録した。cold Idle/Buyの連続cached角度/springの厳密な回帰はオフライン証拠、実機はこの入場前ownerと経路/入力/設置の受入れとして区別する。明示C4在庫bit同期を含む隔離fixtureであり、標準GameDLL自然拾得・実水没・全軌跡同一性へ拡張しない。
+
+証拠は `artifacts/local/debug/csbot-idle-buy-look-supply-20261122/evidence-final-v2/acceptance.json` と同ディレクトリの最終ログ・raw履歴監査・実機manifest。元の失敗・旧候補も上書きしていない。push・実環境配布なし。
+
+残件は次の5群：
+
+1. Combat/Guardを含むowner間の角速度共有。
+2. C4初回未装備と実水没条件の直接受入れ。
+3. Hunt/NAV、同一area/fallback、味方待機、cs_assault梯子、経路失敗と同条件timeout比較。
+4. 視認敵をAimせず通過する問題、旋回カクつき、多人数継続性能。
+5. 標準GameDLL公開観測経路と未網羅のCSBot差分。
+
 参照は ReGameDLL-CS `b0889847fe6d03898be88acc9e366660efb40ab5`。AstraBotの監査起点は `8662286`。公開エンジン情報と所有するBotの状態で再現できる範囲を、現行の実装・テストと照合した。
 
 ## 全13状態の照合

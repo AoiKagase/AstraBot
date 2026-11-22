@@ -1629,7 +1629,9 @@ bool testRuntimeBombSiteApproach(
 		enemy.v.team = 2;
 		enemy.v.health = 100.0f;
 		enemy.v.deadflag = DEAD_NO;
-		enemy.v.origin = gEntities[0].v.origin + Vector(800.0f, 400.0f, 0);
+		// Keep the distant enemy inside the cone after Upkeep consumes the
+		// retained floor-look velocity; resetting v_angle does not reset that spring.
+		enemy.v.origin = gEntities[0].v.origin + Vector(800.0f, -800.0f, 0);
 		enemy.v.velocity = Vector(250.0f, 0, 0);
 		enemy.v.v_angle = enemy.v.punchangle = Vector(0, 0, 0);
 		runtime.onClientPutInServer(&enemy);
@@ -1652,9 +1654,32 @@ bool testRuntimeBombSiteApproach(
 		runtime.onMessageEnd();
 		tick(.125f);
 		const float plantYaw = gLastRunPlayerMoveYaw;
-		tick(.04f);
-		passed = check(!state.attackOverlayActive() && (gLastRunPlayerMoveButtons & IN_ATTACK) != 0U &&
-				gLastRunPlayerMoveYaw > plantYaw + .2f,
+		const auto &plantBelief = static_cast<metamod::BotBehaviorServices &>(runtime)
+			.observation_managedBotPerception(0).snapshot();
+		bool enemyVisible = false;
+		for (std::size_t actor = 0; actor < plantBelief.actorCount(); ++actor)
+		{
+			const auto *seen = plantBelief.actorAt(actor);
+			enemyVisible |= seen && seen->actor.slot == 2 && seen->visible && seen->fovPassed &&
+				seen->relation == world::TeamRelation::Hostile;
+		}
+		passed = check(enemyVisible, "the ignored Plant enemy is actually visible after the retained Upkeep spring") && passed;
+		const float ignoredEnemyYaw = -45.0f;
+		passed = check(std::fabs(normalizedAimAngle(plantYaw - ignoredEnemyYaw)) < 45.0f,
+			"the ignored enemy bearing is inside the actual post-Upkeep view cone") && passed;
+		bool heldPlant = true;
+		// Native acceleration is bounded at 3000deg/s^2. Retained floor-look
+		// momentum may initially turn away; observe the reversal rather than
+		// assuming the first 40ms command is already monotonic toward the enemy.
+		for (unsigned light = 0; light < 20U; ++light)
+		{
+			tick(.04f);
+			heldPlant &= state.state() == CompatibilityStateId::PlantBomb && !state.attackOverlayActive() &&
+				(gLastRunPlayerMoveButtons & IN_ATTACK) != 0U;
+		}
+		// The enemy bearing differs from both default Ahead0 and the old floor
+		// point behind us. Check the end of the window, not a transient crossing.
+		passed = check(heldPlant && std::fabs(normalizedAimAngle(gLastRunPlayerMoveYaw - ignoredEnemyYaw)) < 15.0f,
 			"PlantBomb tracks a recognized enemy who is looking away while continuing to arm C4") && passed;
 		enemy.v.origin = gEntities[0].v.origin + Vector(128.0f, 0, 0);
 		gLastGameClientCommand.clear();
@@ -1870,6 +1895,25 @@ bool testRuntimeBombSiteApproach(
 	const bool checkApproachLook = !astrabot_test::runtimeCharacterization().enabled();
 	bool observedFirstApproach = false;
 	auto &navigation = static_cast<astrabot::metamod::BotNavigationServices &>(runtime);
+	struct ApproachViewTrace final : astrabot::compat::IStateTraceSink
+	{
+		const edict_t *entity = nullptr;
+		float yaw = std::numeric_limits<float>::quiet_NaN();
+		float timestamp = std::numeric_limits<float>::quiet_NaN();
+		void record(const astrabot::compat::StateTraceRecord &record) override
+		{
+			if (record.callbackState == astrabot::compat::CompatibilityStateId::MoveTo &&
+				(record.event == astrabot::compat::StateTraceEvent::OnEnter ||
+					record.event == astrabot::compat::StateTraceEvent::OnUpdate))
+			{
+				yaw = entity->v.v_angle.y;
+				timestamp = record.timestamp;
+			}
+		}
+	} approachView;
+	approachView.entity = &gEntities[0];
+	auto &approachState = const_cast<astrabot::compat::CompatibilityStateMachine &>(navigation.behavior_managedBotStateMachines(0));
+	if (checkApproachLook) approachState.setTraceSink(&approachView);
 	for (int frame = 0; frame < 24; ++frame)
 	{
 		if (checkApproachLook && !observedFirstApproach)
@@ -1885,7 +1929,8 @@ bool testRuntimeBombSiteApproach(
 			const float yaw = gLastRunPlayerMoveYaw;
 			const float forward = gLastRunPlayerMoveForward;
 			const float side = gLastRunPlayerMoveSide;
-			passed = check(std::fabs(yaw - 135.0f) < .01f && forward == -240.0f && side == 240.0f,
+			passed = check(approachView.timestamp == globals.time && std::fabs(yaw - approachView.yaw) < .01f &&
+					forward == -240.0f && side == 240.0f,
 				"the first C4 approach command uses the current view for both movement axes") && passed;
 			const auto update = navigation.service_managedBotFullUpdateSequences()[0];
 			const auto commands = gRunPlayerMoveCount;
@@ -1910,6 +1955,7 @@ bool testRuntimeBombSiteApproach(
 					movedTowardObservedC4 = true;
 	}
 	passed = check(!checkApproachLook || observedFirstApproach, "the C4 approach sent a movement command") && passed;
+	if (checkApproachLook) approachState.setTraceSink(nullptr);
 	passed = check(movedTowardObservedC4, "public CT moves toward human-planted C4 after hearing its beep") && passed;
 	if (!movedTowardObservedC4)
 		for (const auto &message : gMovementLogs)

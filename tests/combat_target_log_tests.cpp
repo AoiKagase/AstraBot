@@ -29,6 +29,7 @@ int combatUserMessageId(plid_t id, const char *name, int *size)
 unsigned combatAttackCommands = 0U;
 float combatCommandYaw = 0.0f;
 float combatCommandPitch = 0.0f;
+float combatLastAttackPitch = std::numeric_limits<float>::quiet_NaN();
 float combatCommandForward = 0.0f, combatCommandSide = 0.0f;
 unsigned combatC4Selections = 0;
 unsigned combatMovingFireCommands = 0U;
@@ -165,7 +166,10 @@ void runCombatPlayerMove(edict_t *entity, const float *angles, float forward, fl
 		++combatReloadCommands;
 	// HLDS RunPlayerMove does not publish FakeClient v_angle; the input owner must.
 	if (entity == &gEntities[0] && (buttons & IN_ATTACK) != 0U)
+	{
 		++combatAttackCommands;
+		combatLastAttackPitch = angles[0];
+	}
 	if (entity == &gEntities[0])
 		combatCommandYaw = angles[1];
 	if (entity == &gEntities[0])
@@ -962,8 +966,101 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		if (!send(true, false) || !light(90, -26.565052f, "noncardinal path then priority preserves its true spring"))
 			return false;
 		state(CompatibilityStateId::Idle);
-		return send(false, false) && light(326, 0,
-			"negative noncardinal path Ahead uses engine floor(double atan2) then adds 360");
+		if (!(send(false, false) && light(326, 0,
+			"negative noncardinal path Ahead uses engine floor(double atan2) then adds 360"))) return false;
+		auto coldSequence = command->managedBotCommandSequences(0);
+		for (const auto normalState : {CompatibilityStateId::Idle, CompatibilityStateId::Buy})
+		{
+			state(normalState);
+			auto cold = std::make_unique<metamod::BotCommandRuntime>();
+			cold->bindServices(ports);
+			const_cast<std::uint32_t &>(cold->managedBotCommandSequences(0)) = coldSequence;
+			gEntities[0].v.v_angle = Vector(20, 75, 0);
+			globals.time += .05f;
+			AimSpringState coldSpring{};
+			const auto coldGoalYaw = 2.0f * metamod::ActionAdapter::csBotCosine(33.0f * globals.time);
+			const auto coldGoalPitch = 2.0f * metamod::ActionAdapter::csBotCosine(13.0f * globals.time - 90.0f);
+			auto coldExpected = trackAim(75, 20, coldGoalYaw, coldGoalPitch,
+				runtime::BotTimingScheduler::kCommandInterval, 1.0f, &coldSpring, false);
+			cold->advanceUpkeepLook(0, handle);
+			if (!check(std::fabs(gEntities[0].v.v_angle.y - coldExpected.yaw) < .0001f &&
+				std::fabs(gEntities[0].v.v_angle.x - coldExpected.pitch) < .0001f,
+				"ordinary Idle and Buy supply retained Ahead0 on their first upkeep without a prior ClearLook")) return false;
+			cold->advanceUpkeepLook(0, handle);
+			if (!check(std::fabs(gEntities[0].v.v_angle.y - coldExpected.yaw) < .0001f &&
+				std::fabs(gEntities[0].v.v_angle.x - coldExpected.pitch) < .0001f,
+				"ordinary default upkeep consumes the spring only once at the same timestamp")) return false;
+			const auto neutralFull = [&] {
+				metamod::NavigationUpdate movement{};
+				auto draft = cold->beginMovementCommand(0, handle, token, before, movement);
+				metamod::ActionProposal action{metamod::ActionKind::None, {coldExpected.pitch, coldExpected.yaw, 0}, 0};
+				action.stopForWeapon = true;
+				const auto count = combatSentInputs.size();
+				cold->finishMovementCommand(0, handle, token, before, movement, draft, action);
+				return check(combatSentInputs.size() == count + 1U,
+					"ordinary default-look fixture actually dispatches its neutral full command");
+			};
+			unsigned coldLight = 0U;
+			const auto cachedLight = [&] {
+				++coldLight;
+				globals.time += .05f;
+				coldExpected = trackAim(coldExpected.yaw, coldExpected.pitch,
+					2.0f * metamod::ActionAdapter::csBotCosine(33.0f * globals.time),
+					2.0f * metamod::ActionAdapter::csBotCosine(13.0f * globals.time - 90.0f),
+					runtime::BotTimingScheduler::kCommandInterval, 1.0f, &coldSpring, false);
+				const auto count = combatSentInputs.size();
+				cold->advanceUpkeepLook(0, handle);
+				const auto receipt = cold->executeManagedBotCommand(0, handle);
+				const bool correct = receipt.result == runtime::DispatchResult::Dispatched &&
+					combatSentInputs.size() == count + 1U && std::hypot(combatCommandForward, combatCommandSide) == 0 &&
+					std::fabs(combatCommandYaw - coldExpected.yaw) < .0001f &&
+					std::fabs(combatCommandPitch - coldExpected.pitch) < .0001f;
+				if (!correct) std::fprintf(stderr, "cold-look state=%u light=%u receipt=%u count=%zu/%zu command=(%.6f %.6f) expected=(%.6f %.6f) entity=(%.6f %.6f) move=(%.3f %.3f)\n",
+					static_cast<unsigned>(normalState), coldLight, static_cast<unsigned>(receipt.result), combatSentInputs.size(), count,
+					combatCommandPitch, combatCommandYaw, coldExpected.pitch, coldExpected.yaw,
+					gEntities[0].v.v_angle.x, gEntities[0].v.v_angle.y, combatCommandForward, combatCommandSide);
+				return check(correct,
+					"ordinary Idle and Buy deliver their continuously advanced default look through cached RunPlayerMove");
+			};
+			if (!neutralFull() || !cachedLight()) return false;
+			const auto flags = gEntities[0].v.flags;
+			gEntities[0].v.flags |= FL_FROZEN;
+			globals.time += .05f;
+			cold->advanceUpkeepLook(0, handle);
+			if (!check(std::fabs(gEntities[0].v.v_angle.y - coldExpected.yaw) < .0001f &&
+				std::fabs(gEntities[0].v.v_angle.x - coldExpected.pitch) < .0001f,
+				"ordinary default upkeep holds its angle and spring while explicitly frozen")) return false;
+			gEntities[0].v.flags = flags;
+			if (!cachedLight()) return false;
+			const auto serial = gEntities[0].serialnumber;
+			++gEntities[0].serialnumber;
+			globals.time += .05f;
+			cold->advanceUpkeepLook(0, handle);
+			gEntities[0].serialnumber = serial;
+			globals.time += .05f;
+			cold->advanceUpkeepLook(0, handle);
+			if (!check(std::fabs(gEntities[0].v.v_angle.y - coldExpected.yaw) < .0001f &&
+				std::fabs(gEntities[0].v.v_angle.x - coldExpected.pitch) < .0001f,
+				"an invalidated default receipt cannot cold-start again merely because the old serial is restored")) return false;
+			if (!neutralFull() || !cachedLight()) return false;
+			state(CompatibilityStateId::MoveTo);
+			globals.time += .05f;
+			metamod::NavigationUpdate ladder{};
+			ladder.locomotionIntent.nativeLadderControl = true;
+			auto ladderDraft = cold->beginMovementCommand(0, handle, token, before, ladder);
+			metamod::ActionProposal ladderAction{metamod::ActionKind::None,
+				{coldExpected.pitch, coldExpected.yaw, 0}, 0};
+			const auto count = combatSentInputs.size();
+			cold->finishMovementCommand(0, handle, token, before, ladder, ladderDraft, ladderAction);
+			if (!check(combatSentInputs.size() == count + 1U, "native ladder owner is accepted by an actual full dispatch")) return false;
+			const auto ladderView = gEntities[0].v.v_angle;
+			globals.time += .05f;
+			cold->advanceUpkeepLook(0, handle);
+			if (!check(gEntities[0].v.v_angle.x == ladderView.x && gEntities[0].v.v_angle.y == ladderView.y,
+				"accepting native ladder control stops the old default look before the next upkeep")) return false;
+			coldSequence = cold->managedBotCommandSequences(0);
+		}
+		return true;
 	}
 	if (plantTailFixture)
 	{
@@ -1831,6 +1928,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		const bool hostile = enemyPresent && std::strcmp(publicTeam, "CT") == 0;
 		combatAttackCommands = 0U;
 		combatMovingFireCommands = 0U;
+		combatLastAttackPitch = std::numeric_limits<float>::quiet_NaN();
 		combatSentInputs.clear();
 		gEntities[0].v.v_angle = Vector(20.0f, 30.0f, 0.0f);
 		gEntities[1].v.flags = enemyPresent ? FL_CLIENT : 0;
@@ -1918,9 +2016,10 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		if (!check(hostile && !humanFriendlyBlocks ? combatAttackCommands > 0U : combatAttackCommands == 0U,
 				"engine angle feedback reaches fire with a visible enemy and holds fire without one"))
 			return false;
-		if (hostile && enemyDistance == 100.0f &&
+		if (hostile && !humanFriendlyBlocks && enemyDistance == 100.0f &&
 			!check(
-				combatCommandPitch > 0.0f, "low-skill rifle selects the reference chest aim instead of visible head"))
+				std::isfinite(combatLastAttackPitch) && combatLastAttackPitch > 0.0f,
+				"low-skill rifle's actual unobstructed shot uses the reference chest aim instead of visible head"))
 			return false;
 		if (hostile && enemyDistance > 800.0f &&
 			!check(cadenceWait, "skilled distant rifle alternates fire and reference cadence waits"))
