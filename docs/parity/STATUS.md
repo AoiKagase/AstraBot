@@ -1,3 +1,7 @@
+## 実機への再配備と検証方法の変更（2026-11-22）
+
+ユーザー指示により、以後の動作確認は既存実機 `D:/SteamCMD/cstrike_rehlds` への再配備で行う。隔離環境が必要な場合も固定1か所を使い続け、試行ごとのサーバーコピーは作らない。運用手順は [LIVE_VERIFICATION.md](LIVE_VERIFICATION.md)。製品 `6fdadbd` の検証済みDLL/PDBを旧版バックアップ付きで再配備し、実PID31752の配備先DLLロード・Bot参加・ラウンド開始を確認した。既存設定等の指紋は不変、サーバーコピー作成0回。個別挙動の受入れとは区別する。証拠は `artifacts/local/debug/csbot-live-redeploy-20261122/`。この再配備は今回の指示によるもので、以下の過去単位の「実環境配布なし」は当時の記録として保持する。pushなし。
+
 ## 通常Idle/Buyの初回からの視線供給（2026-11-22）
 
 基点 `b75be3a`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。`cs_bot_update.cpp:135–183` のNOT_LOOKING_AT_SPOTは毎Upkeepに保持Ahead・pitch0を供給し、drift後にUpdateLookAnglesを一度積分する。従来adapterはClearLook後だけ既定lookを再開し、coldなIdle/Buyでは供給されなかった。
