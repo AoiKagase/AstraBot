@@ -38,6 +38,68 @@ struct GrenadeTrajectory
 	bool landingSafe;
 };
 
+// CSBot's pin/toss and look-spot clocks are independent of ballistic validation.
+// The adapter supplies a recognized threat or the native path-corner target.
+class NativeGrenadeThrow
+{
+public:
+	bool waiting() const { return waiting_; }
+	bool looking() const { return look_ != Look::None; }
+	void reset() { *this = {}; }
+	void clearLook() { look_ = Look::None; }
+	void begin(float now, const world::WorldPosition &target)
+	{
+		if (waiting_ || !std::isfinite(now) || !std::isfinite(target.x) ||
+			!std::isfinite(target.y) || !std::isfinite(target.z))
+			return;
+		if (!looking() || std::fabs(target.x - target_.x) >= 10.0f ||
+			std::fabs(target.y - target_.y) >= 10.0f || std::fabs(target.z - target_.z) >= 10.0f)
+		{
+			target_ = target;
+			look_ = Look::Towards;
+		}
+		waiting_ = true;
+		tossAt_ = now + 3.0f;
+	}
+	bool primary(float now, bool equipped)
+	{
+		if (!equipped)
+		{
+			waiting_ = false;
+			return false;
+		}
+		if (waiting_ && (now > tossAt_ || look_ == Look::At))
+		{
+			waiting_ = false;
+			return false;
+		}
+		return true;
+	}
+	bool upkeep(float now, bool alignedBeforeStep, world::WorldPosition *target)
+	{
+		if (!looking() || !target)
+			return false;
+		*target = target_;
+		if (look_ == Look::Towards && alignedBeforeStep)
+		{
+			look_ = Look::At;
+			lookAt_ = now;
+		}
+		else if (look_ == Look::At && now - lookAt_ > 3.0f)
+			look_ = Look::None;
+		// Native UpdateLookAt supplies this tick's goal before duration expiry.
+		return true;
+	}
+	world::WorldPosition target() const { return target_; }
+
+private:
+	enum class Look { None, Towards, At };
+	world::WorldPosition target_{};
+	float tossAt_ = 0.0f, lookAt_ = 0.0f;
+	Look look_ = Look::None;
+	bool waiting_ = false;
+};
+
 struct WeaponActionInput
 {
 	static constexpr float kDefaultSecondaryRetrySeconds = 0.5f;

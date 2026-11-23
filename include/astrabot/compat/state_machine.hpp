@@ -299,6 +299,8 @@ public:
 		return stateInstances_[stateIndex(CompatibilityStateId::Idle)].enterCount;
 	}
 	std::uint64_t attackEntryEpoch() const { return attackEntryEpoch_; }
+	// Operation receipt, independent of optional diagnostic trace consumers.
+	std::uint64_t lookClearSequence() const { return lookClearSequence_; }
 	bool attackOverlayActive() const;
 	bool isInitialized() const;
 	const StateBehaviorDecision &behaviorDecision() const
@@ -355,6 +357,7 @@ private:
 	std::uint64_t stateSequence_;
 	std::uint64_t normalStateEpoch_ = 0;
 	std::uint64_t attackEntryEpoch_ = 0;
+	std::uint64_t lookClearSequence_ = 0;
 	bool hasLastFullUpdate_;
 	bool attackOverlayActive_;
 	bool initialized_;

@@ -1116,6 +1116,26 @@ bool PluginRuntime::readGameDllActiveWeapon(edict_t *source, int &weapon, bool &
 	return readGameDllWeaponPrediction(source, weapon, silenced, nullptr);
 }
 
+bool PluginRuntime::observation_activeWeaponIdentity(edict_t *source, int &weapon) const
+{
+	const auto *dll = gameDllFunctions_ ? gameDllFunctions_->dllapi_table : nullptr;
+	if (!dll || !dll->pfnUpdateClientData || !source || source->free || source->serialnumber < 0 || source->v.iuser1 != 0)
+		return false;
+	const auto serial = source->serialnumber;
+	const auto *globals = globals_;
+	const world::FrameIdentity frame{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+	clientdata_t data{};
+	dll->pfnUpdateClientData(source, 1, &data);
+	if (state_ != State::ActiveMap || globals_ != globals || !gameDllFunctions_ ||
+		gameDllFunctions_->dllapi_table != dll || source->free || source->serialnumber != serial || source->v.iuser1 != 0 ||
+		!(frame == world::FrameIdentity{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_}))
+		return false;
+	if (data.m_iId < 0 || (data.m_iId >= MAX_WEAPONS && data.m_iId != 99))
+		return false;
+	weapon = data.m_iId;
+	return true; // Zero is a known absence, not permission to use stale CurWeapon.
+}
+
 combat::ReloadState PluginRuntime::observation_activeWeaponReloadState(edict_t *source) const
 {
 	int weapon = 0;
@@ -1867,6 +1887,7 @@ void PluginRuntime::updateManagedBots()
 		}
 		if (upkeepDue)
 		{
+			command_.applyGrenadeUpkeep(index, handle, behavior_.upkeepGrenade(index, before));
 			command_.advanceUpkeepLook(index, handle);
 			if (!lifecycle_.isCurrent(token) || !handle.entity)
 				continue;

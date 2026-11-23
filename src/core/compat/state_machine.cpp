@@ -903,6 +903,8 @@ void CompatibilityStateMachine::applyExitEffects(CompatibilityStateId state, Com
 	if (state == CompatibilityStateId::DefuseBomb || state == CompatibilityStateId::Hide ||
 		state == CompatibilityStateId::PlantBomb || state == CompatibilityStateId::UseEntity)
 	{
+		// Publish before callbacks, so a reentrant look request can observe it.
+		++lookClearSequence_;
 		emitSideEffect(state, state, nextState, reason, transitionId, context, StateSideEffect::ClearLookTarget);
 	}
 }

@@ -447,5 +447,28 @@ int main()
 	value.reserve = 0U;
 	value.reserveObservationTick = value.frame.tick;
 	ok &= check(!twoFlashbangs.update(value).primary, "zero reserve receipt confirms no rearmable grenade");
+	NativeGrenadeThrow native;
+	ok &= check(native.primary(10.0f, true) && !native.waiting(),
+		"native equipped grenade holds even without a toss target");
+	native.begin(10.0f, {100, 0, 0});
+	ok &= check(native.waiting() && native.primary(13.0f, true),
+		"native toss remains held at exactly three seconds");
+	ok &= check(!native.primary(13.0001f, true) && !native.waiting(),
+		"native strict elapsed timer releases without a new target receipt");
+	ok &= check(native.primary(13.1f, true), "native re-holds an equipped grenade after a release");
+	native.reset();
+	native.begin(20.0f, {100, 0, 0});
+	astrabot::world::WorldPosition nativeGoal{};
+	ok &= check(native.upkeep(20.1f, true, &nativeGoal) && !native.primary(20.1f, true),
+		"native pre-step alignment releases on the following full decision");
+	native.begin(20.2f, {105, 0, 0});
+	ok &= check(native.target().x == 100 && !native.primary(20.2f, true),
+		"native same-spot request retains the reached look state and original target");
+	ok &= check(!native.primary(20.3f, false) && native.looking(),
+		"weapon change clears toss waiting without clearing the existing look spot");
+	ok &= check(native.upkeep(23.1f, false, &nativeGoal) && native.looking(),
+		"native look duration is not expired at exactly three seconds since alignment");
+	ok &= check(native.upkeep(23.1001f, false, &nativeGoal) && !native.looking(),
+		"native final spot goal is supplied before strict look-duration expiry");
 	return ok ? 0 : 1;
 }

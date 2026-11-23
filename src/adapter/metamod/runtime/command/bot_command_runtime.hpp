@@ -39,6 +39,7 @@ public:
 		BlindCommand response, bool crouching);
 	bool hasBlindCommand(std::size_t index) const { return actors_[index].blindCommand; }
 	void advanceUpkeepLook(std::size_t index, FakeClientHandle &handle);
+	void applyGrenadeUpkeep(std::size_t index, FakeClientHandle &handle, const CombatUpkeepUpdate &update);
 	compat::AimSpringState lookSpring(std::size_t index) const { return actors_[index].sharedLook.spring; }
 	compat::AimStep stepSharedLook(std::size_t index, float now, float yaw, float pitch, float goalYaw,
 		float goalPitch, bool attacking, unsigned priority)

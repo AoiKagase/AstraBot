@@ -504,6 +504,7 @@ private:
 	}
 	bool observation_activeSniper(world::ActorKey actor, world::FrameIdentity frame, int observerTeam) const override;
 	bool readGameDllActiveWeapon(edict_t *source, int &weapon, bool &silenced) const override;
+	bool observation_activeWeaponIdentity(edict_t *source, int &weapon) const override;
 	combat::ReloadState observation_activeWeaponReloadState(edict_t *source) const override;
 	bool observation_shieldState(edict_t *source, bool &hasShield, bool &protectedByShield,
 		combat::ReloadState &reload) const override;

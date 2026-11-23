@@ -266,9 +266,188 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool sharedLookFixture = scenario && std::strcmp(scenario, "shared-look") == 0;
 	const bool sharedReentryFixture = scenario && std::strcmp(scenario, "shared-look-reentry") == 0;
 	const bool plantEntryFixture = scenario && std::strcmp(scenario, "plant-entry") == 0;
+	const bool nativeGrenadeFixture = scenario && std::strcmp(scenario, "native-grenade") == 0;
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
+	if (nativeGrenadeFixture)
+	{
+		using namespace astrabot;
+		// CSBot Update holds PrimaryAttack whenever a grenade is equipped,
+		// before either recognized-enemy or end-of-safe-time toss selection.
+		// This exercises the real full-update/RunPlayerMove path without a
+		// target or any supplied ballistic trajectory receipt.
+		combatGameDll->pfnUpdateClientData = nullptr;
+		combatGameDll->pfnGetWeaponData = nullptr;
+		runtime.setCompatibilityString("astrabot_mode", "compatibility");
+		runtime.setCompatibilityFloat("bot_enable", 1.0f);
+		runtime.setCompatibilityFloat("bot_stop", 0.0f);
+		gEntities[1].free = true;
+		gEntities[1].v.health = 0.0f;
+		gEntities[1].v.deadflag = DEAD_DEAD;
+		gEntities[0].v.weapons = 1 << 4;
+		runtime.beginRoundGeneration();
+		const auto movesBeforeGrenade = gRunPlayerMoveCount;
+		stepRifle(1, 0.0f, 4);
+		stepRifle(1, 0.0f, 4);
+		auto &grenadePorts = static_cast<metamod::BotBehaviorServices &>(runtime);
+		const auto &grenadeHandle = grenadePorts.service_managedBotHandles()[0];
+		const auto &grenadeLife = grenadePorts.service_lifecycle();
+		const world::ActorKey grenadeActor{grenadeHandle.actor.slot, grenadeHandle.actor.actorGeneration};
+		const world::FrameIdentity grenadeFrame{grenadeLife.mapGeneration(), grenadeLife.roundGeneration(),
+			grenadePorts.service_adapterFrameCount()};
+		compat::PublicActorState grenadeObservation{};
+		const auto &grenadeConfig = grenadePorts.service_compatibilitySurface().configuration();
+		if (!check(grenadePorts.observation_publicObservations().read(grenadeActor, grenadeFrame, &grenadeObservation) &&
+				grenadeObservation.weaponKnown && grenadeObservation.weaponId == 4 &&
+				grenadeConfig.mode == compat::RuntimeMode::Compatibility && grenadeConfig.botEnable > 0.0f &&
+				grenadeConfig.botStop == 0.0f && gEntities[0].v.deadflag == DEAD_NO && gEntities[0].v.health > 0.0f &&
+				(gEntities[0].v.flags & FL_FROZEN) == 0 &&
+				!(grenadePorts.service_roundFreezeGeneration() == grenadeFrame.roundGeneration &&
+					globals.time < grenadePorts.service_roundFreezeUntil()) &&
+				gRunPlayerMoveCount > movesBeforeGrenade && gLastRunPlayerMoveActor == 1 &&
+				!static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedBotStateMachines(0).attackOverlayActive(),
+				"C02 control: live grenade observation and real command without an Attack overlay"))
+			return false;
+		if (!check((gLastRunPlayerMoveButtons & IN_ATTACK) != 0,
+				"C02 equipped grenade holds PrimaryAttack without a target or ballistic receipt"))
+			return false;
+		static unsigned grenadeIdentityReads = 0;
+		grenadeIdentityReads = 0;
+		combatGameDll->pfnUpdateClientData = [](const edict_t *, int, clientdata_t *data) {
+			++grenadeIdentityReads;
+			data->m_iId = 0; // Available prediction explicitly reports no active weapon.
+		};
+		stepRifle(1, 0.0f, 4); // A stale positive CurWeapon must not override that.
+		if (!check(grenadeIdentityReads > 0 && (gLastRunPlayerMoveButtons & IN_ATTACK) == 0,
+				"C02 available GameDLL no-active-weapon overrides stale grenade CurWeapon"))
+			return false;
+		combatGameDll->pfnUpdateClientData = [](const edict_t *, int, clientdata_t *data) { data->m_iId = 4; };
+		gEntities[0].v.weapons = (1 << 4) | (1 << 22);
+		stepRifle(30, 0.0f, 22);
+		if (!check((gLastRunPlayerMoveButtons & IN_ATTACK) != 0,
+				"C02 public GameDLL grenade identity is positive even before CurWeapon updates"))
+			return false;
+		auto &grenadeEnemy = gEntities[1];
+		const auto grenadeAimDrawsBefore = attackAimRefreshDraws;
+		runtime.onClientPutInServer(&grenadeEnemy);
+		grenadeEnemy.free = false;
+		grenadeEnemy.v.flags = FL_CLIENT | FL_ONGROUND;
+		grenadeEnemy.v.health = 100.0f;
+		grenadeEnemy.v.deadflag = DEAD_NO;
+		grenadeEnemy.v.team = 2;
+		grenadeEnemy.v.origin = gEntities[0].v.origin + Vector(320, 0, 256);
+		grenadeEnemy.v.view_ofs = Vector(0, 0, 19);
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(2);
+		runtime.onWriteString("CT");
+		runtime.onMessageEnd();
+		forcedNoticeFixtureRoll = 0.0f;
+		engine.pfnTraceHull = nullptr; // Native direct-look tossing has no ballistic-hull prerequisite.
+		bool grenadeReleased = false, grenadeTurned = false;
+		for (unsigned grenadeFrameIndex = 0; grenadeFrameIndex < 40; ++grenadeFrameIndex)
+		{
+			if (grenadeFrameIndex == 8)
+			{
+				grenadeEnemy.free = true;
+				grenadeEnemy.v.origin = gEntities[0].v.origin + Vector(-1000, 0, -256);
+			}
+			stepRifle(30, 0.0f, 22); // Deliberately stale rifle message; API still reports grenade.
+			if (grenadeFrameIndex == 6)
+			{
+				const auto fullBeforeLight = grenadePorts.service_managedBotFullUpdateSequences()[0];
+				globals.time += .034f;
+				runtime.onStartFrame();
+				runtime.onStartFramePost();
+				if (!check(grenadePorts.service_managedBotFullUpdateSequences()[0] == fullBeforeLight,
+						"C02 light pin control: actual upkeep with no full Update"))
+					return false;
+				if (!check((gLastRunPlayerMoveButtons & IN_ATTACK) != 0,
+						"C02 light upkeep preserves the full Update grenade pin input after recognition"))
+					return false;
+			}
+			if (!check(!static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedBotStateMachines(0).attackOverlayActive(),
+					"C02 recognized grenade threat does not enter rifle Attack from stale CurWeapon"))
+				return false;
+			if ((gLastRunPlayerMoveButtons & IN_ATTACK) == 0)
+			{
+				if (!check(grenadeFrameIndex > 20, "C02 unaligned toss does not release before its native countdown"))
+					return false;
+				grenadeReleased = true;
+			}
+			grenadeTurned = grenadeTurned || (grenadeFrameIndex > 8 && combatCommandPitch < -1.0f);
+		}
+		forcedNoticeFixtureRoll = -1.0f;
+		if (!check(attackAimRefreshDraws == grenadeAimDrawsBefore,
+				"C02 grenade recognition does not create a Combat aim-offset clock or RNG draw"))
+			return false;
+		if (!check(grenadeReleased && grenadeTurned,
+				"C02 recognized toss retains its original look and releases after target loss without a ballistic provider"))
+			return false;
+		runtime.beginRoundGeneration();
+		for (unsigned settle = 0; settle < 16; ++settle)
+			stepRifle(1, 0.0f, 4);
+		if (!check(std::fabs(combatCommandPitch) < 5.0f,
+				"C02 clear control: previous native look was reset and shared momentum settled"))
+			return false;
+		grenadeEnemy.free = false;
+		grenadeEnemy.v.origin = gEntities[0].v.origin + Vector(320, 0, 256);
+		const auto clearTarget = grenadeEnemy.v.origin;
+		forcedNoticeFixtureRoll = 0.0f;
+		bool pendingLookObserved = false;
+		for (unsigned prime = 0; prime < 24; ++prime)
+		{
+			stepRifle(1, 0.0f, 4);
+			if (combatCommandPitch < -5.0f)
+			{
+				pendingLookObserved = true;
+				break;
+			}
+		}
+		if (!check(pendingLookObserved && (gLastRunPlayerMoveButtons & IN_ATTACK) != 0,
+				"C02 clear control: recognized unaligned throw has a live look and pending pin"))
+			return false;
+		// Let the retained combat aim from recognition retire before testing
+		// the grenade spot. A negative command pitch alone is not that proof.
+		grenadeEnemy.free = true;
+		stepRifle(1, 0.0f, 4);
+		stepRifle(1, 0.0f, 4);
+		auto &clearMachine = const_cast<compat::CompatibilityStateMachine &>(
+			static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedBotStateMachines(0));
+		compat::StateUpdateContext clearContext{};
+		clearContext.actor = grenadeActor;
+		clearContext.frame = {grenadeLife.mapGeneration(), grenadeLife.roundGeneration(), grenadePorts.service_adapterFrameCount()};
+		clearContext.timestamp = globals.time;
+		clearContext.fullUpdateSequence = grenadePorts.service_managedBotFullUpdateSequences()[0];
+		clearContext.fullUpdate = true;
+		clearContext.lifeAvailability = clearContext.roundAvailability = compat::ObservationAvailability::Available;
+		clearContext.alive = clearContext.roundActive = true;
+		if (!check(clearMachine.transition(compat::CompatibilityStateId::Hide, compat::StateTransitionReason::ExplicitRequest,
+				compat::StateTransitionId::ExplicitStateChange, clearContext) == compat::StateResult::Transitioned &&
+				clearMachine.transition(compat::CompatibilityStateId::Idle, compat::StateTransitionReason::ExplicitRequest,
+				compat::StateTransitionId::ExplicitStateChange, clearContext) == compat::StateResult::Transitioned,
+				"C02 clear control: Hide exit emits native ClearLookTarget"))
+			return false;
+		grenadeEnemy.free = true;
+		const auto clearEye = gEntities[0].v.origin + gEntities[0].v.view_ofs;
+		const auto clearAligned = metamod::ActionAdapter::useEntityView(
+			clearTarget.x - clearEye.x, clearTarget.y - clearEye.y, clearTarget.z - clearEye.z);
+		gEntities[0].v.v_angle = Vector(clearAligned.pitch, clearAligned.yaw, 0);
+		globals.time += .125f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+		if (!check((gLastRunPlayerMoveButtons & IN_ATTACK) != 0,
+				"C02 explicit ClearLook cancels alignment release while retaining the pending toss timer"))
+			return false;
+		bool clearedTimerReleased = false;
+		for (unsigned afterClear = 0; afterClear < 30; ++afterClear)
+		{
+			stepRifle(1, 0.0f, 4);
+			clearedTimerReleased = clearedTimerReleased || (gLastRunPlayerMoveButtons & IN_ATTACK) == 0;
+		}
+		forcedNoticeFixtureRoll = -1.0f;
+		return check(clearedTimerReleased, "C02 ClearLook preserves the independent native toss deadline");
+	}
 	if (plantEntryFixture)
 	{
 		using namespace astrabot;

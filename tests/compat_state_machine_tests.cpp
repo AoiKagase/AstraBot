@@ -794,10 +794,14 @@ bool testGuardedExitCannotClearNewLook()
 		StateUpdateContext nested{};
 		bool handled = false;
 		unsigned clears = 0;
+		bool receiptBeforeCallback = true;
 		void record(const StateTraceRecord &record) override
 		{
 			if (record.event == StateTraceEvent::SideEffect && record.sideEffect == StateSideEffect::ClearLookTarget)
+			{
 				++clears;
+				receiptBeforeCallback = receiptBeforeCallback && machine->lookClearSequence() == clears;
+			}
 			if (!handled && record.callbackState == CompatibilityStateId::DefuseBomb && record.event == StateTraceEvent::OnExit)
 			{
 				handled = true;
@@ -814,7 +818,7 @@ bool testGuardedExitCannotClearNewLook()
 	return check(machine.transition(CompatibilityStateId::Idle, StateTransitionReason::ExplicitRequest,
 		StateTransitionId::ExplicitStateChange, outer) == StateResult::InvalidContext && trace.handled &&
 		machine.state() == CompatibilityStateId::Hunt && machine.task() == CompatibilityTaskId::SeekAndDestroy &&
-		trace.clears == 1U,
+		trace.clears == 1U && trace.receiptBeforeCallback && machine.lookClearSequence() == 1U,
 		"guarded OnExit reentry emits only the nested transition's ClearLook and preserves its new state");
 }
 

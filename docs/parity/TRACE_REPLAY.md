@@ -1,5 +1,9 @@
 # P11 differential trace comparison
 
+## C02-1 手榴弾保持・認識敵への投擲を部分完了（2026-11-23）
+
+Windows174/174＋PE7、Linux173/173＋ELF7合格。最終DLL `77b92327d98d…` を既存実機へ再配備し、敵不在の保持38入力、敵認識後の待機と接触喪失後のstrict 3秒解放を読取りCDB/実入力で確認した。C4実機0/7/8も直列確認。サーバーコピー追加0。C02は部分対応のまま残す。低優先度視線の受付/RNG・障害物との競合（C02-2）、安全時間終了後の経路向け投擲（C02-3）、C08の照準所有は未受入れ。49歴史項目／47残件。詳細は [GRENADE_LIFECYCLE_C02_1.md](GRENADE_LIFECYCLE_C02_1.md)。
+
 ## C16 full移動の視線公開を限定完了（2026-11-23）
 
 Windows173/173＋PE7、Linux172/172＋ELF7合格。最終DLL `456ccc43…95610` を既存実機へ再配備し、同一Actor・実ゲーム時刻のfull移動598/598で共有視線と実RunPlayerMoveの一致を確認した。C16を限定完了へ更新。49歴史項目／47残件。C08・全参照リプレイ・両OS実機/継続性能は未完。詳細・指紋・除外区間は [FULL_LOOK_PUBLICATION_C16.md](FULL_LOOK_PUBLICATION_C16.md)。次はC02の手榴弾開始/投擲経路。

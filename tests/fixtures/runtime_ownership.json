@@ -1267,6 +1267,21 @@
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
+    "member": "nativeGrenade"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "grenadeLookClearSequence"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "grenadeCommand"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
     "member": "desiredLookYaw"
   },
   {

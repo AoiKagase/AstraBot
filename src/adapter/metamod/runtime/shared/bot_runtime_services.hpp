@@ -80,6 +80,7 @@ class BotBehaviorServices : public BotRuntimeServiceTypes
 public:
 	virtual ~BotBehaviorServices() = default;
 	virtual bool readGameDllActiveWeapon(edict_t *source, int &weapon, bool &silenced) const = 0;
+	virtual bool observation_activeWeaponIdentity(edict_t *, int &) const { return false; }
 	virtual void applyNavigationRequest(const NavigationRequest &request) = 0;
 	virtual const Service_adapterFrameCount &service_adapterFrameCount() = 0;
 	virtual Service_compatibilityRandomSource &service_compatibilityRandomSource() = 0;

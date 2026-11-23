@@ -156,6 +156,7 @@ public:
 	}
 	CombatUpkeepUpdate upkeepCombat(
 		std::size_t index, const runtime::MovementPhysicsState &before, std::uint16_t cachedButtons, bool blind = false);
+	CombatUpkeepUpdate upkeepGrenade(std::size_t index, const runtime::MovementPhysicsState &before);
 	void clearCombatUpkeep(std::size_t index)
 	{
 		if (index >= actors_.size())
@@ -364,6 +365,10 @@ private:
 	bool decideEquipmentAction(ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking);
 	bool equipBestWeapon(std::size_t index, bool mustEquip = false);
 	bool plantCommandCurrent(std::size_t index) const;
+	bool updateNativeGrenade(std::size_t index, const runtime::MovementPhysicsState &before);
+	void applyNativeGrenadeInput(std::size_t index, ActionProposal &proposal) const;
+	bool nativeGrenadeCommandCurrent(std::size_t index) const;
+	void syncNativeGrenadeLook(std::size_t index);
 	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles, ActionProposal &proposal);
 	BehaviorPhaseResult updateBehaviorLifecycle(
 		std::size_t index, const runtime::MovementPhysicsState &before, compat::StateUpdateContext &context);
@@ -697,6 +702,17 @@ private:
 	{
 		compat::BotMorale morale{};
 		std::uint64_t executionRevision = 1;
+		compat::NativeGrenadeThrow nativeGrenade{};
+		std::uint64_t grenadeLookClearSequence = 0;
+		struct GrenadeCommand
+		{
+			compat::ReactionContext receipt{};
+			std::uint64_t revision = 0;
+			std::uint32_t fullUpdate = 0;
+			bool active = false, primary = false;
+			std::uint16_t weaponId = 0;
+		};
+		GrenadeCommand grenadeCommand{};
 		HelpGoal helpGoal{};
 		TeammateFollow teammateFollow{};
 		FollowMotion followMotion{};

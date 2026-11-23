@@ -212,15 +212,25 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	std::size_t index, const runtime::MovementPhysicsState &before, std::uint16_t cachedButtons, bool blind)
 {
 	CombatUpkeepUpdate update{};
+	const auto finish = [&](CombatUpkeepUpdate value) {
+		// Native full Update owns the grenade pin through intervening Upkeep.
+		// Retiring rifle aim must not erase that input; view eligibility stays
+		// independent, including the native retained-enemy aiming branch.
+		if (!blind && !before.dead && index < actors_.size() && services_ &&
+			services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+			actors_[index].grenadeCommand.active)
+			value.setPrimary = false;
+		return value;
+	};
 	if (before.dead)
 	{
 		clearCombatUpkeep(index);
 		update.setPrimary = true;
-		return update;
+		return finish(update);
 	}
 	if (index >= actors_.size() || !services_ || !services_->service_globals() || before.dead ||
 		(before.flags & FL_FROZEN) != 0 || (cachedButtons & (IN_USE | IN_RELOAD | IN_ATTACK2)) != 0)
-		return update;
+		return finish(update);
 	auto &state = actors_[index];
 	if (blind && state.weaponActions.rapidFiring())
 	{
@@ -229,7 +239,7 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	}
 	const auto tracked = state.managedBotCombat.trackedAim();
 	if (!tracked.isValid() || state.weaponActions.grenadeInProgress())
-		return update;
+		return finish(update);
 	const auto &handle = services_->service_managedBotHandles()[index];
 	const auto &engine = services_->service_engineFunctions();
 	const float now = services_->service_globals()->time;
@@ -240,18 +250,18 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		tracked.frame.mapGeneration != frame.mapGeneration || tracked.frame.roundGeneration != frame.roundGeneration ||
 		(services_->service_roundFreezeGeneration() == frame.roundGeneration &&
 			now < services_->service_roundFreezeUntil()))
-		return update;
+		return finish(update);
 	compat::PublicActorState activeWeapon{};
 	if (!services_->observation_publicObservations().read(tracked.actor, frame, &activeWeapon) ||
 		!activeWeapon.weaponKnown || activeWeapon.weaponId != state.weaponActions.currentWeaponId() ||
 		(!blind && isBlinded(tracked.actor, frame, now)))
 	{
 		if (blind)
-			return update;
+			return finish(update);
 		state.managedBotCombat.clearAim();
 		state.weaponActions.stopRapidFire();
 		update.setPrimary = true;
-		return update;
+		return finish(update);
 	}
 	const auto lookReceipt = reactionContext(index);
 	const auto lookExecution = state.executionRevision;
@@ -264,7 +274,7 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	{
 		update.setPrimary = true;
 		update.primary = false;
-		return update;
+		return finish(update);
 	}
 	const auto token = services_->service_lifecycle().tokenForSlot(tracked.target.slot);
 	const auto generation = token.slotGeneration == 0U ? 1U : token.slotGeneration;
@@ -305,11 +315,11 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	if (!currentlyVisible && !remembered)
 	{
 		if (blind)
-			return update;
+			return finish(update);
 		state.managedBotCombat.clearAim();
 		state.weaponActions.stopRapidFire();
 		update.setPrimary = true;
-		return update;
+		return finish(update);
 	}
 	combat::TargetBelief target{};
 	target.target = tracked.target;
@@ -346,7 +356,7 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		{
 			state.weaponActions.stopRapidFire();
 			update.setPrimary = true;
-			return update;
+			return finish(update);
 		}
 	}
 	combat::CombatDecisionContext context{};
@@ -395,7 +405,7 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	const bool ladderLook = services_->navigation_nativeLadderLook(index, &ladder) && ladder.active;
 	if (!executionCurrent(index, lookReceipt, lookExecution) ||
 		state.managedBotStateMachines.normalStateEpoch() != lookEpoch)
-		return update;
+		return finish(update);
 	if (ladderLook)
 	{
 		context.lookOverride = true;
@@ -412,7 +422,7 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		update.angles = {aim.pitch, aim.yaw, 0};
 		update.movementRelativeToAim = state.managedBotCombat.movementActive();
 		if (blind)
-			return update;
+			return finish(update);
 		if (!currentlyVisible || !state.enemyReaction.surpriseFireReady(reaction, tracked.target) ||
 			!state.combatRetreat.visibility.canFire(
 				state.managedBotStateMachines.attackEntryEpoch(), now))
@@ -442,7 +452,175 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 				context.targetVelocity.z - context.observerVelocity.z, aim.point.x, aim.point.y, aim.point.z, aim.pitch,
 				aim.yaw, state.weaponActions.rapidFiring() ? 1 : 0, update.setPrimary ? (update.primary ? 1 : 0) : -1);
 	}
-	return update;
+	return finish(update);
+}
+
+void BotBehaviorRuntime::syncNativeGrenadeLook(std::size_t index)
+{
+	auto &actor = actors_[index];
+	const auto sequence = actor.managedBotStateMachines.lookClearSequence();
+	if (sequence != actor.grenadeLookClearSequence)
+	{
+		actor.nativeGrenade.clearLook();
+		actor.grenadeLookClearSequence = sequence;
+	}
+}
+
+bool BotBehaviorRuntime::updateNativeGrenade(std::size_t index, const runtime::MovementPhysicsState &before)
+{
+	syncNativeGrenadeLook(index);
+	auto &actor = actors_[index];
+	const auto &config = services_->service_compatibilitySurface().configuration();
+	if (config.mode != compat::RuntimeMode::Compatibility || before.dead)
+	{
+		actor.nativeGrenade.reset();
+		return true;
+	}
+	if (config.botEnable <= 0 || config.botStop != 0)
+		return true;
+	const auto receipt = reactionContext(index);
+	const auto revision = actor.executionRevision;
+	const auto full = services_->service_managedBotFullUpdateSequences()[index];
+	const auto normal = actor.managedBotStateMachines.normalStateEpoch();
+	const auto attack = actor.managedBotStateMachines.attackEntryEpoch();
+	const auto current = [&] {
+		return executionCurrent(index, receipt, revision) &&
+			services_->service_managedBotFullUpdateSequences()[index] == full &&
+			actor.managedBotStateMachines.normalStateEpoch() == normal &&
+			actor.managedBotStateMachines.attackEntryEpoch() == attack;
+	};
+	const auto *self = services_->service_managedBotHandles()[index].entity;
+	constexpr unsigned kGrenadeInventory = (1U << 4) | (1U << 9) | (1U << 25);
+	compat::PublicActorState published{};
+	const bool publishedGrenade = services_->observation_publicObservations().read(receipt.actor, receipt.frame, &published) &&
+		published.weaponKnown && compat::WeaponActionPlanner::isGrenade(static_cast<std::uint16_t>(published.weaponId));
+	if (!publishedGrenade && !actor.nativeGrenade.waiting() &&
+		(!self || (static_cast<unsigned>(self->v.weapons) & kGrenadeInventory) == 0U))
+	{
+		return true;
+	}
+	int predicted = 0;
+	const bool identityKnown = services_->observation_activeWeaponIdentity(
+		services_->service_managedBotHandles()[index].entity, predicted);
+	if (!current())
+		return false;
+	std::uint16_t weapon = 0;
+	if (identityKnown)
+		weapon = static_cast<std::uint16_t>(predicted);
+	else
+	{
+		compat::CompatibilityObservation observed{};
+		if (services_->observation_observationAdapter().collectActor(
+				services_->service_managedBotHandles()[index].entity, receipt.actor, receipt.frame,
+				{services_->command_managedBotCommandSequences(index), 0U, full}, &observed) != ObservationAdapterResult::Accepted)
+			return current();
+		if (!current())
+			return false;
+		if (!observed.weapon.activeWeaponId.isAvailable())
+			return true;
+		weapon = observed.weapon.activeWeaponId.value;
+	}
+	const bool equipped = compat::WeaponActionPlanner::isGrenade(weapon);
+	auto pending = actor.nativeGrenade;
+	if (equipped)
+	{
+		world::WorldSnapshot snapshot{};
+		world::ActorKey selected{};
+		world::WorldPosition point{};
+		(void)prepareManagedPerception(index, &snapshot, &selected, &point);
+		if (!current())
+			return false;
+		const auto threat = actor.recognizedTargets;
+		const auto source = actor.enemyWeaponSource;
+		const auto *engine = services_->service_engineFunctions();
+		const auto *entity = threat.isValid() && engine && engine->pfnPEntityOfEntIndex
+			? engine->pfnPEntityOfEntIndex(static_cast<int>(threat.slot)) : nullptr;
+		if (!current())
+			return false;
+		if (entity && !entity->free && entity->serialnumber >= 0 && entity->v.deadflag == DEAD_NO &&
+			entity->v.health > 0 && reactionEnemyCurrent(threat) &&
+			source == world::EntityKey{threat.slot, static_cast<unsigned>(entity->serialnumber) + 1U})
+			pending.begin(receipt.now, {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z});
+	}
+	const bool primary = pending.primary(receipt.now, equipped);
+	if (!current())
+		return false;
+	actor.nativeGrenade = pending;
+	// A global full-Update input precedes normal-state actions. Legitimate state
+	// transitions may carry this bit; actor/frame/full/re-entry identity may not.
+	actor.grenadeCommand = {receipt, revision, full, equipped, primary, weapon};
+	return true;
+}
+
+bool BotBehaviorRuntime::nativeGrenadeCommandCurrent(std::size_t index) const
+{
+	if (index >= actors_.size() ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return false;
+	const auto &command = actors_[index].grenadeCommand;
+	return command.receipt.actor.isValid() && executionCurrent(index, command.receipt, command.revision) &&
+		services_->service_managedBotFullUpdateSequences()[index] == command.fullUpdate;
+}
+
+void BotBehaviorRuntime::applyNativeGrenadeInput(std::size_t index, ActionProposal &proposal) const
+{
+	if (!nativeGrenadeCommandCurrent(index))
+		return;
+	const auto &command = actors_[index].grenadeCommand;
+	if (!command.active)
+		return;
+	proposal.movementButtons = static_cast<std::uint16_t>((proposal.movementButtons & ~IN_ATTACK) |
+		(command.primary ? IN_ATTACK : 0));
+}
+
+CombatUpkeepUpdate BotBehaviorRuntime::upkeepGrenade(std::size_t index, const runtime::MovementPhysicsState &before)
+{
+	CombatUpkeepUpdate result{};
+	if (index >= actors_.size() || !services_ || !services_->service_globals())
+		return result;
+	syncNativeGrenadeLook(index);
+	auto &actor = actors_[index];
+	const auto &config = services_->service_compatibilitySurface().configuration();
+	if (!actor.nativeGrenade.looking() || actor.managedBotCombat.trackedAim().isValid() || before.dead || before.onLadder ||
+		config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0 || config.botStop != 0 ||
+		(before.flags & FL_FROZEN) != 0)
+		return result;
+	const auto receipt = reactionContext(index);
+	if (services_->service_roundFreezeGeneration() == receipt.frame.roundGeneration &&
+		receipt.now < services_->service_roundFreezeUntil())
+		return result;
+	const auto &handle = services_->service_managedBotHandles()[index];
+	if (!handle.entity || !receipt.alive)
+		return result;
+	const auto revision = actor.executionRevision;
+	const auto clearSequence = actor.managedBotStateMachines.lookClearSequence();
+	const auto &entity = *handle.entity;
+	const auto eye = entity.v.origin + entity.v.view_ofs;
+	const auto point = actor.nativeGrenade.target();
+	const auto goal = ActionAdapter::useEntityView(point.x - eye.x, point.y - eye.y, point.z - eye.z);
+	const bool aligned = std::fabs(compat::normalizedAimAngle(goal.yaw - entity.v.v_angle.y)) < 1.0f &&
+		std::fabs(compat::normalizedAimAngle(goal.pitch - entity.v.v_angle.x)) < 1.0f;
+	auto pending = actor.nativeGrenade;
+	world::WorldPosition retained{};
+	if (!pending.upkeep(receipt.now, aligned, &retained))
+		return result;
+	const auto &weapon = services_->observation_managedBotCurrentWeapons(index);
+	const bool sniper = weapon.available && weapon.active && weapon.weaponId < 32U &&
+		weapon.actorGeneration == handle.actor.actorGeneration && weapon.mapGeneration == receipt.frame.mapGeneration &&
+		weapon.roundGeneration == receipt.frame.roundGeneration &&
+		(compat::kSniperRifleInventoryMask & (1U << weapon.weaponId)) != 0U;
+	const float drift = sniper && entity.v.fov > 0.0f && entity.v.fov < 90.0f ? 0.5f : 2.0f;
+	const auto aim = services_->command_stepLook(index, receipt.now, entity.v.v_angle.y, entity.v.v_angle.x,
+		goal.yaw + drift * ActionAdapter::csBotCosine(33.0f * receipt.now),
+		goal.pitch + drift * ActionAdapter::csBotCosine(13.0f * receipt.now - 90.0f), false, 4U);
+	if (!executionCurrent(index, receipt, revision) ||
+		actor.managedBotStateMachines.lookClearSequence() != clearSequence ||
+		!std::isfinite(aim.pitch) || !std::isfinite(aim.yaw))
+		return result;
+	actor.nativeGrenade = pending;
+	result.hasAim = true;
+	result.angles = {aim.pitch, aim.yaw, 0.0f};
+	return result;
 }
 
 bool BotBehaviorRuntime::cancelHeldGrenade(
@@ -1021,13 +1199,29 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	combat::WeaponInventory inventory;
 	combat::WeaponRecord weapon = {};
 	compat::PublicActorState observedWeapon{};
-	if (!services_->observation_publicObservations().read(actor, frame, &observedWeapon) || !observedWeapon.weaponKnown)
+	const bool publicWeaponKnown = services_->observation_publicObservations().read(actor, frame, &observedWeapon) &&
+		observedWeapon.weaponKnown;
+	const bool nativeWeaponKnown = nativeGrenadeCommandCurrent(index);
+	if (!publicWeaponKnown && !nativeWeaponKnown)
 		return proposal;
 	const auto &state = actors_[index].managedBotStateMachines;
 	if (state.state() == compat::CompatibilityStateId::Hide &&
 		actors_[index].combatRetreat.hideEpoch == state.normalStateEpoch() && reactionIgnoring(index))
 		return proposal;
-	const int weaponValue = observedWeapon.weaponId;
+	int weaponValue = nativeWeaponKnown ? actors_[index].grenadeCommand.weaponId : observedWeapon.weaponId;
+	if (nativeWeaponKnown)
+	{
+		const auto identityReceipt = reactionContext(index);
+		const auto identityRevision = actors_[index].executionRevision;
+		const auto identityEpoch = state.normalStateEpoch();
+		int predicted = 0;
+		const bool available = services_->observation_activeWeaponIdentity(handle.entity, predicted);
+		if (!executionCurrent(index, identityReceipt, identityRevision) || state.normalStateEpoch() != identityEpoch ||
+			!nativeGrenadeCommandCurrent(index))
+			return proposal;
+		if (available)
+			weaponValue = predicted;
+	}
 	weapon.weapon = {static_cast<std::uint16_t>(weaponValue)};
 	const compat::PublicWeaponDefinition definition =
 		services_->observation_publicObservations().definition(weaponValue);

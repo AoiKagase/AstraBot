@@ -121,6 +121,21 @@ void BotCommandRuntime::applyCombatUpkeep(std::size_t index, const CombatUpkeepU
 	}
 }
 
+void BotCommandRuntime::applyGrenadeUpkeep(
+	std::size_t index, FakeClientHandle &handle, const CombatUpkeepUpdate &update)
+{
+	if (index >= actors_.size() || !handle.entity || !update.hasAim)
+		return;
+	handle.entity->v.v_angle = Vector(update.angles.pitch, update.angles.yaw, update.angles.roll);
+	if (actors_[index].managedBotCommandTemplateValid)
+	{
+		auto &command = actors_[index].managedBotCommandTemplates;
+		command.viewAngles = update.angles;
+		command.synchronizeCombatView = true;
+	}
+	// Keep Ahead and cached movement axes: the spot owns only this Upkeep's view.
+}
+
 using namespace runtime_detail;
 
 void BotCommandRuntime::onTouch(edict_t *entity, edict_t *other)

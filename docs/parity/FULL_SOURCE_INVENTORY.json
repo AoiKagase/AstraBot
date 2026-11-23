@@ -7921,26 +7921,44 @@
     },
     {
       "id": "C02",
-      "title": "Production grenade throw initiation is unreachable; native throw lifecycle not implemented",
-      "status": "implementation_gap",
+      "title": "Native hold / recognized-enemy grenade throw partially implemented; spot admission and safe path toss remain",
+      "status": "partial_implementation",
       "astra": [
-        "src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1059",
-        "src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1419",
-        "src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1492",
-        "include/astrabot/compat/weapon_actions.hpp:486"
+        "src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:469",
+        "include/astrabot/compat/weapon_actions.hpp:43",
+        "src/core/compat/state_machine.cpp:900"
       ],
       "reference": [
         "regamedll/dlls/bot/cs_bot_update.cpp:347",
         "regamedll/dlls/bot/cs_bot_update.cpp:490",
         "regamedll/dlls/bot/cs_bot_weapon.cpp:576"
       ],
-      "evidence": "combatVisible excludes Grenade, targetVisible copies combatVisible, only requestGrenade producer is inside isGrenade&&targetVisible branch. Full src/include producer search found no alternate throw producer. Native recognizes threat→ThrowGrenade and safe-end path-corner toss; it holds attack while equipped and releases after alignment/strict countdown. Astra core requires verified ballistic arc/landing, separate from native direct-look toss, so removing guard alone is insufficient.",
-      "tests": "weapon_actions_tests.cpp:326-346 and grenade_trajectory_tests.cpp exercise core only; combat_target_log_tests.cpp:1531 covers no Attack with grenade, not positive actual throw.",
+      "evidence": "C02-1 public active weapon identity, no-target pin hold, recognized copied target, strict >3/alignment release, independent look/weapon-change lifecycle and explicit Clear receipt implemented. Final offline174/173+exports7; reused Windows realserver verifies no-target hold and recognized post-loss deadline release. Exact lowerpriority admission/RNG, obstacle interaction and safe-path initiation remain C02; cached trackedAim vs native IsAimingAtEnemy remains C08.",
+      "tests": "astrabot_native_grenade_lifecycle real full/RunPlayerMove path; weapon_actions native clock tests; compat_state_machine Clear receipt before reentrant callback. Valid Clear product RED→GREEN retained; earlier false-positive test excluded.",
       "backlog_mapping": "23/new explicit grenade unit",
       "confidence": "high",
       "title_ja": "手榴弾開始条件と保持/投擲の実行経路",
-      "status_ja": "差確定",
-      "group": 1
+      "status_ja": "部分対応",
+      "group": 1,
+      "historical_title": "Production grenade throw initiation is unreachable; native throw lifecycle not implemented",
+      "historical_evidence": "combatVisible excludes Grenade, targetVisible copies combatVisible, only requestGrenade producer is inside isGrenade&&targetVisible branch. Full src/include producer search found no alternate throw producer. Native recognizes threat→ThrowGrenade and safe-end path-corner toss; it holds attack while equipped and releases after alignment/strict countdown. Astra core requires verified ballistic arc/landing, separate from native direct-look toss, so removing guard alone is insufficient.",
+      "historical_tests": "weapon_actions_tests.cpp:326-346 and grenade_trajectory_tests.cpp exercise core only; combat_target_log_tests.cpp:1531 covers no Attack with grenade, not positive actual throw.",
+      "historical_astra": [
+        "src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1059",
+        "src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1419",
+        "src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1492",
+        "include/astrabot/compat/weapon_actions.hpp:486"
+      ],
+      "partial_completion": {
+        "record": "GRENADE_LIFECYCLE_C02_1.md",
+        "source_manifest": "artifacts/local/debug/csbot-grenade-c02-20261123/final-v2/freeze.json",
+        "dll_sha256": "77b92327d98d50e57825aac3e3e77856c4d09dbd03241b23a755d98e7b678c1b",
+        "remaining": [
+          "C02-2 lowerpriority spot admission/RNG/obstacle interaction",
+          "C02-3 safe-time path toss"
+        ],
+        "still_open": true
+      }
     },
     {
       "id": "C03",
@@ -8705,6 +8723,21 @@
       ],
       "new_findings": [],
       "unverified_case_retained_under": "V02: cold/post-combat stopped look initialization with no finite Ahead"
+    },
+    {
+      "date": "2026-11-23",
+      "record": "GRENADE_LIFECYCLE_C02_1.md",
+      "historical_inventory_scope": "Original audit file fingerprints retained; current198production paths separately checked via final freeze200tracked src/include paths. No all-branches claim.",
+      "historical_findings": 49,
+      "open_findings": 47,
+      "partial_updates": [
+        "C02"
+      ],
+      "resolved_bounded": [
+        "C01",
+        "C16"
+      ],
+      "new_findings": []
     }
   ]
 }

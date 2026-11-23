@@ -26,6 +26,7 @@ ActionProposal BotBehaviorRuntime::decideManagedBotAction(std::size_t index,
 	ctx.proposal = {ActionKind::None, movementAngles, movementButtons};
 	const auto finish = [&](ActionProposal proposal) {
 		applyAttackPosture(index, proposal);
+		applyNativeGrenadeInput(index, proposal);
 		return proposal;
 	};
 	if (prepareManagedAction(ctx) == BehaviorPhaseResult::Complete)
@@ -129,6 +130,7 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 		actors_[index].investigationWalking = false;
 	}
 	actors_[index].plantCommand = {};
+	actors_[index].grenadeCommand = {};
 	actors_[index].plantEntry = {};
 	compat::StateBehaviorInput stateBehavior = {};
 	compat::StateUpdateContext context = makeManagedBotStateContext(index, before, &stateBehavior);
@@ -147,6 +149,8 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 		context = makeManagedBotStateContext(index, before, &stateBehavior);
 	}
 	if (recoveringFromBlind && !refreshRecoveredPerception(index))
+		return;
+	if (!updateNativeGrenade(index, before))
 		return;
 	const auto receipt = reactionContext(index);
 	const auto revision = actors_[index].executionRevision;
@@ -180,6 +184,8 @@ void BotBehaviorRuntime::invalidateHelpExecution(std::size_t index)
 
 void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 {
+	actors_[index].nativeGrenade.reset();
+	actors_[index].grenadeCommand = {};
 	actors_[index].morale = {};
 	invalidateHelpExecution(index);
 	actors_[index].flashResponse = {};
@@ -239,6 +245,8 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 
 void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHandle &handle)
 {
+	actors_[index].nativeGrenade.reset();
+	actors_[index].grenadeCommand = {};
 	resetEncouragement();
 	actors_[index].morale = {};
 	invalidateHelpExecution(index);
@@ -292,6 +300,8 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 	resetEncouragement();
 	for (auto &actor : actors_)
 	{
+		actor.nativeGrenade.reset();
+		actor.grenadeCommand = {};
 		if (++actor.executionRevision == 0)
 			++actor.executionRevision;
 		actor.helpGoal = {};
@@ -327,6 +337,8 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 
 void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 {
+	actors_[index].nativeGrenade.reset();
+	actors_[index].grenadeCommand = {};
 	invalidateHelpExecution(index);
 	actors_[index].flashResponse = {};
 	actors_[index].teamworkPolicies.resetValues();
@@ -363,6 +375,8 @@ void BotBehaviorRuntime::resetRoundTactics()
 {
 	for (auto &actor : actors_)
 	{
+		actor.nativeGrenade.reset();
+		actor.grenadeCommand = {};
 		if (++actor.executionRevision == 0)
 			++actor.executionRevision;
 		actor.helpGoal = {};

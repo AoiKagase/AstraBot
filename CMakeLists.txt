@@ -1235,6 +1235,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     add_test(NAME astrabot_clear_look_upkeep COMMAND astrabot_combat_target_log --target-log)
     add_test(NAME astrabot_shared_look_velocity COMMAND astrabot_combat_target_log --target-log)
     add_test(NAME astrabot_shared_look_reentry COMMAND astrabot_combat_target_log --target-log)
+    add_test(NAME astrabot_native_grenade_lifecycle COMMAND astrabot_combat_target_log --target-log)
   add_test(NAME astrabot_plant_entry_order COMMAND astrabot_combat_target_log --target-log)
   add_test(NAME astrabot_combat_threat_notice COMMAND astrabot_combat_target_log --target-log)
   add_executable(astrabot_bomb_guard_look tests/bomb_guard_look_tests.cpp ${combat_target_log_sources})
@@ -1275,11 +1276,12 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     set_tests_properties(astrabot_clear_look_upkeep PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=clear-look")
     set_tests_properties(astrabot_shared_look_velocity PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=shared-look" RUN_SERIAL TRUE)
     set_tests_properties(astrabot_shared_look_reentry PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=shared-look-reentry" RUN_SERIAL TRUE)
+    set_tests_properties(astrabot_native_grenade_lifecycle PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=native-grenade" RUN_SERIAL TRUE)
   set_tests_properties(astrabot_plant_entry_order PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=plant-entry")
   set_tests_properties(astrabot_combat_threat_notice PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=notice")
   set_tests_properties(astrabot_combat_target_log astrabot_combat_threatening_gunfire astrabot_combat_reacquire_delay
     astrabot_combat_threat_notice astrabot_combat_occluded_acquisition astrabot_combat_self_defense astrabot_combat_shield
-    astrabot_combat_best_equipment astrabot_plant_terminal_order astrabot_clear_look_upkeep astrabot_shared_look_velocity astrabot_shared_look_reentry astrabot_plant_entry_order PROPERTIES
+    astrabot_combat_best_equipment astrabot_plant_terminal_order astrabot_clear_look_upkeep astrabot_shared_look_velocity astrabot_shared_look_reentry astrabot_native_grenade_lifecycle astrabot_plant_entry_order PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_obstacle_interaction_runtime tests/obstacle_interaction_runtime_tests.cpp ${combat_target_log_sources})
