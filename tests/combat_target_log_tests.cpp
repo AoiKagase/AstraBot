@@ -12,6 +12,7 @@ void captureCombatGameDll(DLL_FUNCTIONS &table) { combatGameDll = &table; }
 #define ASTRABOT_EXTRA_ACTOR_TEST testCombatTargetLog
 #define ASTRABOT_ACTOR_GAMEDLL_SETUP captureCombatGameDll
 #include "compat_actor_command_tests.cpp"
+#include "fixtures/noise_runtime_nav.hpp"
 
 namespace
 {
@@ -330,7 +331,8 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool sharedReentryFixture = scenario && std::strcmp(scenario, "shared-look-reentry") == 0;
 	const bool plantEntryFixture = scenario && std::strcmp(scenario, "plant-entry") == 0;
 	const bool grenadeAdmissionFixture = scenario && std::strcmp(scenario, "native-grenade-admission") == 0;
-	const bool nativeGrenadeFixture = grenadeAdmissionFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
+	const bool grenadeNoiseFixture = scenario && std::strcmp(scenario, "native-grenade-noise") == 0;
+	const bool nativeGrenadeFixture = grenadeAdmissionFixture || grenadeNoiseFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
@@ -419,6 +421,58 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				grenadeEnemy.v.origin = gEntities[0].v.origin + Vector(-1000, 0, -256);
 			}
 			stepRifle(30, 0.0f, 22); // Deliberately stale rifle message; API still reports grenade.
+			if (grenadeNoiseFixture && grenadeFrameIndex == 11)
+			{
+				engine.pfnRandomFloat = &hearingFixtureRandomFloat;
+				const auto &noiseProfile = static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0);
+				if (!check(loadHearingNav(runtime), "C02 noise control: real NAV supports hearing localization"))
+					return false;
+				struct NoiseDraws final : compat::IRandomTraceSink
+				{
+					unsigned startles = 0;
+					void record(const compat::RandomTraceRecord &draw) override
+					{
+						if (std::strcmp(draw.request.semanticId, "NoiseLook.StartleInhibit") == 0)
+							++startles;
+					}
+				} draws;
+				auto &source = gEntities[4];
+				source = {};
+				source.serialnumber = 44;
+				source.v.origin = gEntities[0].v.origin + Vector(0, 300, 0);
+				enginefuncs_t soundHooks{};
+				int soundVersion = ENGINE_INTERFACE_VERSION;
+				if (!check(runtime.provideEngineFunctions(&soundHooks, &soundVersion) && soundHooks.pfnEmitSound &&
+						(gLastRunPlayerMoveButtons & IN_ATTACK) && combatCommandPitch < -1.0f,
+						"C02 noise control: retained grenade spot and pin precede public sound"))
+					return false;
+				grenadePorts.service_compatibilityRandomSource().setTraceSink(&draws);
+				soundHooks.pfnEmitSound(&source, 1, "weapons/ak47-1.wav", 1, 1, 0, 100);
+				stepRifle(30, 0.0f, 4);
+				grenadePorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+				const auto &heard = grenadePorts.observation_managedBotPerception(0).snapshot().noise();
+				std::fprintf(stderr, "C02 noise setup now=%.9f stamp=%.9f age=%.9f reaction=%.9f active=%d localized=%d buttons=%u draws=%u\n",
+					globals.time, heard.timestampSeconds, globals.time - heard.timestampSeconds,
+					noiseProfile.effectiveReactionSeconds(true), heard.active ? 1 : 0,
+					compat::hasNoiseLookPosition(heard) ? 1 : 0, gLastRunPlayerMoveButtons, draws.startles);
+				if (!check(compat::hasNoiseLookPosition(heard) && globals.time - heard.timestampSeconds <= .5f &&
+						globals.time - heard.timestampSeconds < noiseProfile.effectiveReactionSeconds(true) &&
+						heard.priority == world::NoisePriority::High &&
+						(gLastRunPlayerMoveButtons & IN_ATTACK),
+						"C02 noise control: dangerous localized gunfire precedes ordinary reaction while grenade pin remains held"))
+					return false;
+				if (!check(draws.startles == 1,
+						"C02 rejected dangerous noise look still consumes native startle inhibition draw while grenade holds Primary"))
+					return false;
+				runtime::BotCommand refusedNoise{};
+				refusedNoise.viewAngles = {-12, 75, 0};
+				refusedNoise.movement = {120, 15, 0, IN_ATTACK, 0, 33};
+				static_cast<metamod::BotCommandServices &>(runtime).behavior_applyNoiseLookCommand(0, refusedNoise, true);
+				return check(refusedNoise.viewAngles.pitch == -12 && refusedNoise.viewAngles.yaw == 75 &&
+						refusedNoise.movement.forward == 120 && refusedNoise.movement.side == 15 &&
+						refusedNoise.movement.buttons == IN_ATTACK && !refusedNoise.synchronizeCombatView,
+					"C02 refused noise never supplies an upkeep view or rewrites the retained pin/movement input");
+			}
 			if (grenadeAdmissionFixture && grenadeFrameIndex == 11)
 			{
 				// Three full updates after loss retire the old combat aim, while

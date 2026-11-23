@@ -5,6 +5,7 @@
 #include "astrabot/world/world_snapshot.hpp"
 #include "astrabot/runtime/bot_timing_scheduler.hpp"
 #include <cstring>
+#include <functional>
 namespace astrabot
 {
 namespace compat
@@ -154,10 +155,11 @@ public:
 		return inhibitedUntil_;
 	}
 	bool request(const NoiseLookInput &input, NoiseLookKind kind, const world::WorldPosition &point,
-		ICompatibilityRandomSource &random, RandomTimingContext timing)
+		ICompatibilityRandomSource &random, RandomTimingContext timing, bool admitSpot = true,
+		const std::function<bool()> &current = {})
 	{
 		if (kind == NoiseLookKind::None || !input.actor.isValid() || !input.frame.isValid() ||
-			!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
+			!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z) || (current && !current()))
 			return false;
 		const float lower = kind == NoiseLookKind::Startle ? 2.0f
 			: input.hiding								   ? (input.enemiesRemaining == 1 ? 5.0f : 2.0f)
@@ -168,7 +170,14 @@ public:
 		const auto draw = random.nextFloat(RandomRequest::floatRequest(
 			kind == NoiseLookKind::Startle ? "NoiseLook.StartleInhibit" : "NoiseLook.Duration",
 			{input.actor.slot, input.actor.generation}, timing, lower, upper));
+		if (current && !current())
+			return false;
 		if (draw.status != RandomStatus::Ok || !std::isfinite(draw.value) || draw.value < lower || draw.value > upper)
+			return false;
+		// UpdateLookAround inhibits even when SetLookAt is refused by a higher spot.
+		if (kind == NoiseLookKind::Startle)
+			inhibitedUntil_ = input.now + draw.value;
+		if (!admitSpot)
 			return false;
 		const bool high = kind == NoiseLookKind::Startle || input.highPriority;
 		if (active_ && highPriority_ && !high)
@@ -185,8 +194,6 @@ public:
 		highPriority_ = high;
 		duration_ = kind == NoiseLookKind::Startle ? 0.25f : draw.value;
 		clearIfClose_ = kind != NoiseLookKind::Startle;
-		if (kind == NoiseLookKind::Startle)
-			inhibitedUntil_ = input.now + draw.value;
 		return true;
 	}
 	bool update(float now, const world::WorldPosition &origin, const world::WorldPosition &eye, float pitch, float yaw,

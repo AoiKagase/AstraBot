@@ -7921,7 +7921,7 @@
     },
     {
       "id": "C02",
-      "title": "Native grenade lifecycle and breakable admission partially implemented; noise/Hunt/Guard admission/RNG and safe path toss remain",
+      "title": "Native grenade lifecycle, breakable admission and denied noise inhibition partially implemented; Hunt/Guard ordering and safe path toss remain",
       "status": "partial_implementation",
       "astra": [
         "src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:469",
@@ -7933,7 +7933,7 @@
         "regamedll/dlls/bot/cs_bot_update.cpp:490",
         "regamedll/dlls/bot/cs_bot_weapon.cpp:576"
       ],
-      "evidence": "C02-1 public active weapon identity, no-target pin hold, recognized copied target, strict >3/alignment release, independent look/weapon-change lifecycle and explicit Clear receipt implemented. Final offline174/173+exports7; reused Windows realserver verifies no-target hold and recognized post-loss deadline release. Exact lowerpriority admission/RNG, obstacle interaction and safe-path initiation remain C02; cached trackedAim vs native IsAimingAtEnemy remains C08. C02-2a independently rejects breakable look while native grenade spot persists, retains Touch equipment/Primary effects, invalidates old admission only on accepted begin, and guards equipment callbacks with actor/frame/revision/normal/attack/full/target identity. Final offline175/174+exports7 and reused Windows real map Touch accepted. C10 common clock/deferred timing remains open.",
+      "evidence": "C02-1 public active weapon identity, no-target pin hold, recognized copied target, strict >3/alignment release, independent look/weapon-change lifecycle and explicit Clear receipt implemented. Final offline174/173+exports7; reused Windows realserver verifies no-target hold and recognized post-loss deadline release. Exact lowerpriority admission/RNG, obstacle interaction and safe-path initiation remain C02; cached trackedAim vs native IsAimingAtEnemy remains C08. C02-2a independently rejects breakable look while native grenade spot persists, retains Touch equipment/Primary effects, invalidates old admission only on accepted begin, and guards equipment callbacks with actor/frame/revision/normal/attack/full/target identity. Final offline175/174+exports7 and reused Windows real map Touch accepted. C10 common clock/deferred timing remains open. C02-2b denied noise requests consume duration/startle RNG, preserve independent inhibition, and publish no latent view. Accepted native begin clears old noise goal without clearing inhibition. Canonical public high-noise age.125<reaction.3 RED/GREEN plus core ordinary/startle/reentry tests, final176/175+exports7 and reused Windows public gunfire acceptance. Hunt/Guard branch/RNG order remains C02-2c.",
       "tests": "astrabot_native_grenade_lifecycle real full/RunPlayerMove path; weapon_actions native clock tests; compat_state_machine Clear receipt before reentrant callback. Valid Clear product RED→GREEN retained; earlier false-positive test excluded.",
       "backlog_mapping": "23/new explicit grenade unit",
       "confidence": "high",
@@ -7954,7 +7954,7 @@
         "source_manifest": "artifacts/local/debug/csbot-grenade-c02-20261123/final-v2/freeze.json",
         "dll_sha256": "77b92327d98d50e57825aac3e3e77856c4d09dbd03241b23a755d98e7b678c1b",
         "remaining": [
-          "C02-2b/c noise/Hunt/Guard/general spot admission and RNG order",
+          "C02-2c Hunt/Guard/general spot production order, stationary zero Clear and moving encounter RNG",
           "C02-3 safe-time path toss"
         ],
         "still_open": true,
@@ -7963,6 +7963,12 @@
             "record": "GRENADE_OBSTACLE_ADMISSION_C02_2A.md",
             "source_manifest": "artifacts/local/debug/csbot-grenade-obstacle-admission-c02-2a-20261123/final/freeze.json",
             "dll_sha256": "6d662b9aee0a06e325bce8a35f28d899d0a7dad3d921888cebee47ea4c354704",
+            "still_open": true
+          },
+          {
+            "record": "GRENADE_NOISE_ADMISSION_C02_2B.md",
+            "source_manifest": "artifacts/local/debug/csbot-grenade-noise-admission-c02-2b-20261123/final/freeze.json",
+            "dll_sha256": "257a64a4530fd9fc6960565d49d1539870bec89a6095636368a43cbf800202b4",
             "still_open": true
           }
         ]
@@ -8761,6 +8767,21 @@
       ],
       "new_findings": [],
       "historical_inventory_scope": "Original audit fingerprints retained; current200 tracked src/include hashes verified separately in final freeze."
+    },
+    {
+      "date": "2026-11-23",
+      "record": "GRENADE_NOISE_ADMISSION_C02_2B.md",
+      "historical_findings": 49,
+      "open_findings": 47,
+      "partial_updates": [
+        "C02"
+      ],
+      "resolved_bounded": [
+        "C01",
+        "C16"
+      ],
+      "new_findings": [],
+      "historical_inventory_scope": "Original audit fingerprints retained; finalfreeze verifies200 currenttracked source paths."
     }
   ]
 }

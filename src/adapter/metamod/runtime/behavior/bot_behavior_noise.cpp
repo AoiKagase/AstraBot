@@ -62,8 +62,14 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 	const world::FrameIdentity frame{
 		lifecycle.mapGeneration(), lifecycle.roundGeneration(), services_->service_adapterFrameCount()};
 	look.synchronize({handle.actor.slot, handle.actor.actorGeneration}, frame, globals->time);
+	syncNativeGrenadeLook(index);
+	const bool grenadeSpot = actor.nativeGrenade.looking();
+	if (grenadeSpot)
+		look.clearLook();
 	if (upkeepOnly)
 	{
+		if (grenadeSpot)
+			return;
 		float goalYaw = 0.0f;
 		if (advanceNoiseLook(look, *self, globals->time, command, true, &goalYaw, [this, index](float time, float yaw, float pitch, float goalYaw, float goalPitch, bool attack, unsigned priority) { return services_->command_stepLook(index, time, yaw, pitch, goalYaw, goalPitch, attack, priority); }))
 			recordLookGoal(index, goalYaw);
@@ -85,7 +91,8 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 	const bool panicLook = look.damagePanic();
 	if ((panicLook ? actor.enemyReaction.shouldAim(reactionContext(index))
 				   : visibleEnemy || actor.managedBotStateMachines.attackOverlayActive()) ||
-		actor.weaponActions.grenadeInProgress() || (command.movement.buttons & (IN_USE | IN_ATTACK | IN_ATTACK2)) ||
+		actor.weaponActions.grenadeInProgress() || (command.movement.buttons & (IN_USE | IN_ATTACK2)) ||
+		((command.movement.buttons & IN_ATTACK) && !actor.grenadeCommand.active) ||
 		(known && weapon.weaponKnown && weapon.weaponId == 6) ||
 		isBlinded({handle.actor.slot, handle.actor.actorGeneration}, frame, globals->time) ||
 		actor.obstacleLook.entity)
@@ -95,6 +102,18 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 		return;
 	}
 	const auto fullUpdate = services_->service_managedBotFullUpdateSequences()[index];
+	const auto receipt = reactionContext(index);
+	const auto revision = actor.executionRevision;
+	const auto normalEpoch = actor.managedBotStateMachines.normalStateEpoch();
+	const auto attackEpoch = actor.managedBotStateMachines.attackEntryEpoch();
+	const auto clearSequence = actor.managedBotStateMachines.lookClearSequence();
+	const auto current = [&] {
+		return executionCurrent(index, receipt, revision) &&
+			actor.managedBotStateMachines.normalStateEpoch() == normalEpoch &&
+			actor.managedBotStateMachines.attackEntryEpoch() == attackEpoch &&
+			actor.managedBotStateMachines.lookClearSequence() == clearSequence &&
+			services_->service_managedBotFullUpdateSequences()[index] == fullUpdate;
+	};
 	if (actor.noiseLookUpdate != fullUpdate)
 	{
 		actor.noiseLookUpdate = fullUpdate;
@@ -126,6 +145,8 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 			const float to[] = {target.x, target.y, target.z};
 			TraceResult trace{};
 			engine->pfnTraceLine(from, to, 0x101, self, &trace);
+			if (!current())
+				return;
 			input.clearLine = trace.flFraction >= 1.0f && !trace.fStartSolid && !trace.fAllSolid;
 			const auto kind = compat::noiseLookKind(input, look.inhibitedUntil());
 			world::WorldPosition point = target;
@@ -188,6 +209,8 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 							}
 						}
 					}
+					if (!current())
+						return;
 					cache = {true, havePoint, noise.timestampSeconds, nav.revision(), {origin.x, origin.y, origin.z},
 						noise.position, point};
 				}
@@ -197,6 +220,8 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 				for (int slot = 1; slot <= (std::min)(32, globals->maxClients); ++slot)
 				{
 					const auto *player = engine->pfnPEntityOfEntIndex ? engine->pfnPEntityOfEntIndex(slot) : nullptr;
+					if (!current())
+						return;
 					if (player && !player->free && (player->v.flags & FL_CLIENT) && player->v.deadflag == DEAD_NO &&
 						player->v.health > 0)
 					{
@@ -206,7 +231,9 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 					}
 				}
 				(void)look.request(input, kind, point, services_->service_compatibilityRandomSource(),
-					{services_->command_managedBotCommandSequences(index), 0U, fullUpdate});
+					{services_->command_managedBotCommandSequences(index), 0U, fullUpdate}, !grenadeSpot, current);
+				if (!current())
+					return;
 			}
 		}
 	}

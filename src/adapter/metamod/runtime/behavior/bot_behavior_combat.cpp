@@ -552,7 +552,10 @@ bool BotBehaviorRuntime::updateNativeGrenade(std::size_t index, const runtime::M
 		return false;
 	actor.nativeGrenade = pending;
 	if (beganLook)
+	{
 		actor.obstacleLook.admitted = false;
+		actor.noiseLook.clearLook();
+	}
 	// A global full-Update input precedes normal-state actions. Legitimate state
 	// transitions may carry this bit; actor/frame/full/re-entry identity may not.
 	actor.grenadeCommand = {receipt, revision, full, equipped, primary, weapon};

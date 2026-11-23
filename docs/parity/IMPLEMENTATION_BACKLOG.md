@@ -1,5 +1,9 @@
 # Remaining CSBot implementation work
 
+## C02-2b 手榴弾視線中の音要求・抑制時計を部分修正（2026-11-23）
+
+Windows176/176＋PE7、Linux175/175＋ELF7合格。最終DLL `257a64a4530f…` を既存実機へ再配備し、公開の危険銃声が視線受付で拒否されてもRNGと2〜4秒の抑制時計が進むことを読取りCDB・実入力で確認した。C4実機0/7/8も逐次合格、追加サーバーコピー0。Hunt/Guardの後続順・stationary0 Clear・moving encounterはC02-2cとして残し、49歴史項目／47残件を維持する。詳細は [GRENADE_NOISE_ADMISSION_C02_2B.md](GRENADE_NOISE_ADMISSION_C02_2B.md)。以下のC02-2a/C02-1は当時の範囲を保持する。
+
 ## C02-2a 手榴弾視線中の破壊物割込みを部分修正（2026-11-23）
 
 Windows175/175＋PE7、Linux174/174＋ELF7合格。最終DLL `6d662b9aee0a…` を既存実機へ再配備し、実マップ破壊物のTouchで手榴弾視線が上書きされないこと、保持入力と装備要求が残ることを読取りCDBと実入力で確認した。C4実機0/7/8も逐次確認。追加サーバーコピー0。C02は部分対応、49歴史項目／47残件を維持する。noise/Hunt/Guard等の受付とRNG、経路投擲、C10の共通装備時計・接触処理時刻は未完。詳細は [GRENADE_OBSTACLE_ADMISSION_C02_2A.md](GRENADE_OBSTACLE_ADMISSION_C02_2A.md)。以下のC02-1記録は当時の範囲を保持する。

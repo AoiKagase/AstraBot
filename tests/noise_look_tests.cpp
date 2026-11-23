@@ -118,5 +118,34 @@ int main()
 	check(isStandardShotSample("weapons/ak47-1.wav") && !isStandardShotSample("weapons/ak47_clipin.wav") &&
 			!isStandardShotSample("weapons/c4_beep1.wav") && !isStandardShotSample("weapons/custom-shot.wav"),
 		"only known shot samples establish dangerous gunfire");
+	NoiseLookPlanner denied;
+	in.now = 50;
+	in.noiseTime = 50;
+	in.actor = {1, 7};
+	denied.synchronize(in.actor, in.frame, in.now);
+	ScriptedRandomSource deniedStartle({RandomTapeEntry::floatEntry("NoiseLook.StartleInhibit", {1, 7}, timing, 2, 4, 3)});
+	check(!denied.request(in, NoiseLookKind::Startle, {0, 300, 36}, deniedStartle, timing, false) &&
+			deniedStartle.verifyComplete() && !denied.active() && denied.inhibited(52.9f) && !denied.inhibited(53),
+		"denied dangerous noise still draws and inhibits without creating a latent spot");
+	denied.clearLook();
+	check(denied.inhibited(52), "clearing a refused noise spot preserves the independent inhibit clock");
+	ScriptedRandomSource deniedOrdinary({RandomTapeEntry::floatEntry("NoiseLook.Duration", {1, 7}, timing, 1, 2, 1.5f)});
+	check(!denied.request(in, NoiseLookKind::Ordinary, {300, 0, 36}, deniedOrdinary, timing, false) &&
+			deniedOrdinary.verifyComplete() && !denied.active() && denied.inhibited(52),
+		"denied ordinary noise consumes its duration but creates no goal and does not alter inhibition");
+	check(!denied.update(54, {0, 0, 0}, {0, 0, 36}, 0, 0, &pitch, &yaw),
+		"a rejected noise cannot resurrect after the higher spot and inhibit clock expire");
+	struct Reentry final : IRandomTraceSink
+	{
+		bool current = true;
+		void record(const RandomTraceRecord &) override { current = false; }
+	} reentry;
+	denied.reset();
+	denied.synchronize(in.actor, in.frame, in.now);
+	ScriptedRandomSource reentered({RandomTapeEntry::floatEntry("NoiseLook.StartleInhibit", {1, 7}, timing, 2, 4, 3)});
+	reentered.setTraceSink(&reentry);
+	check(!denied.request(in, NoiseLookKind::Startle, {0, 300, 36}, reentered, timing, false,
+			[&] { return reentry.current; }) && reentered.verifyComplete() && !denied.active() && !denied.inhibited(50),
+		"reentry during noise RNG consumes the draw but cannot publish the old inhibition clock");
 	return failures ? 1 : 0;
 }
