@@ -251,9 +251,13 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 		return true;
 	const auto revision = actor.executionRevision;
 	const auto epoch = machine.normalStateEpoch();
+	const auto attackEpoch = machine.attackEntryEpoch();
+	const auto full = services_->service_managedBotFullUpdateSequences()[index];
 	const std::function<bool()> current = [&] {
 		const auto controls = services_->service_compatibilitySurface().configuration();
 		return executionCurrent(index, receipt, revision) && machine.normalStateEpoch() == epoch &&
+			machine.attackEntryEpoch() == attackEpoch &&
+			services_->service_managedBotFullUpdateSequences()[index] == full &&
 			!machine.attackOverlayActive() && routeCurrent() && controls.mode == compat::RuntimeMode::Compatibility &&
 			controls.botEnable > 0.0f && controls.botStop == 0.0f &&
 			services_->service_navPublisher().snapshot().revision() == navigation.revision();
@@ -335,6 +339,8 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 	if (count == 0)
 	{
 		actor.huntApproaches.nextLookAt = now + wait.value;
+		// Native ClearLookAt is unconditional, including a grenade-owned spot.
+		actor.nativeGrenade.clearLook();
 		look.update = HuntApproachLookUpdate::Clear;
 		return true;
 	}

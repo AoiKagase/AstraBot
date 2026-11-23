@@ -1,5 +1,9 @@
 # C02-2b 手榴弾視線に拒否された音要求
 
+## 後続更新（2026-11-24）
+
+静止・接近候補0の無条件Clearは [GRENADE_ZERO_APPROACH_C02_2C1.md](GRENADE_ZERO_APPROACH_C02_2C1.md) で限定対応した。C02全体は部分対応のまま、非ゼロ・moving・Guard/Noise後続順と経路投擲は残す。以下の製品・実機・RNG数値はC02-2b時点の履歴である。
+
 基点 `663afcc8df96f97cb0278f42365ac29fd4c954fa`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。C02全体の完了ではなく、音要求の受付と独立したRNG・抑制時計の修正単位。
 
 ## 参照と変更
@@ -40,7 +44,7 @@ C4実機0/7/8も同じ最終品で逐次確認。受入れたnoise-4とC4の4試
 
 ## 残件
 
-1. C02-2c：Noiseのhandled returnとHunt/Guard後続RNG順、stationary非0の選択後拒否・0時の無条件Clear、moving encounterの抽選前抑止。
+1. C02-2c2：Noiseのhandled returnとHunt/Guard後続RNG順、stationary非0の選択後拒否、moving encounterの抽選前抑止。候補0のClearは後続C02-2c1で限定対応。
 2. C02-3：安全時間終了後の経路投擲とnative点列境界。
 3. C08/C10：照準所有、共通装備時計・遅延Touch順・既存C4/USE例外。
 4. V01/V02：参照全RNG/軌跡、Linux実機と多数Bot継続性能。

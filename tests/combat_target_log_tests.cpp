@@ -332,7 +332,9 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool plantEntryFixture = scenario && std::strcmp(scenario, "plant-entry") == 0;
 	const bool grenadeAdmissionFixture = scenario && std::strcmp(scenario, "native-grenade-admission") == 0;
 	const bool grenadeNoiseFixture = scenario && std::strcmp(scenario, "native-grenade-noise") == 0;
-	const bool nativeGrenadeFixture = grenadeAdmissionFixture || grenadeNoiseFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
+	const bool grenadeZeroReentryFixture = scenario && std::strcmp(scenario, "native-grenade-zero-reentry") == 0;
+	const bool grenadeZeroApproachFixture = grenadeZeroReentryFixture || (scenario && std::strcmp(scenario, "native-grenade-zero-approach") == 0);
+	const bool nativeGrenadeFixture = grenadeAdmissionFixture || grenadeNoiseFixture || grenadeZeroApproachFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
@@ -421,6 +423,117 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				grenadeEnemy.v.origin = gEntities[0].v.origin + Vector(-1000, 0, -256);
 			}
 			stepRifle(30, 0.0f, 22); // Deliberately stale rifle message; API still reports grenade.
+			if (grenadeZeroApproachFixture && grenadeFrameIndex == 11)
+			{
+				engine.pfnSzFromIndex = &grenadeAdmissionString;
+				DLL_FUNCTIONS hooks{};
+				int version = INTERFACE_VERSION;
+				if (!check(runtime.provideEntityApi(&hooks, &version) && hooks.pfnKeyValue && hooks.pfnTouch,
+						"C02-2c zero approach control: public material and Touch hooks available"))
+					return false;
+				auto &contact = gEntities[4];
+				contact = {};
+				contact.serialnumber = 42;
+				contact.v.classname = 20;
+				contact.v.takedamage = DAMAGE_YES;
+				contact.v.health = 50;
+				contact.v.solid = SOLID_BSP;
+				// Include the touching actor on every axis, so a newly prepared
+				// route cannot independently reject this admission probe.
+				contact.v.absmin = gEntities[0].v.origin + Vector(-16, -16, -36);
+				contact.v.absmax = gEntities[0].v.origin + Vector(40, 32, 44);
+				KeyValueData material{};
+				material.szClassName = const_cast<char *>("func_breakable");
+				material.szKeyName = const_cast<char *>("material");
+				material.szValue = const_cast<char *>("1");
+				const auto probe = [&] {
+					hooks.pfnKeyValue(&contact, &material);
+					hooks.pfnTouch(&gEntities[0], &contact);
+					runtime::BotCommand command{};
+					command.viewAngles = {-12, 75, 0};
+					command.movement = {120, 15, 0, IN_ATTACK, 0, 33};
+					gHookedGameDllTable.pfnClientCommand = &grenadeAdmissionClientCommand;
+					static_cast<metamod::BotCommandServices &>(runtime).behavior_applyObstacleCommand(0, command);
+					gHookedGameDllTable.pfnClientCommand = &combatGameClientCommand;
+					return command;
+				};
+				const auto before = probe();
+				if (!check(!before.synchronizeCombatView && (gLastRunPlayerMoveButtons & IN_ATTACK) && combatCommandPitch < -1,
+						"C02-2c zero approach control: native grenade spot rejects public contact before the clear"))
+					return false;
+				contact.free = TRUE;
+				runtime::BotCommand discard{};
+				static_cast<metamod::BotCommandServices &>(runtime).behavior_applyObstacleCommand(0, discard);
+				if (!check(loadHearingNav(runtime), "C02-2c zero approach control: real containing NAV has zero approaches"))
+					return false;
+				const auto &state = static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedBotStateMachines(0);
+				// NAV was unavailable during the native toss setup. Both normal
+				// movement warmup frames must finish before measuring lookaround.
+				stepRifle(30, 0, 4);
+				stepRifle(30, 0, 4);
+				if (!check(state.state() == compat::CompatibilityStateId::Hunt,
+						"C02-2c zero approach control: Hunt entry has completed before measuring its update"))
+					return false;
+				const auto epoch = state.normalStateEpoch();
+				struct ApproachDraws final : compat::IRandomTraceSink
+				{
+					unsigned intervals = 0, points = 0;
+					std::function<void()> interrupt;
+					void record(const compat::RandomTraceRecord &draw) override
+					{
+						if (std::strcmp(draw.request.semanticId, "LookAround.StateInterval") == 0)
+						{
+							++intervals;
+							if (interrupt) { auto callback = std::move(interrupt); interrupt = {}; callback(); }
+						}
+						if (std::strcmp(draw.request.semanticId, "LookAround.ApproachPoint") == 0) ++points;
+					}
+				} draws;
+				bool restarted = false;
+				const auto attackEpoch = state.attackEntryEpoch();
+				if (grenadeZeroReentryFixture) draws.interrupt = [&] {
+					auto &machine = const_cast<compat::CompatibilityStateMachine &>(state);
+					compat::StateUpdateContext context{};
+					context.actor = grenadeActor;
+					context.frame = {grenadeLife.mapGeneration(), grenadeLife.roundGeneration(), grenadePorts.service_adapterFrameCount()};
+					context.timestamp = globals.time;
+					context.fullUpdateSequence = grenadePorts.service_managedBotFullUpdateSequences()[0];
+					context.fullUpdate = context.alive = context.roundActive = true;
+					context.lifeAvailability = context.roundAvailability = context.attackObservation = compat::ObservationAvailability::Available;
+					restarted = machine.beginAttack(context) == compat::StateResult::Transitioned &&
+						machine.stopAttack(context) == compat::StateResult::Transitioned;
+				};
+				grenadePorts.service_compatibilityRandomSource().setTraceSink(&draws);
+				stepRifle(30, 0, 4);
+				if (grenadeZeroReentryFixture)
+				{
+					const bool control = restarted && state.attackEntryEpoch() == attackEpoch + 1 &&
+						!state.attackOverlayActive() && state.normalStateEpoch() == epoch && draws.intervals == 1;
+					if (!control)
+					{
+						grenadePorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+						return check(false, "C02-2c callback changes only Attack epoch and returns to the same Hunt");
+					}
+					stepRifle(30, 0, 4);
+					grenadePorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+					return check(draws.intervals == 2 && draws.points == 0,
+						"C02-2c Attack restart during interval RNG cannot commit the old look clock or clear");
+				}
+				grenadePorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+				std::fprintf(stderr, "C02 zero setup state=%d epoch_before=%llu epoch_after=%llu intervals=%u points=%u buttons=%u\n",
+					static_cast<int>(state.state()), static_cast<unsigned long long>(epoch),
+					static_cast<unsigned long long>(state.normalStateEpoch()), draws.intervals, draws.points,
+					gLastRunPlayerMoveButtons);
+				if (!check(state.state() == compat::CompatibilityStateId::Hunt && state.normalStateEpoch() == epoch &&
+						draws.intervals == 1 && draws.points == 0 && (gLastRunPlayerMoveButtons & IN_ATTACK),
+						"C02-2c zero approach control: same Hunt update draws interval only and retains native pin"))
+					return false;
+				contact.free = FALSE;
+				++contact.serialnumber;
+				const auto after = probe();
+				return check(after.synchronizeCombatView && (after.movement.buttons & IN_ATTACK),
+					"C02-2c stationary zero-approach ClearLook also clears native grenade spot without releasing the pin");
+			}
 			if (grenadeNoiseFixture && grenadeFrameIndex == 11)
 			{
 				engine.pfnRandomFloat = &hearingFixtureRandomFloat;

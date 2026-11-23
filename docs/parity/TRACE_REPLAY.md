@@ -1,8 +1,12 @@
 # P11 differential trace comparison
 
+## C02-2c1 静止候補ゼロのClearLookを限定対応（2026-11-24）
+
+Windows178/178＋PE7、Linux177/177＋ELF7合格。最終DLL `c76563d679cf…` を既存実機へ再配備し、候補配列だけをゼロにした有効な専用NAV入力で、手榴弾視線の解除・独立したピン保持32入力・期限後解放1入力を読取りCDB/実入力で確認した。形状・接続・隠れ場所・遭遇・場所情報は元NAVと同じで、試行終了後に元NAVの原文とmetadataを復元した。元NAVでC4 0/7/8も逐次合格、各実HLDS/CDB終了0・core.ini原文復元、追加サーバーコピー0。自然de_dust2の全経路一致とは扱わない。C02全体は部分対応、49歴史項目／47残件を維持。次はC02-2c2の非ゼロ・moving・Guard/Noise順序。詳細は [GRENADE_ZERO_APPROACH_C02_2C1.md](GRENADE_ZERO_APPROACH_C02_2C1.md)。以下は各時点の履歴を保持する。
+
 ## C02-2b 手榴弾視線中の音要求・抑制時計を部分修正（2026-11-23）
 
-Windows176/176＋PE7、Linux175/175＋ELF7合格。最終DLL `257a64a4530f…` を既存実機へ再配備し、公開の危険銃声が視線受付で拒否されてもRNGと2〜4秒の抑制時計が進むことを読取りCDB・実入力で確認した。C4実機0/7/8も逐次合格、追加サーバーコピー0。Hunt/Guardの後続順・stationary0 Clear・moving encounterはC02-2cとして残し、49歴史項目／47残件を維持する。詳細は [GRENADE_NOISE_ADMISSION_C02_2B.md](GRENADE_NOISE_ADMISSION_C02_2B.md)。以下のC02-2a/C02-1は当時の範囲を保持する。
+Windows176/176＋PE7、Linux175/175＋ELF7合格。最終DLL `257a64a4530f…` を既存実機へ再配備し、公開の危険銃声が視線受付で拒否されてもRNGと2〜4秒の抑制時計が進むことを読取りCDB・実入力で確認した。C4実機0/7/8も逐次合格、追加サーバーコピー0。Hunt/Guardの後続順・moving encounterはC02-2c2として残し（stationary0 Clearは後続C02-2c1で限定対応）、49歴史項目／47残件を維持する。詳細は [GRENADE_NOISE_ADMISSION_C02_2B.md](GRENADE_NOISE_ADMISSION_C02_2B.md)。以下のC02-2a/C02-1は当時の範囲を保持する。
 
 ## C02-2a 手榴弾視線中の破壊物割込みを部分修正（2026-11-23）
 
