@@ -1,12 +1,16 @@
+## C16 full移動の視線公開を限定完了（2026-11-23）
+
+Windows173/173＋PE7、Linux172/172＋ELF7合格。最終DLL `456ccc43…95610` を既存実機へ再配備し、同一Actor・実ゲーム時刻のfull移動598/598で共有視線と実RunPlayerMoveの一致を確認した。C16を限定完了へ更新。49歴史項目／47残件。C08・全参照リプレイ・両OS実機/継続性能は未完。詳細・指紋・除外区間は [FULL_LOOK_PUBLICATION_C16.md](FULL_LOOK_PUBLICATION_C16.md)。次はC02の手榴弾開始/投擲経路。
+
 ## C01共有角速度の限定完了（2026-11-23）
 
-Windows173/173＋PE7、Linux172/172＋ELF7合格。既存実機の最終DLLで2000 step、327非ゼロowner変更、164同時刻置換、1843実RPP角一致を確認した。C01を限定完了へ更新した。共有resultと最終RPPの不一致86件を記録し、既存full公開経路を新残件C16として追加した。C08/V01/V02を閉じない。49歴史項目／48残件。詳細・限界・SHA・証拠は [SHARED_LOOK_C01.md](SHARED_LOOK_C01.md)。次単位はC16、続いてC02。
+Windows173/173＋PE7、Linux172/172＋ELF7合格。既存実機の最終DLLで2000 step、327非ゼロowner変更、164同時刻置換、1843実RPP角一致を確認した。C01を限定完了へ更新した。共有resultと最終RPPの不一致86件を記録し、既存full公開経路を新残件C16として追加した。C08/V01/V02を閉じない。C01時点では49歴史項目／48残件。詳細・限界・SHA・証拠は [SHARED_LOOK_C01.md](SHARED_LOOK_C01.md)。当時の次単位C16は後続で限定完了（[記録](FULL_LOOK_PUBLICATION_C16.md)）。現行の次単位はC02。
 
 ## 2026-11-22 全ソース監査による現行判定
 
 従来の残件5群には具体的な漏れがあった。製品ソース198本をファイル単位で照合した現行正本は [FULL_SOURCE_AUDIT.md](FULL_SOURCE_AUDIT.md)、全パス・SHA・担当・根拠と残件IDは [FULL_SOURCE_INVENTORY.json](FULL_SOURCE_INVENTORY.json)。一般GameDLL全行や全分岐の一致を保証する監査ではなく、full/focused/依存棚卸しを区別した。
 
-残件は、視線/戦闘/武器、状態/目的/人質/VIP、NAV/移動/知覚、公開観測/イベント/発話/管理/profile、固定参照RNG/両OS実機/継続性能の5群へ具体化した。C01の共有ばねは限定完了（[記録](SHARED_LOOK_C01.md)）。次単位はC16（full command視線公開）、続いてC02。実機は既存再配備、隔離が必要でも固定1コピーを再利用する。
+残件は、視線/戦闘/武器、状態/目的/人質/VIP、NAV/移動/知覚、公開観測/イベント/発話/管理/profile、固定参照RNG/両OS実機/継続性能の5群へ具体化した。C01の共有ばねは限定完了（[記録](SHARED_LOOK_C01.md)）。full公開C16も後続で限定完了（[記録](FULL_LOOK_PUBLICATION_C16.md)）。次単位はC02。実機は既存再配備、隔離が必要でも固定1コピーを再利用する。
 
 旧記録のCRT音声shuffle（21）とLinux胸部照準の既知失敗（22）はオフライン解消へ更新した。ClearLook、早期Plant判断、MoveTo→Plant順、Plant入場NAV入力/Run、Plant前Idle経路抑止、cold Idle/Buy視線供給も完了した限定範囲を現行未完一覧から外す。未実装だった視認/音/状態/発話等のP00/P04/P06記録は、その後の実装と区別する。過去の失敗・当時の実行結果は履歴として保持する。
 
@@ -99,7 +103,7 @@ CDBはDLL module-loadを待ってBPを設定。最初のPlantは `59.37293243` �
 当時の残件5群（履歴。現行正本は [全ソース監査](FULL_SOURCE_AUDIT.md)）。
 
 1. Plant前Idleの一般経路準備は後続b75be3aで限定完了。
-2. 通常Idle/Buy視線供給は6fdadbdで限定完了。Combat/Guard共有角速度C01は限定完了。full視線公開C16、Combat更新順C08、C4初回未装備/実水没C14は未完。
+2. 通常Idle/Buy視線供給は6fdadbdで限定完了。Combat/Guard共有角速度C01は限定完了。full視線公開C16は後続で限定完了。Combat更新順C08、C4初回未装備/実水没C14は未完。
 3. Hunt/NAV移動、同一area/fallback、味方待機、cs_assaultのはしご、経路失敗とタイムアウトの直接実機対照。
 4. 視認した敵をAimせず通過する問題、旋回カクつき、多人数の継続性能。
 5. 標準GameDLLの公開観測経路、未網羅のCSBot参照差分。
@@ -119,7 +123,7 @@ CDBはDLL module-loadを待ってBPを設定。最初のPlantは `59.37293243` �
 当時の残件5群（履歴。現行正本は [全ソース監査](FULL_SOURCE_AUDIT.md)）。当時の入場NAV末尾入力の課題はa924873で生成済み入力保持を修正した。実機のnative PATH_FAILURE/buttons14とAstra EndOfPath/buttons4は異なる終端条件であり、同条件timeout比較は現在も未完。
 
 1. Plant前Idleの一般経路準備はb75be3a、Plant入場更新の生成済みNAV入力保持はa924873で限定完了。同条件timeoutの実機対照は残る。
-2. 通常Idle/Buy視線供給は6fdadbdで限定完了。Combat/Guard共有角速度C01は限定完了。full視線公開C16、Combat更新順C08、C4初回未装備/実水没C14は未完。
+2. 通常Idle/Buy視線供給は6fdadbdで限定完了。Combat/Guard共有角速度C01は限定完了。full視線公開C16は後続で限定完了。Combat更新順C08、C4初回未装備/実水没C14は未完。
 3. Hunt/NAV移動、同一area/fallback、味方待機、cs_assaultのはしご、経路失敗。
 4. 視認した敵をAimせず通過する問題、旋回カクつき、多人数の継続性能。
 5. 標準GameDLLの公開観測経路、未網羅のCSBot参照差分。
@@ -141,7 +145,7 @@ Buyが優先された場合はpending入場とPlant chatterを取消し、Buyの
 当時の残件5群（履歴。現行正本は [全ソース監査](FULL_SOURCE_AUDIT.md)）。当時の次単位予定だったMoveToの非PROGRESSING後Plant判断は後続6546606で限定完了。
 
 1. Plant前Idleの一般経路準備はb75be3a、MoveTo→Plantの順序は6546606で限定完了。選定/RNG差S01/S02は別件。
-2. 通常Idle/Buy視線供給は6fdadbdで限定完了。Combat/Guard共有角速度C01は限定完了。full視線公開C16、Combat更新順C08、C4初回未装備/実水没C14は未完。
+2. 通常Idle/Buy視線供給は6fdadbdで限定完了。Combat/Guard共有角速度C01は限定完了。full視線公開C16は後続で限定完了。Combat更新順C08、C4初回未装備/実水没C14は未完。
 3. Hunt/NAV移動、同一area/fallback、味方待機、cs_assaultのはしご、経路失敗。
 4. 視認した敵をAimせず通過する問題、旋回カクつき、多人数の継続性能。
 5. 標準GameDLLの公開観測経路、未網羅のCSBot参照差分。
@@ -170,7 +174,7 @@ Buyが優先された場合はpending入場とPlant chatterを取消し、Buyの
 
 実機証拠は `C:/Temp/astrabot-plant-terminal-order`、最終DLL/PDBと索引は `artifacts/local/debug/csbot-plant-terminal-20261121`。最終v2 DLL SHA-256は `fcdd52c9ee91c64404d7cd4ff8013d5c9f263f29f223fb48ac9c24dd9e20e42c`。通常GameDLLの設置開始後、区域外へ一度移動する対照では、旧版は15.522994の移動直後15.648941にMoveToへ早期退出し、AK/buttons0。固定版は5秒超までPlantを保ち、Idleへ移った13.784047から3コマンド、AK/buttons1・IN_DUCKなしを出す。最終v2はPlant age5.022の25.335514にIdleへ移り、25.335514/25.381092/25.426647の3コマンドでAK/buttons1、次の全体更新25.474037で0となった。通常設置成功と実C4ドロップでは、C4が未装備になった最初のPlant更新がSelectC4→退出時EquipBestとなり、末尾に新しいPrimaryAttackは追加しない。参照・最終v2双方の読取専用CDBでこの即時2コマンド順を採録した。
 
-初期候補 `4597335e…` は末尾のyawをnavigation draftの180°へ変え、実active AKに対して遅れたCurWeapon C4からPrimaryAttackを作る境界もあった。最終v2は退出full限定の明示保持契約を追加し、Upkeep直後の実角pitch1.225865/yaw97.783432を末尾へ保持する。実command回帰はNAV draft180°・末尾67°で実RunPlayerMoveを検証し、次のdecisionでは保持を解除する。当時の次light通常視線ばねの残件は後続3cde77bで限定解消し、cold Idle/Buy供給も6fdadbdで解消した。共有角速度C01は後続で限定完了。全軌跡/更新順C08とfull公開C16は残る。参照は98.221519→94.888183→88.221519と旋回し、v2はpriority floorを取消した後97.783432を保持する。通常look-goal/springの再開、同更新の経路準備、Hide地点と後続経路・RNG列全体の一致は主張しない。Plant初回未装備の直接実機、実水没、独自複数武器スロットも未完のまま保持する。
+初期候補 `4597335e…` は末尾のyawをnavigation draftの180°へ変え、実active AKに対して遅れたCurWeapon C4からPrimaryAttackを作る境界もあった。最終v2は退出full限定の明示保持契約を追加し、Upkeep直後の実角pitch1.225865/yaw97.783432を末尾へ保持する。実command回帰はNAV draft180°・末尾67°で実RunPlayerMoveを検証し、次のdecisionでは保持を解除する。当時の次light通常視線ばねの残件は後続3cde77bで限定解消し、cold Idle/Buy供給も6fdadbdで解消した。共有角速度C01は後続で限定完了。full公開C16は後続で限定完了。全軌跡/更新順C08は残る。参照は98.221519→94.888183→88.221519と旋回し、v2はpriority floorを取消した後97.783432を保持する。通常look-goal/springの再開、同更新の経路準備、Hide地点と後続経路・RNG列全体の一致は主張しない。Plant初回未装備の直接実機、実水没、独自複数武器スロットも未完のまま保持する。
 
 最終オフラインはWindows x86 169/169・PE公開7関数、終了後の単独Linux x86 168/168・ELF公開7関数が合格。ELF SHA-256は `1ef241017b39b9ba8b540e8826f9e54141456df365504d72dc5359821a1c05f9`。両OSの履歴は固定baselineを保ち、同じ35ブロック・24削除11移動だけの限定補正で153,394→153,320行を全行照合した。Windows補正後SHAは `79270824a2708423424bcfc551729b20a82b5fec21eba39e1cc0c51b15623a04`、Linuxは `ce88e9bced91a27bb0a86f99c8abae587378d8f8f193e52c421c41437082653e`。許可されたcallback文字列以外の差はなく、RNG記録は不変。実機12試行は実ゲーム終了0・forced=falseを各manifestで確認し、最終v2の4試行は同一DLL SHAである。
 

@@ -8548,8 +8548,8 @@
         "regamedll/dlls/bot/cs_bot_vision.cpp:57",
         "regamedll/dlls/bot/cs_bot_update.cpp:186"
       ],
-      "evidence": "最新製品6fdadbdのWindows171/171+PE7/Linux170/170+ELF7は既存オフライン証拠。Windows既存実機への再配備はDLLロード/Bot参加/Round_Startのsmokeに限定。Linux実機・人間クライアントのAim/旋回・長時間多数Bot/マップ切替/FPS/lag受入れは完了しない。",
-      "tests": "既存実機再配備を基本に、人数/時間/マップ/製品SHAと観測値を明記して確認。隔離は固定1コピーのみ再利用する。",
+      "evidence": "最新C16のWindows173/173+PE7/Linux172/172+ELF7はオフライン合格。既存Windows実機への最終DLL再配備と同一Actor/実時刻598full公開一致は限定受入れ。Linux実機・人間クライアントのAim/旋回・長時間多数Bot/マップ切替/FPS/lagは未受入れ。",
+      "tests": "既存実機再配備を基本に、人数/時間/マップ/製品SHAと観測値を明記して確認。隔離は固定1コピーのみ再利用する。 cold/post-combat停止で有限Aheadがない場合のlook初期化は正規RED/固定参照比較を別途確認する。C16の暖機後有限Ahead保持試験で閉じない。",
       "backlog_mapping": "管理/プロファイル/横断検証。旧5群では具体名なし。",
       "confidence": "high",
       "title_ja": "両OS実機・照準/旋回・多人数継続性能",
@@ -8637,7 +8637,7 @@
     {
       "id": "C16",
       "title": "Full movement command can publish raw view outside shared Upkeep result",
-      "status": "implementation_gap",
+      "status": "resolved_bounded",
       "astra": [
         "src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1273",
         "src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1389",
@@ -8647,13 +8647,23 @@
         "regamedll/dlls/bot/cs_bot_vision.cpp:57",
         "regamedll/dlls/bot/cs_bot_update.cpp:179"
       ],
-      "evidence": "Current source selects pitch0/movementYaw in non-navigation draft and can directly write entity view before executeManagedBotCommand(...,true). SharedLook is neither reset nor integrated by this writer. Final-DLL live3 observed86 prior priority0 SharedResult/final RPP differences; first debugger.log:4690. Exact branch attribution of all86 is not established. Independent read-only review distinguishes this from resolved shared momentum C01 and Combat cadence C08.",
-      "tests": "Require canonical full/light publication RED with actual command and same-actor/time write attribution on redeployed final DLL. Do not merely overwrite final angle.",
-      "backlog_mapping": "new explicit full-command publication residual; next repair unit",
+      "evidence": "Compatibility full movement drafts and dispatch retain the current Upkeep view; MoveTo/Follow/Escape feed the next path Ahead. Stopped ordinary path commands restore only prior finite yaw after resetting owner metadata. Canonical moving/stopped/next-Upkeep/Escape REDs, final Windows173/Linux172 and PE/ELF7, final-DLL same-actor actual-clock full publication598/598. Broad stale-time comparisons are excluded, not accepted as same-time matches.",
+      "tests": "runtime_command_scenarios: actual RPP/pitch, same-full spring retention, exact next MoveTo/Escape recurrence, cached axes, stopped retained Ahead, Follow, Enhanced and existing ladder controls. Final all CTest173/172 pass.",
+      "backlog_mapping": "Resolved bounded C16; C08 cadence, cold/post-combat stopped initialization investigation and V01/V02 remain.",
       "confidence": "high",
       "title_ja": "full移動commandのUpkeep外raw視線公開",
-      "status_ja": "差確定",
-      "group": 1
+      "status_ja": "限定完了",
+      "group": 1,
+      "historical_evidence": "Current source selects pitch0/movementYaw in non-navigation draft and can directly write entity view before executeManagedBotCommand(...,true). SharedLook is neither reset nor integrated by this writer. Final-DLL live3 observed86 prior priority0 SharedResult/final RPP differences; first debugger.log:4690. Exact branch attribution of all86 is not established. Independent read-only review distinguishes this from resolved shared momentum C01 and Combat cadence C08.",
+      "resolution": {
+        "record": "FULL_LOOK_PUBLICATION_C16.md",
+        "base_commit": "c379dd96ab83e4df753441e9148c0f7690eec20e",
+        "source_manifest": "artifacts/local/debug/csbot-full-look-publication-c16-20261123/final/freeze.json",
+        "dll_sha256": "456ccc43b61da6b5c02cd7e39cc9737fafae9ffc2c7fcf17031e078c66095610",
+        "actual_hlds_pid": 22516,
+        "full_actual_clock_matches": 598,
+        "server_copies_created": 0
+      }
     }
   ],
   "reports": [
@@ -8682,6 +8692,19 @@
       "new_findings": [
         "C16"
       ]
+    },
+    {
+      "date": "2026-11-23",
+      "record": "FULL_LOOK_PUBLICATION_C16.md",
+      "historical_inventory_scope": "Original audit fingerprints retained; all198 current production paths checked,197 unchanged from C01 and one focused command implementation change; current source manifest separate. No all-branches claim.",
+      "historical_findings": 49,
+      "open_findings": 47,
+      "resolved_bounded": [
+        "C01",
+        "C16"
+      ],
+      "new_findings": [],
+      "unverified_case_retained_under": "V02: cold/post-combat stopped look initialization with no finite Ahead"
     }
   ]
 }

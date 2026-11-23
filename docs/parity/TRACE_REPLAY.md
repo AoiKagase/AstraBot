@@ -1,8 +1,12 @@
 # P11 differential trace comparison
 
+## C16 full移動の視線公開を限定完了（2026-11-23）
+
+Windows173/173＋PE7、Linux172/172＋ELF7合格。最終DLL `456ccc43…95610` を既存実機へ再配備し、同一Actor・実ゲーム時刻のfull移動598/598で共有視線と実RunPlayerMoveの一致を確認した。C16を限定完了へ更新。49歴史項目／47残件。C08・全参照リプレイ・両OS実機/継続性能は未完。詳細・指紋・除外区間は [FULL_LOOK_PUBLICATION_C16.md](FULL_LOOK_PUBLICATION_C16.md)。次はC02の手榴弾開始/投擲経路。
+
 ## C01共有角速度の限定完了（2026-11-23）
 
-Windows173/173＋PE7、Linux172/172＋ELF7合格。既存実機の最終DLLで2000 step、327非ゼロowner変更、164同時刻置換、1843実RPP角一致を確認した。C01を限定完了へ更新した。共有resultと最終RPPの不一致86件を記録し、既存full公開経路を新残件C16として追加した。C08/V01/V02を閉じない。49歴史項目／48残件。詳細・限界・SHA・証拠は [SHARED_LOOK_C01.md](SHARED_LOOK_C01.md)。次単位はC16、続いてC02。
+Windows173/173＋PE7、Linux172/172＋ELF7合格。既存実機の最終DLLで2000 step、327非ゼロowner変更、164同時刻置換、1843実RPP角一致を確認した。C01を限定完了へ更新した。共有resultと最終RPPの不一致86件を記録し、既存full公開経路を新残件C16として追加した。C08/V01/V02を閉じない。C01時点では49歴史項目／48残件。詳細・限界・SHA・証拠は [SHARED_LOOK_C01.md](SHARED_LOOK_C01.md)。当時の次単位C16は後続で限定完了（[記録](FULL_LOOK_PUBLICATION_C16.md)）。現行の次単位はC02。
 
 
 ## 通常Idle/Buyの初回からの視線供給（2026-11-22）

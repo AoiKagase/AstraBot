@@ -23,7 +23,9 @@ bool usesApproachLook(compat::CompatibilityStateId state)
 bool usesNavigationLook(compat::CompatibilityStateId state)
 {
 	return usesApproachLook(state) || state == compat::CompatibilityStateId::Hide ||
-		state == compat::CompatibilityStateId::InvestigateNoise;
+		state == compat::CompatibilityStateId::InvestigateNoise ||
+		state == compat::CompatibilityStateId::MoveTo || state == compat::CompatibilityStateId::Follow ||
+		state == compat::CompatibilityStateId::EscapeFromBomb;
 }
 
 bool isDefuseApproach(const compat::CompatibilityStateMachine &machine)
@@ -1260,8 +1262,10 @@ MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t index, 
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
 	auto &actor = actors_[index];
 	const bool huntApproach = usesApproachLook(machine.state()) && actor.huntApproachLookActive;
+	const bool compatibilityMovement =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	const bool navigationLook =
-		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		compatibilityMovement &&
 		!machine.attackOverlayActive() && !locomotionIntent.nativeLadderControl &&
 		usesNavigationLook(machine.state()) &&
 		(locomotionIntent.speed > 0.0f || huntApproach || movement.huntApproachLook.tracking() ||
@@ -1269,7 +1273,9 @@ MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t index, 
 			(machine.state() == compat::CompatibilityStateId::Hunt && movement.roamDecision.huntEndpointSteering));
 	const bool defuseLook = movement.observation.defuseApproach && isDefuseApproach(machine) &&
 		!machine.attackOverlayActive() && !locomotionIntent.nativeLadderControl && locomotionIntent.speed > 0.0f;
-	command.synchronizeCombatView = navigationLook || defuseLook;
+	// A full decision chooses movement and the next Ahead goal. Upkeep owns
+	// the view already produced this tick, including when movement stops.
+	command.synchronizeCombatView = compatibilityMovement || defuseLook;
 	command.viewAngles = (locomotionIntent.nativeLadderControl || command.synchronizeCombatView)
 		? runtime::ViewAngles{handle.entity->v.v_angle.x, handle.entity->v.v_angle.y, 0.0f}
 		: runtime::ViewAngles{0.0f, movementYaw(locomotionIntent.direction), 0.0f};
@@ -1335,7 +1341,18 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 			actor.descentFloorLook = false;
 		}
 		else
+		{
+			const bool retainAhead = compatibilityMovement && !before.dead && !priorityLook &&
+				!locomotionIntent.nativeLadderControl &&
+				(machine.state() == compat::CompatibilityStateId::MoveTo ||
+					machine.state() == compat::CompatibilityStateId::Follow ||
+					machine.state() == compat::CompatibilityStateId::EscapeFromBomb);
+			const float retainedYaw = actor.navigationLookYaw;
 			actor.resetPathLook();
+			// Stopping retains Ahead, not the prior Hunt/ladder/defuse owner.
+			if (retainAhead && std::isfinite(retainedYaw))
+				actor.navigationLookYaw = retainedYaw;
+		}
 	}
 	else if (!requestedAction.preserveUpkeepView &&
 		(locomotionIntent.speed > 0.0f || (huntEndpoint && roamDecision.huntWaitingForFriend)))
@@ -1394,7 +1411,7 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 															  : runtime::ViewAngles{view.x, view.y, view.z};
 	}
 	command.synchronizeCombatView =
-		actionProposal.hasCombatAim || actionProposal.hasGuardLook || locomotionIntent.nativeLadderControl || navigationLook ||
+		compatibilityMovement || actionProposal.hasCombatAim || actionProposal.hasGuardLook || locomotionIntent.nativeLadderControl || navigationLook ||
 		actionProposal.preserveUpkeepView;
 	applyUseEntityLook(index, *handle.entity, actionProposal, command);
 	command.movement.buttons = actionDispatch.buttons;

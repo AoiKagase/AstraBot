@@ -571,6 +571,159 @@ int main()
 	if (!check(services.lastForward == 0.0f && services.lastSide == -250.0f &&
 			services.lastButtons == (IN_MOVELEFT | IN_DUCK), "blind retreat at the existing crouch retains max input"))
 		return 1;
+	{
+		// Native Upkeep owns the view already published this tick. A subsequent
+		// MoveTo full update may choose a route goal, but must not snap the view
+		// to that route or erase pitch before the next Upkeep.
+		ScenarioServices publication;
+		publication.surface.setFloat("bot_enable", 1.0f);
+		BotCommandRuntime publisher;
+		publisher.bindServices(publication);
+		auto &actor = publication.handles[0];
+		compat::StateUpdateContext frame{};
+		frame.actor = {actor.actor.slot, actor.actor.actorGeneration};
+		frame.frame = {1U, 1U, 1U};
+		frame.timestamp = publication.globals.time;
+		frame.fullUpdateSequence = 1U;
+		frame.fullUpdate = true;
+		publication.stateMachine = compat::CompatibilityStateMachine(frame.actor);
+		if (!check(publication.stateMachine.initialize(frame) == compat::StateResult::Transitioned,
+				"C16 initialize a live Idle actor"))
+			return 1;
+		actor.entity->v.v_angle = Vector(-4.0f, 35.0f, 0.0f);
+		auto physics = publication.observation_captureMovementPhysicsState(actor.entity, true, true);
+		const auto idleDraft = publisher.beginNeutralCommand(0U, actor, physics);
+		const ActionProposal idleAction{ActionKind::None, idleDraft.command.viewAngles, 0U};
+		publisher.finishNeutralCommand(0U, actor, physics, idleDraft, idleAction);
+		publication.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+		publisher.advanceUpkeepLook(0U, actor);
+		const auto heldView = actor.entity->v.v_angle;
+		const auto heldSpring = publisher.lookSpring(0U);
+		if (!check(heldSpring.yawVelocity != 0.0f && heldView.x != 0.0f && heldView.y != 90.0f,
+				"C16 control: preceding Upkeep has nonzero velocity and a view distinct from the route"))
+			return 1;
+		frame.frame.tick++;
+		frame.fullUpdateSequence++;
+		frame.timestamp = publication.globals.time;
+		if (!check(publication.stateMachine.transition(compat::CompatibilityStateId::MoveTo,
+				compat::StateTransitionReason::ExplicitRequest, compat::StateTransitionId::ExplicitStateChange, frame) ==
+				compat::StateResult::Transitioned, "C16 enter ordinary MoveTo after this tick's Upkeep"))
+			return 1;
+		NavigationUpdate route{};
+		route.locomotionIntent.direction = {0.0f, 1.0f, 0.0f};
+		route.locomotionIntent.speed = 240.0f;
+		physics = publication.observation_captureMovementPhysicsState(actor.entity, true, true);
+		const auto routeDraft = publisher.beginMovementCommand(0U, actor,
+			publication.lifecycle.tokenForSlot(1U), physics, route);
+		const ActionProposal routeAction{ActionKind::None, routeDraft.command.viewAngles, 0U};
+		const auto movesBefore = publication.moves;
+		publisher.finishMovementCommand(0U, actor, publication.lifecycle.tokenForSlot(1U), physics,
+			route, routeDraft, routeAction);
+		const auto afterSpring = publisher.lookSpring(0U);
+		if (!check(publication.moves == movesBefore + 1U &&
+				afterSpring.yawVelocity == heldSpring.yawVelocity && afterSpring.pitchVelocity == heldSpring.pitchVelocity,
+				"C16 control: real movement command dispatched without reintegrating the shared spring"))
+			return 1;
+		if (!check(publication.lastYaw == heldView.y && actor.entity->v.v_angle.x == heldView.x &&
+				actor.entity->v.v_angle.y == heldView.y,
+				"C16 MoveTo full command preserves the preceding Upkeep view at RunPlayerMove"))
+			return 1;
+		const float heldForward = publication.lastForward, heldSide = publication.lastSide;
+		publication.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+		auto expectedSpring = heldSpring;
+		const float now = publication.globals.time;
+		const auto expected = compat::trackAim(heldView.y, heldView.x,
+			90.0f + 2.0f * ActionAdapter::csBotCosine(33.0f * now),
+			2.0f * ActionAdapter::csBotCosine(13.0f * now - 90.0f),
+			runtime::BotTimingScheduler::kCommandInterval, 1.0f, &expectedSpring, false);
+		publisher.advanceUpkeepLook(0U, actor);
+		publisher.executeManagedBotCommand(0U, actor);
+		if (!check(std::fabs(publication.lastYaw - expected.yaw) < .0001f &&
+				std::fabs(actor.entity->v.v_angle.x - expected.pitch) < .0001f &&
+				publication.lastForward == heldForward && publication.lastSide == heldSide,
+				"C16 next cached Upkeep turns toward the new Ahead with retained full-decision axes"))
+			return 1;
+		const auto stoppedView = actor.entity->v.v_angle;
+		route.locomotionIntent.speed = 0.0f;
+		route.locomotionIntent.direction = {};
+		physics = publication.observation_captureMovementPhysicsState(actor.entity, true, true);
+		const auto stoppedDraft = publisher.beginMovementCommand(0U, actor,
+			publication.lifecycle.tokenForSlot(1U), physics, route);
+		const ActionProposal publicationStoppedAction{ActionKind::None, stoppedDraft.command.viewAngles, 0U};
+		publisher.finishMovementCommand(0U, actor, publication.lifecycle.tokenForSlot(1U), physics,
+			route, stoppedDraft, publicationStoppedAction);
+		if (!check(publication.lastYaw == stoppedView.y && actor.entity->v.v_angle.x == stoppedView.x &&
+				publication.lastForward == 0.0f && publication.lastSide == 0.0f,
+				"C16 stopped MoveTo full command retains this Upkeep view"))
+			return 1;
+		const auto stoppedSpring = publisher.lookSpring(0U);
+		publication.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+		publisher.advanceUpkeepLook(0U, actor);
+		publisher.executeManagedBotCommand(0U, actor);
+		if (!check(publication.lastYaw != stoppedView.y &&
+				publisher.lookSpring(0U).yawVelocity != stoppedSpring.yawVelocity &&
+				publication.lastForward == 0.0f && publication.lastSide == 0.0f,
+				"C16 stopped cached Upkeep continues tracking the retained Ahead"))
+			return 1;
+		const auto followView = actor.entity->v.v_angle;
+		frame.frame.tick++;
+		frame.fullUpdateSequence++;
+		frame.timestamp = publication.globals.time;
+		if (!check(publication.stateMachine.transition(compat::CompatibilityStateId::Follow,
+				compat::StateTransitionReason::ExplicitRequest, compat::StateTransitionId::ExplicitStateChange, frame) ==
+				compat::StateResult::Transitioned, "C16 enter Follow"))
+			return 1;
+		route.locomotionIntent.speed = 240.0f;
+		route.locomotionIntent.direction = {-1.0f, 0.0f, 0.0f};
+		const auto followDraft = publisher.beginMovementCommand(0U, actor,
+			publication.lifecycle.tokenForSlot(1U), physics, route);
+		const ActionProposal followAction{ActionKind::None, followDraft.command.viewAngles, 0U};
+		publisher.finishMovementCommand(0U, actor, publication.lifecycle.tokenForSlot(1U), physics,
+			route, followDraft, followAction);
+		if (!check(publication.lastYaw == followView.y && actor.entity->v.v_angle.x == followView.x,
+				"C16 Follow full command also retains the preceding Upkeep view"))
+			return 1;
+		frame.frame.tick++;
+		frame.fullUpdateSequence++;
+		if (!check(publication.stateMachine.transition(compat::CompatibilityStateId::EscapeFromBomb,
+				compat::StateTransitionReason::ExplicitRequest, compat::StateTransitionId::ExplicitStateChange, frame) ==
+				compat::StateResult::Transitioned, "C16 enter EscapeFromBomb"))
+			return 1;
+		route.locomotionIntent.direction = {1.0f, 0.0f, 0.0f};
+		const auto escapeDraft = publisher.beginMovementCommand(0U, actor,
+			publication.lifecycle.tokenForSlot(1U), physics, route);
+		const ActionProposal escapeAction{ActionKind::None, escapeDraft.command.viewAngles, 0U};
+		publisher.finishMovementCommand(0U, actor, publication.lifecycle.tokenForSlot(1U), physics,
+			route, escapeDraft, escapeAction);
+		const auto escapeView = actor.entity->v.v_angle;
+		auto escapeSpring = publisher.lookSpring(0U);
+		publication.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+		const float escapeAt = publication.globals.time;
+		const auto expectedEscape = compat::trackAim(escapeView.y, escapeView.x,
+			2.0f * ActionAdapter::csBotCosine(33.0f * escapeAt),
+			2.0f * ActionAdapter::csBotCosine(13.0f * escapeAt - 90.0f),
+			runtime::BotTimingScheduler::kCommandInterval, 1.0f, &escapeSpring, false);
+		publisher.advanceUpkeepLook(0U, actor);
+		publisher.executeManagedBotCommand(0U, actor);
+		if (!check(std::fabs(publication.lastYaw - expectedEscape.yaw) < .0001f &&
+				std::fabs(actor.entity->v.v_angle.x - expectedEscape.pitch) < .0001f &&
+				publisher.lookSpring(0U).yawVelocity == escapeSpring.yawVelocity,
+				"C16 EscapeFromBomb publishes a route goal for the next cached Upkeep"))
+			return 1;
+		publication.surface.setString("astrabot_mode", "enhanced");
+		route.locomotionIntent.direction = {-1.0f, 0.0f, 0.0f};
+		const auto enhancedSpring = publisher.lookSpring(0U);
+		const auto enhancedDraft = publisher.beginMovementCommand(0U, actor,
+			publication.lifecycle.tokenForSlot(1U), physics, route);
+		const ActionProposal enhancedAction{ActionKind::None, enhancedDraft.command.viewAngles, 0U};
+		publisher.finishMovementCommand(0U, actor, publication.lifecycle.tokenForSlot(1U), physics,
+			route, enhancedDraft, enhancedAction);
+		if (!check(std::fabs(std::fabs(publication.lastYaw) - 180.0f) < .0001f &&
+				actor.entity->v.v_angle.x == 0.0f &&
+				publisher.lookSpring(0U).yawVelocity == enhancedSpring.yawVelocity,
+				"C16 Enhanced retains its existing direct movement view without stepping the shared spring"))
+			return 1;
+	}
 	std::puts("runtime command orchestration scenarios: PASS");
 	return 0;
 }

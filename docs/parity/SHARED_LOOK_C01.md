@@ -20,10 +20,10 @@ module-load後に最終PDBの型/ABIを確認して読取りBPを設定。live3�
 
 CDBは上限で正常detach/exit0。HLDSは同じPIDで継続し、実ロード先とDLL SHAを再確認した。最初のliveは72通常stepのみ、live2は採録開始前に無人時population条件でBotが消えたためowner切替証拠に流用しない。liveのmodule-load初回script解釈失敗とcommand引数offset失敗は除外し、同一process内で修正した。応答しなくなった最初のHLDS/CDBはユーザー許可後に終了、実PID0台確認後に次を起動した。UI操作ツール期限切れ、RCON資格情報利用の自動承認拒否も受入れ証拠に使っていない。
 
-## 残る境界：C16とC08
+## 当時の残件と後続C16／残るC08
 
-実機には先行priority0共有resultと最終RPPの不一致が**86件**あった。最初は`live3/debugger.log:4690`（先行yaw7.59674072/pitch-1.51635194、最終yaw100.60433197/pitch0）。現ソース`beginMovementCommand:1273–1275`にはpitch0/移動yawのdraft、`finishMovementCommand:1389,1396–1398,1489–1496`には同期しないviewをentityへ直接公開する経路が残る。共有ばねの再積分/resetではない。全86件のbranch帰属は未検証であり、**新残件C16**として別単位で修正・対照する。C08のCombat視認/offset/goal更新順、V01/V02の全参照RNG・両OS実機・継続性能も未完。
+実機には先行priority0共有resultと最終RPPの不一致が**86件**あった。最初は`live3/debugger.log:4690`（先行yaw7.59674072/pitch-1.51635194、最終yaw100.60433197/pitch0）。当時のソース`beginMovementCommand:1273–1275`にはpitch0/移動yawのdraft、`finishMovementCommand:1389,1396–1398,1489–1496`には同期しないviewをentityへ直接公開する経路が残る。共有ばねの再積分/resetではない。全86件のbranch帰属は未検証であり、当時は**新残件C16**として分離した。後続の [C16限定完了](FULL_LOOK_PUBLICATION_C16.md) でfull公開経路を修正し、実時刻付き598/598実RPP一致を確認した。旧86件の全branch帰属や全軌跡一致は主張しない。C08のCombat視認/offset/goal更新順、V01/V02の全参照RNG・両OS実機・継続性能も未完。
 
-C01は「共有角速度と1回相当の積分」の限定完了であり、唯一のview書込み経路、全ownerの実機受入れ、全角度軌跡一致を意味しない。台帳は49歴史項目、C01を除いて**48残件**。次はC16のfull/light公開順をREDから確認する。
+C01は「共有角速度と1回相当の積分」の限定完了であり、唯一のview書込み経路、全ownerの実機受入れ、全角度軌跡一致を意味しない。このC01時点の台帳は49歴史項目、C01を除いて**48残件**だった。後続C16の限定完了後は**47残件**。次はC02の手榴弾開始/投擲経路。
 
 証拠：`artifacts/local/debug/csbot-shared-look-c01-20261122/`の`final/freeze.json`、両OS最終ログ、`history-review.md`、`live3/analysis-current.json`、`live3/loaded-modules-final.json`、`live3/continuity.json`。失敗/旧候補は上書きせず保持。今回の対象パスのみcommitし、local masterへFFした同一性の最終receiptは同rootの`post-merge.json`に記録する。pushなし。
