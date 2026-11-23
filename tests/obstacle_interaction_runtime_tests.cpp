@@ -156,14 +156,25 @@ bool testObstacleInteraction(astrabot::metamod::PluginRuntime &runtime, enginefu
 	runtime.onWriteByte(4);
 	runtime.onWriteByte(1);
 	runtime.onMessageEnd();
+	auto &pinServices = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime);
+	auto pinFull = pinServices.service_managedBotFullUpdateSequences()[0];
+	bool observedPinFull = false;
 	for (unsigned i = 0; i < 32; ++i)
 	{
 		hooks.pfnTouch(&self, &obstacle);
 		step();
-		if (!check((gLastRunPlayerMoveButtons & (IN_ATTACK | IN_ATTACK2)) == 0,
-				"contact never throws the still-active grenade"))
+		if (pinServices.service_managedBotFullUpdateSequences()[0] != pinFull)
+		{
+			pinFull = pinServices.service_managedBotFullUpdateSequences()[0];
+			observedPinFull = true;
+		}
+		if (!check((gLastRunPlayerMoveButtons & IN_ATTACK2) == 0 &&
+				(!observedPinFull || (gLastRunPlayerMoveButtons & IN_ATTACK) != 0),
+				"contact preserves the native full Update pin without inventing secondary input"))
 			return false;
 	}
+	if (!check(observedPinFull, "grenade contact control includes actual full updates"))
+		return false;
 	if (!check(obstacleSwitchRequests == 1, "look expiry cannot bypass the five-second weapon equip throttle"))
 		return false;
 	runtime.onMessageBegin(1, 94, nullptr, &self);

@@ -525,6 +525,7 @@ private:
 		float alignedAt = -1.0f;
 		std::uint32_t attackUpdate = 0;
 		bool pendingAttack = false;
+		bool admitted = false;
 	};
 
 	struct BreakableMaterial

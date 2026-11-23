@@ -32,6 +32,16 @@ float combatCommandPitch = 0.0f;
 float combatLastAttackPitch = std::numeric_limits<float>::quiet_NaN();
 float combatCommandForward = 0.0f, combatCommandSide = 0.0f;
 unsigned combatC4Selections = 0;
+unsigned grenadeAdmissionEquipRequests = 0;
+astrabot::metamod::PluginRuntime *grenadeAdmissionResetRuntime = nullptr;
+cvar_t *(*grenadeAdmissionOriginalPointer)(const char *) = nullptr;
+float (*grenadeAdmissionOriginalFloat)(const char *) = nullptr;
+cvar_t grenadeAdmissionAllowed{};
+unsigned grenadeAdmissionResetCount = 0, grenadeAdmissionFloatReads = 0;
+bool grenadeAdmissionInReset = false;
+astrabot::compat::CompatibilityStateMachine *grenadeAdmissionAttackMachine = nullptr;
+astrabot::compat::StateUpdateContext grenadeAdmissionAttackContext{};
+unsigned grenadeAdmissionAttackMutations = 0;
 unsigned combatMovingFireCommands = 0U;
 bool combatPistolSelected = false;
 bool humanFriendlyBlocks = false;
@@ -184,6 +194,59 @@ void runCombatPlayerMove(edict_t *entity, const float *angles, float forward, fl
 		combatSentInputs.push_back({*combatFrameCounter, buttons});
 }
 
+const char *grenadeAdmissionString(int index)
+{
+	return index == 20 ? "func_breakable" : szFromIndex(index);
+}
+
+void grenadeAdmissionClientCommand(edict_t *entity)
+{
+	if (entity == &gEntities[0] && std::strcmp(astrabot::metamod::HookCommandArgv(0), "slot1") == 0)
+	{
+		if (!grenadeAdmissionInReset)
+			++grenadeAdmissionEquipRequests;
+		return; // Selection is requested, but the public active weapon remains grenade.
+	}
+	combatGameClientCommand(entity);
+}
+
+cvar_t *grenadeAdmissionCvarPointer(const char *name)
+{
+	if (std::strcmp(name, "bot_allow_rifles") == 0)
+	{
+		if (grenadeAdmissionAttackMachine)
+		{
+			auto *machine = grenadeAdmissionAttackMachine;
+			grenadeAdmissionAttackMachine = nullptr;
+			if (machine->beginAttack(grenadeAdmissionAttackContext) == astrabot::compat::StateResult::Transitioned &&
+				machine->stopAttack(grenadeAdmissionAttackContext) == astrabot::compat::StateResult::Transitioned)
+				++grenadeAdmissionAttackMutations;
+		}
+		if (grenadeAdmissionResetRuntime)
+		{
+			auto *runtime = grenadeAdmissionResetRuntime;
+			grenadeAdmissionResetRuntime = nullptr;
+			++grenadeAdmissionResetCount;
+			grenadeAdmissionInReset = true;
+			runtime->beginRoundGeneration();
+			grenadeAdmissionInReset = false;
+		}
+		return &grenadeAdmissionAllowed;
+	}
+	return grenadeAdmissionOriginalPointer ? grenadeAdmissionOriginalPointer(name) : nullptr;
+}
+
+float grenadeAdmissionCvarFloat(const char *name)
+{
+	if (std::strcmp(name, "bot_allow_rifles") == 0)
+	{
+		if (!grenadeAdmissionInReset)
+			++grenadeAdmissionFloatReads;
+		return 1.0f;
+	}
+	return grenadeAdmissionOriginalFloat ? grenadeAdmissionOriginalFloat(name) : 0.0f;
+}
+
 bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	gCaptureMovementLogs = true;
@@ -266,7 +329,8 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool sharedLookFixture = scenario && std::strcmp(scenario, "shared-look") == 0;
 	const bool sharedReentryFixture = scenario && std::strcmp(scenario, "shared-look-reentry") == 0;
 	const bool plantEntryFixture = scenario && std::strcmp(scenario, "plant-entry") == 0;
-	const bool nativeGrenadeFixture = scenario && std::strcmp(scenario, "native-grenade") == 0;
+	const bool grenadeAdmissionFixture = scenario && std::strcmp(scenario, "native-grenade-admission") == 0;
+	const bool nativeGrenadeFixture = grenadeAdmissionFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
@@ -344,6 +408,8 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		runtime.onMessageEnd();
 		forcedNoticeFixtureRoll = 0.0f;
 		engine.pfnTraceHull = nullptr; // Native direct-look tossing has no ballistic-hull prerequisite.
+		if (grenadeAdmissionFixture)
+			engine.pfnSzFromIndex = &grenadeAdmissionString;
 		bool grenadeReleased = false, grenadeTurned = false;
 		for (unsigned grenadeFrameIndex = 0; grenadeFrameIndex < 40; ++grenadeFrameIndex)
 		{
@@ -353,6 +419,97 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				grenadeEnemy.v.origin = gEntities[0].v.origin + Vector(-1000, 0, -256);
 			}
 			stepRifle(30, 0.0f, 22); // Deliberately stale rifle message; API still reports grenade.
+			if (grenadeAdmissionFixture && grenadeFrameIndex == 11)
+			{
+				// Three full updates after loss retire the old combat aim, while
+				// the native unaligned copied spot and pin are still pending.
+				DLL_FUNCTIONS contactHooks{};
+				int contactVersion = INTERFACE_VERSION;
+				if (!check(runtime.provideEntityApi(&contactHooks, &contactVersion) &&
+						contactHooks.pfnKeyValue && contactHooks.pfnTouch &&
+						(gLastRunPlayerMoveButtons & IN_ATTACK) != 0 && combatCommandPitch < -1.0f,
+						"C02-2 control: public contact hooks and retained grenade look/pin are live"))
+					return false;
+				auto &contact = gEntities[4];
+				contact = {};
+				contact.serialnumber = 42;
+				contact.v.classname = 20;
+				contact.v.takedamage = DAMAGE_YES;
+				contact.v.health = 50;
+				contact.v.solid = SOLID_BSP;
+				contact.v.absmin = gEntities[0].v.origin + Vector(16, 8, -36);
+				contact.v.absmax = gEntities[0].v.origin + Vector(40, 32, 44);
+				KeyValueData material{};
+				material.szClassName = const_cast<char *>("func_breakable");
+				material.szKeyName = const_cast<char *>("material");
+				material.szValue = const_cast<char *>("1");
+				contactHooks.pfnKeyValue(&contact, &material);
+				runtime.onMessageBegin(1, 94, nullptr, &gEntities[0]);
+				runtime.onWriteByte(1);
+				runtime.onWriteByte(4);
+				runtime.onWriteByte(1);
+				runtime.onMessageEnd();
+				grenadeAdmissionEquipRequests = 0;
+				gHookedGameDllTable.pfnClientCommand = &grenadeAdmissionClientCommand;
+				contactHooks.pfnTouch(&gEntities[0], &contact);
+				runtime::BotCommand contactCommand{};
+				contactCommand.viewAngles = {-12, 75, 0};
+				contactCommand.movement = {120, 15, 0, IN_ATTACK, 0, 33};
+				static_cast<metamod::BotCommandServices &>(runtime).behavior_applyObstacleCommand(0, contactCommand);
+				gHookedGameDllTable.pfnClientCommand = &combatGameClientCommand;
+				if (!check(material.fHandled == 0 && grenadeAdmissionEquipRequests == 1,
+						"C02-2 control: qualified breakable contact retains its EquipBest request"))
+					return false;
+				if (!check(contactCommand.viewAngles.pitch == -12 && contactCommand.viewAngles.yaw == 75 &&
+						contactCommand.movement.forward == 120 && contactCommand.movement.side == 15 &&
+						contactCommand.movement.buttons == IN_ATTACK && !contactCommand.synchronizeCombatView,
+						"C02-2 uninterruptable grenade spot rejects breakable aim and preserves its pin input"))
+					return false;
+				auto &contactMachine = const_cast<compat::CompatibilityStateMachine &>(
+					static_cast<metamod::BotCommandServices &>(runtime).behavior_managedBotStateMachines(0));
+				compat::StateUpdateContext contactContext{};
+				contactContext.actor = grenadeActor;
+				contactContext.frame = {grenadeLife.mapGeneration(), grenadeLife.roundGeneration(), grenadePorts.service_adapterFrameCount()};
+				contactContext.timestamp = globals.time;
+				contactContext.fullUpdateSequence = grenadePorts.service_managedBotFullUpdateSequences()[0];
+				contactContext.fullUpdate = contactContext.alive = contactContext.roundActive = true;
+				contactContext.lifeAvailability = contactContext.roundAvailability = compat::ObservationAvailability::Available;
+				if (!check(contactMachine.transition(compat::CompatibilityStateId::Hide, compat::StateTransitionReason::ExplicitRequest,
+						compat::StateTransitionId::ExplicitStateChange, contactContext) == compat::StateResult::Transitioned &&
+						contactMachine.transition(compat::CompatibilityStateId::Idle, compat::StateTransitionReason::ExplicitRequest,
+							compat::StateTransitionId::ExplicitStateChange, contactContext) == compat::StateResult::Transitioned,
+						"C02-2 control: explicit Clear occurs after a denied contact"))
+					return false;
+				contactCommand = {};
+				contactCommand.viewAngles = {-12, 75, 0};
+				contactCommand.movement = {120, 15, 0, IN_ATTACK, 0, 33};
+				static_cast<metamod::BotCommandServices &>(runtime).behavior_applyObstacleCommand(0, contactCommand);
+				if (!check(contactCommand.viewAngles.pitch == -12 && contactCommand.viewAngles.yaw == 75 &&
+						!contactCommand.synchronizeCombatView && contactCommand.movement.buttons == IN_ATTACK,
+						"C02-2 denied contact cannot resurrect after grenade Clear"))
+					return false;
+				contactHooks.pfnTouch(&gEntities[0], &contact);
+				static_cast<metamod::BotCommandServices &>(runtime).behavior_applyObstacleCommand(0, contactCommand);
+				if (!check(contactCommand.synchronizeCombatView &&
+						(contactCommand.viewAngles.pitch != -12 || contactCommand.viewAngles.yaw != 75) &&
+						(contactCommand.movement.buttons & IN_ATTACK) != 0,
+						"C02-2 a fresh Touch is admitted after Clear while the independent pin remains pending"))
+					return false;
+				grenadeEnemy.free = false; // A queued recognition may attempt begin while still waiting.
+			}
+			if (grenadeAdmissionFixture && grenadeFrameIndex == 12)
+			{
+				runtime::BotCommand retainedContact{};
+				retainedContact.viewAngles = {-12, 75, 0};
+				retainedContact.movement = {120, 15, 0, IN_ATTACK, 0, 33};
+				static_cast<metamod::BotCommandServices &>(runtime).behavior_applyObstacleCommand(0, retainedContact);
+				if (!check(retainedContact.synchronizeCombatView &&
+						(retainedContact.viewAngles.pitch != -12 || retainedContact.viewAngles.yaw != 75),
+						"C02-2 pending throw does not revoke the fresh post-Clear contact"))
+					return false;
+				gEntities[4].free = TRUE;
+				grenadeEnemy.free = true;
+			}
 			if (grenadeFrameIndex == 6)
 			{
 				const auto fullBeforeLight = grenadePorts.service_managedBotFullUpdateSequences()[0];
@@ -446,7 +603,93 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			clearedTimerReleased = clearedTimerReleased || (gLastRunPlayerMoveButtons & IN_ATTACK) == 0;
 		}
 		forcedNoticeFixtureRoll = -1.0f;
-		return check(clearedTimerReleased, "C02 ClearLook preserves the independent native toss deadline");
+		if (!check(clearedTimerReleased, "C02 ClearLook preserves the independent native toss deadline"))
+			return false;
+		if (grenadeAdmissionFixture)
+		{
+			globals.time += 6.0f; // The prior local equip throttle is definitely elapsed.
+			DLL_FUNCTIONS contactHooks{};
+			int contactVersion = INTERFACE_VERSION;
+			if (!check(runtime.provideEntityApi(&contactHooks, &contactVersion) && contactHooks.pfnKeyValue && contactHooks.pfnTouch,
+					"C02-2 reentry control: public contact hooks remain available"))
+				return false;
+			auto &contact = gEntities[4];
+			contact.free = FALSE;
+			KeyValueData material{};
+			material.szClassName = const_cast<char *>("func_breakable");
+			material.szKeyName = const_cast<char *>("material");
+			material.szValue = const_cast<char *>("1");
+			contactHooks.pfnKeyValue(&contact, &material);
+			const auto publishGrenade = [&] {
+				runtime.onMessageBegin(1, 94, nullptr, &gEntities[0]);
+				runtime.onWriteByte(1); runtime.onWriteByte(4); runtime.onWriteByte(1); runtime.onMessageEnd();
+			};
+			publishGrenade();
+			grenadeAdmissionAllowed.name = const_cast<char *>("bot_allow_rifles");
+			grenadeAdmissionAllowed.string = const_cast<char *>("1");
+			grenadeAdmissionAllowed.value = 1;
+			grenadeAdmissionOriginalPointer = engine.pfnCVarGetPointer;
+			grenadeAdmissionOriginalFloat = engine.pfnCVarGetFloat;
+			engine.pfnCVarGetPointer = &grenadeAdmissionCvarPointer;
+			engine.pfnCVarGetFloat = &grenadeAdmissionCvarFloat;
+			grenadeAdmissionEquipRequests = grenadeAdmissionResetCount = grenadeAdmissionFloatReads = 0;
+			grenadeAdmissionResetRuntime = &runtime;
+			gHookedGameDllTable.pfnClientCommand = &grenadeAdmissionClientCommand;
+			contactHooks.pfnTouch(&gEntities[0], &contact);
+			runtime::BotCommand interruptedContact{};
+			static_cast<metamod::BotCommandServices &>(runtime).behavior_applyObstacleCommand(0, interruptedContact);
+			engine.pfnCVarGetPointer = grenadeAdmissionOriginalPointer;
+			engine.pfnCVarGetFloat = grenadeAdmissionOriginalFloat;
+			gHookedGameDllTable.pfnClientCommand = &combatGameClientCommand;
+			if (!check(grenadeAdmissionResetCount == 1 && grenadeAdmissionFloatReads == 0 && grenadeAdmissionEquipRequests == 0,
+					"C02-2 reset during weapon allowance stops old lookups and equipment dispatch"))
+				return false;
+			globals.time += 4.0f; // Past round-freeze, but still inside an incorrectly consumed five-second clock.
+			publishGrenade();
+			contactHooks.pfnKeyValue(&contact, &material);
+			contactHooks.pfnTouch(&gEntities[0], &contact);
+			gHookedGameDllTable.pfnClientCommand = &grenadeAdmissionClientCommand;
+			runtime::BotCommand freshContact{};
+			static_cast<metamod::BotCommandServices &>(runtime).behavior_applyObstacleCommand(0, freshContact);
+			gHookedGameDllTable.pfnClientCommand = &combatGameClientCommand;
+			if (!check(grenadeAdmissionEquipRequests == 1,
+					"C02-2 aborted allowance lookup cannot consume the fresh actor equipment clock"))
+				return false;
+			globals.time += 6.0f;
+			grenadeAdmissionAttackContext = clearContext;
+			grenadeAdmissionAttackContext.actor = {
+				grenadePorts.service_managedBotHandles()[0].actor.slot,
+				grenadePorts.service_managedBotHandles()[0].actor.actorGeneration};
+			grenadeAdmissionAttackContext.frame = {grenadeLife.mapGeneration(), grenadeLife.roundGeneration(),
+				grenadePorts.service_adapterFrameCount()};
+			grenadeAdmissionAttackContext.timestamp = globals.time;
+			grenadeAdmissionAttackContext.fullUpdateSequence = grenadePorts.service_managedBotFullUpdateSequences()[0];
+			grenadeAdmissionAttackContext.attackObservation = compat::ObservationAvailability::Available;
+			const auto normalBeforeAttack = clearMachine.normalStateEpoch();
+			const auto attackBefore = clearMachine.attackEntryEpoch();
+			grenadeAdmissionAttackMachine = &clearMachine;
+			grenadeAdmissionEquipRequests = grenadeAdmissionFloatReads = grenadeAdmissionAttackMutations = 0;
+			publishGrenade();
+			contactHooks.pfnTouch(&gEntities[0], &contact);
+			engine.pfnCVarGetPointer = &grenadeAdmissionCvarPointer;
+			engine.pfnCVarGetFloat = &grenadeAdmissionCvarFloat;
+			gHookedGameDllTable.pfnClientCommand = &grenadeAdmissionClientCommand;
+			runtime::BotCommand attackInterruptedContact{};
+			static_cast<metamod::BotCommandServices &>(runtime).behavior_applyObstacleCommand(0, attackInterruptedContact);
+			engine.pfnCVarGetPointer = grenadeAdmissionOriginalPointer;
+			engine.pfnCVarGetFloat = grenadeAdmissionOriginalFloat;
+			gHookedGameDllTable.pfnClientCommand = &combatGameClientCommand;
+			grenadeAdmissionAttackMachine = nullptr;
+			if (!check(grenadeAdmissionAttackMutations == 1 && !clearMachine.attackOverlayActive() &&
+					clearMachine.normalStateEpoch() == normalBeforeAttack && clearMachine.attackEntryEpoch() == attackBefore + 1,
+					"C02-2 attack callback control changes only the attack epoch and returns to the same overlay state"))
+				return false;
+			if (!check(grenadeAdmissionFloatReads == 0 && grenadeAdmissionEquipRequests == 0,
+					"C02-2 attack restart during weapon allowance stops stale reads and equipment dispatch"))
+				return false;
+			contact.free = TRUE;
+		}
+		return true;
 	}
 	if (plantEntryFixture)
 	{

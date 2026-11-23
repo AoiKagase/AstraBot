@@ -1,5 +1,9 @@
 # 全製品ソースと残件の監査（2026-11-22）
 
+## C02-2a 手榴弾視線中の破壊物割込みを部分修正（2026-11-23）
+
+Windows175/175＋PE7、Linux174/174＋ELF7合格。最終DLL `6d662b9aee0a…` を既存実機へ再配備し、実マップ破壊物のTouchで手榴弾視線が上書きされないこと、保持入力と装備要求が残ることを読取りCDBと実入力で確認した。C4実機0/7/8も逐次確認。追加サーバーコピー0。C02は部分対応、49歴史項目／47残件を維持する。noise/Hunt/Guard等の受付とRNG、経路投擲、C10の共通装備時計・接触処理時刻は未完。詳細は [GRENADE_OBSTACLE_ADMISSION_C02_2A.md](GRENADE_OBSTACLE_ADMISSION_C02_2A.md)。以下のC02-1記録は当時の範囲を保持する。
+
 ## C02-1 手榴弾保持・認識敵への投擲を部分完了（2026-11-23）
 
 Windows174/174＋PE7、Linux173/173＋ELF7合格。最終DLL `77b92327d98d…` を既存実機へ再配備し、敵不在の保持38入力、敵認識後の待機と接触喪失後のstrict 3秒解放を読取りCDB/実入力で確認した。C4実機0/7/8も直列確認。サーバーコピー追加0。C02は部分対応のまま残す。低優先度視線の受付/RNG・障害物との競合（C02-2）、安全時間終了後の経路向け投擲（C02-3）、C08の照準所有は未受入れ。49歴史項目／47残件。詳細は [GRENADE_LIFECYCLE_C02_1.md](GRENADE_LIFECYCLE_C02_1.md)。
@@ -34,7 +38,7 @@ Windows173/173＋PE7、Linux172/172＋ELF7合格。最終DLL `456ccc43…95610` 
 |---|---|---|---|---|
 | C01 | 限定完了 | [共有角速度・1回相当積分](SHARED_LOOK_C01.md)。live範囲0/3/5、全軌跡は未受入れ | `include/astrabot/compat/combat_behavior.hpp:401`<br>`src/adapter/metamod/runtime/command/bot_command_runtime.hpp` | `regamedll/dlls/bot/cs_bot_vision.cpp:57`<br>`regamedll/dlls/bot/cs_bot_update.cpp:179` |
 | C16 | 限定完了 | Compatibility full視線保持・MoveTo/Follow/Escapeの次Ahead・停止時有限Ahead保持。最終実機598/598一致。旧86件の全branch帰属は主張しない | `src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1273`<br>`src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1489` | `regamedll/dlls/bot/cs_bot_vision.cpp:57`<br>`regamedll/dlls/bot/cs_bot_update.cpp:179` |
-| C02 | 部分対応 | [保持/認識敵の投擲と明示Clear](GRENADE_LIFECYCLE_C02_1.md)は部分完了。低優先度視線の受付/RNG・安全時間終了後の経路投擲は未完 | `src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1059`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1419` | `regamedll/dlls/bot/cs_bot_update.cpp:347`<br>`regamedll/dlls/bot/cs_bot_update.cpp:490` |
+| C02 | 部分対応 | [保持/認識敵の投擲と明示Clear](GRENADE_LIFECYCLE_C02_1.md)と[破壊物視線拒否・保持入力](GRENADE_OBSTACLE_ADMISSION_C02_2A.md)は部分完了。noise/Hunt/Guardの受付/RNG・安全時間終了後の経路投擲は未完 | `src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1059`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1419` | `regamedll/dlls/bot/cs_bot_update.cpp:347`<br>`regamedll/dlls/bot/cs_bot_update.cpp:490` |
 | C03 | 差確定 | 通常Updateの装備再選択・安全時間中の装備 | `src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:8`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:74` | `regamedll/dlls/bot/cs_bot_update.cpp:519`<br>`regamedll/dlls/bot/cs_bot_update.cpp:526` |
 | C04 | 差確定 | SilencerCheck要求の実行時接続 | `include/astrabot/compat/weapon_actions.hpp:225`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1434` | `regamedll/dlls/bot/cs_bot_weapon.cpp:760`<br>`regamedll/dlls/bot/cs_bot_update.cpp:556` |
 | C05 | 差確定 | 遠距離ショットガンから拳銃への切替 | `include/astrabot/compat/weapon_actions.hpp:236`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1374` | `regamedll/dlls/bot/states/cs_bot_attack.cpp:319` |

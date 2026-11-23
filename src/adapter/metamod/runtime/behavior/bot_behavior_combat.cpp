@@ -522,6 +522,7 @@ bool BotBehaviorRuntime::updateNativeGrenade(std::size_t index, const runtime::M
 	}
 	const bool equipped = compat::WeaponActionPlanner::isGrenade(weapon);
 	auto pending = actor.nativeGrenade;
+	bool beganLook = false;
 	if (equipped)
 	{
 		world::WorldSnapshot snapshot{};
@@ -540,12 +541,18 @@ bool BotBehaviorRuntime::updateNativeGrenade(std::size_t index, const runtime::M
 		if (entity && !entity->free && entity->serialnumber >= 0 && entity->v.deadflag == DEAD_NO &&
 			entity->v.health > 0 && reactionEnemyCurrent(threat) &&
 			source == world::EntityKey{threat.slot, static_cast<unsigned>(entity->serialnumber) + 1U})
+		{
+			const bool wasWaiting = pending.waiting();
 			pending.begin(receipt.now, {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z});
+			beganLook = !wasWaiting && pending.waiting();
+		}
 	}
 	const bool primary = pending.primary(receipt.now, equipped);
 	if (!current())
 		return false;
 	actor.nativeGrenade = pending;
+	if (beganLook)
+		actor.obstacleLook.admitted = false;
 	// A global full-Update input precedes normal-state actions. Legitimate state
 	// transitions may carry this bit; actor/frame/full/re-entry identity may not.
 	actor.grenadeCommand = {receipt, revision, full, equipped, primary, weapon};

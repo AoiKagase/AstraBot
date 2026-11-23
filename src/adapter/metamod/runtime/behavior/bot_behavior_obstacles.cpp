@@ -41,14 +41,24 @@ const char *weaponAllowance(unsigned id)
 	}
 }
 
+template <typename Current>
 const char *obstacleWeapon(enginefuncs_t *engine, std::uint32_t inventory, const compat::PublicObservationStore &store,
-	const compat::PublicActorState &weapon)
+	const compat::PublicActorState &weapon, const Current &current)
 {
-	const auto allowed = [engine](const char *name)
+	const auto allowed = [engine, &current](const char *name)
 	{
-		if (!engine || !engine->pfnCVarGetPointer || !engine->pfnCVarGetPointer(name))
+		if (!current())
+			return false;
+		if (!engine || !engine->pfnCVarGetPointer)
 			return true;
-		const float value = runtime_detail::readOptionalCvarFloat(engine, name);
+		const auto *cvar = engine->pfnCVarGetPointer(name);
+		if (!current())
+			return false;
+		if (!cvar)
+			return true;
+		const float value = engine->pfnCVarGetFloat ? engine->pfnCVarGetFloat(name) : 0.0f;
+		if (!current())
+			return false;
 		return !std::isfinite(value) || value != 0.0f;
 	};
 	const auto usable = [&store, &weapon](unsigned id)
@@ -62,9 +72,22 @@ const char *obstacleWeapon(enginefuncs_t *engine, std::uint32_t inventory, const
 			weapon.ammo[static_cast<std::size_t>(definition.ammoIndex)] == 0);
 	};
 	for (const unsigned id : {3U, 5U, 7U, 8U, 12U, 13U, 14U, 15U, 18U, 19U, 20U, 21U, 22U, 23U, 24U, 27U, 28U, 30U})
-		if ((inventory & (1U << id)) && usable(id) && allowed(weaponAllowance(id)))
-			return "slot1";
-	if (allowed("bot_allow_pistols"))
+	{
+		if (!current())
+			return nullptr;
+		if ((inventory & (1U << id)) && usable(id))
+		{
+			const bool permit = allowed(weaponAllowance(id));
+			if (!current())
+				return nullptr;
+			if (permit)
+				return "slot1";
+		}
+	}
+	const bool pistols = allowed("bot_allow_pistols");
+	if (!current())
+		return nullptr;
+	if (pistols)
 		for (const unsigned id : {1U, 10U, 11U, 16U, 17U, 26U})
 			if ((inventory & (1U << id)) && usable(id))
 				return "slot2";
@@ -144,6 +167,7 @@ void BotBehaviorRuntime::observeObstacleTouch(edict_t *entity, edict_t *other)
 			auto &actor = actors_[i];
 			if (actor.managedBotStateMachines.attackOverlayActive())
 				return;
+			syncNativeGrenadeLook(i);
 			const auto &lo = contact->v.absmin, &hi = contact->v.absmax;
 			const auto &goal = actor.obstaclePathGoal;
 			if (services_->navigation_hasActivePath(i) && actor.obstaclePathActive &&
@@ -154,6 +178,7 @@ void BotBehaviorRuntime::observeObstacleTouch(edict_t *entity, edict_t *other)
 			if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
 				return;
 			auto &look = actor.obstacleLook;
+			const bool admitted = !actor.nativeGrenade.looking();
 			if (look.entity != contact || look.serial != contact->serialnumber ||
 				!services_->service_lifecycle().isCurrent(look.lifecycle))
 			{
@@ -163,8 +188,10 @@ void BotBehaviorRuntime::observeObstacleTouch(edict_t *entity, edict_t *other)
 				look.lifecycle = services_->service_lifecycle().tokenForSlot(handle.actor.slot);
 				look.angles = {self->v.v_angle.x, self->v.v_angle.y, self->v.v_angle.z};
 			}
-			if (look.alignedAt >= 0 && globals->time - look.alignedAt > kLookDuration)
+			if ((admitted && !look.admitted) ||
+				(look.alignedAt >= 0 && globals->time - look.alignedAt > kLookDuration))
 				look.alignedAt = -1.0f;
+			look.admitted = admitted;
 			look.point = point;
 			look.touchedAt = globals->time;
 			look.pendingAttack = true;
@@ -182,6 +209,9 @@ void BotBehaviorRuntime::applyObstacleCommand(std::size_t index, runtime::BotCom
 		return;
 	auto &actor = actors_[index];
 	auto &look = actor.obstacleLook;
+	syncNativeGrenadeLook(index);
+	if (actor.nativeGrenade.looking())
+		look.admitted = false;
 	const auto &handle = services_->service_managedBotHandles()[index];
 	auto *self = handle.entity;
 	auto *target = look.entity;
@@ -223,47 +253,71 @@ void BotBehaviorRuntime::applyObstacleCommand(std::size_t index, runtime::BotCom
 		weapon.weaponKnown;
 	if (knownWeapon && weapon.weaponId == 6)
 		return;
-	// A new contact attack survives a look timer crossing between Touch and this command.
-	if (look.pendingAttack && look.alignedAt >= 0 && globals->time - look.alignedAt > kLookDuration)
-		look.alignedAt = -1.0f;
-	const float dx = look.point.x - self->v.origin.x - self->v.view_ofs.x;
-	const float dy = look.point.y - self->v.origin.y - self->v.view_ofs.y;
-	const float dz = look.point.z - self->v.origin.z - self->v.view_ofs.z;
-	const float yaw = kDegreesPerRadian * std::atan2(dy, dx);
-	const float pitch = -kDegreesPerRadian * std::atan2(dz, std::hypot(dx, dy));
-	recordLookGoal(index, yaw);
-	const auto aim = services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility
-		? services_->command_stepLook(index, globals->time, self->v.v_angle.y, self->v.v_angle.x, yaw, pitch, false, 7U)
-		: compat::trackAim(look.angles.yaw, look.angles.pitch, yaw, pitch,
-		runtime::BotTimingScheduler::kCommandInterval, 1.0f, &look.spring, false);
-	look.angles = {aim.pitch, aim.yaw, 0};
-	if (look.alignedAt < 0 && std::fabs(compat::normalizedAimAngle(yaw - aim.yaw)) <= kLookTolerance &&
-		std::fabs(compat::normalizedAimAngle(pitch - aim.pitch)) <= kLookTolerance)
-		look.alignedAt = globals->time;
-	const auto move = ActionAdapter::reprojectMovement(
-		command.movement.forward, command.movement.side, command.viewAngles.yaw, aim.yaw);
-	command.movement.forward = move.forward;
-	command.movement.side = move.side;
-	command.movement.buttons =
-		static_cast<std::uint16_t>((command.movement.buttons & ~(IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT)) |
-			ActionAdapter::movementButtons(move.forward, move.side));
-	command.viewAngles = look.angles;
-	command.synchronizeCombatView = true;
 	const bool attack =
 		look.pendingAttack || look.attackUpdate == services_->service_managedBotFullUpdateSequences()[index];
+	if (!look.admitted && !attack)
+	{
+		look = {};
+		return;
+	}
+	if (look.admitted)
+	{
+		// A new contact attack survives a look timer crossing between Touch and this command.
+		if (look.pendingAttack && look.alignedAt >= 0 && globals->time - look.alignedAt > kLookDuration)
+			look.alignedAt = -1.0f;
+		const float dx = look.point.x - self->v.origin.x - self->v.view_ofs.x;
+		const float dy = look.point.y - self->v.origin.y - self->v.view_ofs.y;
+		const float dz = look.point.z - self->v.origin.z - self->v.view_ofs.z;
+		const float yaw = kDegreesPerRadian * std::atan2(dy, dx);
+		const float pitch = -kDegreesPerRadian * std::atan2(dz, std::hypot(dx, dy));
+		recordLookGoal(index, yaw);
+		const auto aim = services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility
+			? services_->command_stepLook(index, globals->time, self->v.v_angle.y, self->v.v_angle.x, yaw, pitch, false, 7U)
+			: compat::trackAim(look.angles.yaw, look.angles.pitch, yaw, pitch,
+			runtime::BotTimingScheduler::kCommandInterval, 1.0f, &look.spring, false);
+		look.angles = {aim.pitch, aim.yaw, 0};
+		if (look.alignedAt < 0 && std::fabs(compat::normalizedAimAngle(yaw - aim.yaw)) <= kLookTolerance &&
+			std::fabs(compat::normalizedAimAngle(pitch - aim.pitch)) <= kLookTolerance)
+			look.alignedAt = globals->time;
+		const auto move = ActionAdapter::reprojectMovement(
+			command.movement.forward, command.movement.side, command.viewAngles.yaw, aim.yaw);
+		command.movement.forward = move.forward;
+		command.movement.side = move.side;
+		command.movement.buttons =
+			static_cast<std::uint16_t>((command.movement.buttons & ~(IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT)) |
+				ActionAdapter::movementButtons(move.forward, move.side));
+		command.viewAngles = look.angles;
+		command.synchronizeCombatView = true;
+	}
 	look.pendingAttack = false;
 	if (!knownWeapon || !attack)
 		return;
 	if (compat::WeaponActionPlanner::isGrenade(static_cast<std::uint16_t>(weapon.weaponId)))
 	{
-		command.movement.buttons = static_cast<std::uint16_t>(command.movement.buttons & ~(IN_ATTACK | IN_ATTACK2));
+		// Native Touch requests equipment without releasing a pin held by Update.
 		if (globals->time >= actor.obstacleNextEquipAt)
 		{
+			const auto receipt = reactionContext(index);
+			const auto revision = actor.executionRevision;
+			const auto epoch = actor.managedBotStateMachines.normalStateEpoch();
+			const auto attackEpoch = actor.managedBotStateMachines.attackEntryEpoch();
+			const auto full = services_->service_managedBotFullUpdateSequences()[index];
+			const auto serial = look.serial;
+			const auto current = [&] {
+				return executionCurrent(index, receipt, revision) &&
+					actor.managedBotStateMachines.normalStateEpoch() == epoch &&
+					actor.managedBotStateMachines.attackEntryEpoch() == attackEpoch &&
+					!actor.managedBotStateMachines.attackOverlayActive() &&
+					services_->service_managedBotFullUpdateSequences()[index] == full &&
+					look.entity == target && look.serial == serial && !look.pendingAttack &&
+					!target->free && target->serialnumber == serial;
+			};
+			const char *selection = obstacleWeapon(services_->service_engineFunctions(),
+				static_cast<std::uint32_t>(self->v.weapons), services_->observation_publicObservations(), weapon, current);
+			if (!selection || !current())
+				return;
 			actor.obstacleNextEquipAt = globals->time + kEquipInterval;
-			services_->command_dispatchClientCommand(self,
-				obstacleWeapon(services_->service_engineFunctions(), static_cast<std::uint32_t>(self->v.weapons),
-					services_->observation_publicObservations(), weapon),
-				"");
+			services_->command_dispatchClientCommand(self, selection, "");
 		}
 		return;
 	}
