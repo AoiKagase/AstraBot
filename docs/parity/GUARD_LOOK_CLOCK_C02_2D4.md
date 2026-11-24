@@ -28,3 +28,5 @@ HuntとGuardの共有接続はソース確認と関連オフライン回帰で�
 意図したRNG差は、記憶敵・geometry再構築による期限前interval/pointを消し、共通期限到達時だけ消費すること。固定baselineは再生成せず、全履歴の消費差数は大分類検証まで未計測。
 
 後続更新：保持Noiseの実機は[C02-2d5](GUARD_NOISE_LIVE_C02_2D5.md)の54更新で限定受入れ。旧失敗試行や旧証拠は維持し、zero・状態間時計の実機は残す。
+
+後続更新：候補ゼロの実機は[C02-2d6](GUARD_ZERO_LIVE_C02_2D6.md)の専用NAV対照でNative/Noise Clearを限定受入れ。通常NAVでの自然発生・状態間時計の実機を証明するものではない。

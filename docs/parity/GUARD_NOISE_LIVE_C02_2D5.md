@@ -24,3 +24,5 @@ C02-2d4のWindows重点16/16＋追加Guard1/1に対応する同一製品ソー�
 ## 残る範囲
 
 候補ゼロの実機Clear、Hunt↔Guardの時計継続、他状態の後段Noise再入、FetchBomb/同時刻full再入、corner投擲は未完。大項目47件を維持。製品変更/RNG仕様変更はなく、固定baseline再生成なし。
+
+後続更新：候補ゼロの実機は[C02-2d6](GUARD_ZERO_LIVE_C02_2D6.md)の専用NAV対照でNative/Noise Clearを限定受入れ。通常NAVでの自然発生・状態間時計の実機を証明するものではない。
