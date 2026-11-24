@@ -1200,6 +1200,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/csbot-idle-buy-look-supply-${characterization_platform}.json.gz"
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/csbot-shared-look-velocity-${characterization_platform}.json.gz"
         --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/csbot-full-look-publication-${characterization_platform}.json.gz"
+      --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/csbot-hide-noise-crouch-correction.json"
       --platform "${characterization_platform}"
       --output "${CMAKE_CURRENT_BINARY_DIR}/runtime-characterization.txt")
   add_test(NAME astrabot_runtime_characterization_checker
@@ -1238,6 +1239,8 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     add_test(NAME astrabot_native_grenade_lifecycle COMMAND astrabot_combat_target_log --target-log)
     add_test(NAME astrabot_native_grenade_admission COMMAND astrabot_combat_target_log --target-log)
     add_test(NAME astrabot_native_grenade_noise COMMAND astrabot_combat_target_log --target-log)
+    add_test(NAME astrabot_native_grenade_noise_order COMMAND astrabot_combat_target_log --target-log)
+    add_test(NAME astrabot_native_grenade_noise_reentry COMMAND astrabot_combat_target_log --target-log)
     add_test(NAME astrabot_native_grenade_zero_approach COMMAND astrabot_combat_target_log --target-log)
     add_test(NAME astrabot_native_grenade_hunt_admission COMMAND astrabot_combat_target_log --target-log)
     add_test(NAME astrabot_native_grenade_moving_admission COMMAND astrabot_combat_target_log --target-log)
@@ -1287,6 +1290,8 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     set_tests_properties(astrabot_native_grenade_lifecycle PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=native-grenade" RUN_SERIAL TRUE)
     set_tests_properties(astrabot_native_grenade_admission PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=native-grenade-admission" RUN_SERIAL TRUE)
     set_tests_properties(astrabot_native_grenade_noise PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=native-grenade-noise" RUN_SERIAL TRUE)
+    set_tests_properties(astrabot_native_grenade_noise_order PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=native-grenade-noise-order" RUN_SERIAL TRUE WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
+    set_tests_properties(astrabot_native_grenade_noise_reentry PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=native-grenade-noise-reentry" RUN_SERIAL TRUE WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
     set_tests_properties(astrabot_native_grenade_zero_approach PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=native-grenade-zero-approach" RUN_SERIAL TRUE)
     set_tests_properties(astrabot_native_grenade_hunt_admission PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=native-grenade-hunt-admission" RUN_SERIAL TRUE WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
     set_tests_properties(astrabot_native_grenade_moving_admission PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=native-grenade-moving-admission" RUN_SERIAL TRUE WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)

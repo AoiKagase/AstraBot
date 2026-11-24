@@ -48,6 +48,8 @@ struct ActionProposal
 	bool plantPrimaryInput = false;
 	// Issued only by a current navigation-owned Plant entry after the path timeout.
 	bool runAfterPlantTimeout = false;
+	// Discard this draft after a reentrant callback invalidates its decision.
+	bool executionAborted = false;
 };
 
 struct CombatUpkeepUpdate

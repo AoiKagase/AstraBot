@@ -331,7 +331,9 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool sharedReentryFixture = scenario && std::strcmp(scenario, "shared-look-reentry") == 0;
 	const bool plantEntryFixture = scenario && std::strcmp(scenario, "plant-entry") == 0;
 	const bool grenadeAdmissionFixture = scenario && std::strcmp(scenario, "native-grenade-admission") == 0;
-	const bool grenadeNoiseFixture = scenario && std::strcmp(scenario, "native-grenade-noise") == 0;
+	const bool grenadeNoiseReentryFixture = scenario && std::strcmp(scenario, "native-grenade-noise-reentry") == 0;
+	const bool grenadeNoiseOrderFixture = grenadeNoiseReentryFixture || (scenario && std::strcmp(scenario, "native-grenade-noise-order") == 0);
+	const bool grenadeNoiseFixture = grenadeNoiseOrderFixture || (scenario && std::strcmp(scenario, "native-grenade-noise") == 0);
 	const bool huntApproachControl = scenario && std::strcmp(scenario, "hunt-approach-control") == 0;
 	const bool grenadeHuntFixture = huntApproachControl || (scenario && std::strcmp(scenario, "native-grenade-hunt-admission") == 0);
 	const bool grenadeMovingFixture = scenario && std::strcmp(scenario, "native-grenade-moving-admission") == 0;
@@ -526,6 +528,8 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 					grenadePorts.service_compatibilityRandomSource().setTraceSink(&draws);
 					const bool resumedUpdate = movingBehavior->updateHuntApproachLook(0, movingBefore, navigation, path, false, [] { return true; }, resumed);
 					grenadePorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+					std::fprintf(stderr, "moving expiry retained=%d final=%d expired=%d resumed=%d interval=%u point=%u order=%s\n",
+						retained, finalAim, expired, resumedUpdate, draws.intervals, draws.points, draws.order.c_str());
 					return check(retained && finalAim && expired && resumedUpdate && draws.intervals == 1 && draws.points == 1 && draws.order == "IP" &&
 						resumed.update == metamod::HuntApproachLookUpdate::TrackEncounter,
 						"C02 moving refusal preserves native look and leaves the encounter clock/spot eligible after look expiry");
@@ -688,13 +692,27 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				const auto &noiseProfile = static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0);
 				if (!check(loadHearingNav(runtime), "C02 noise control: real NAV supports hearing localization"))
 					return false;
+				if (grenadeNoiseOrderFixture)
+				{
+					stepRifle(30, 0, 4);
+					stepRifle(30, 0, 4);
+					if (!check(static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedBotStateMachines(0).state() ==
+							compat::CompatibilityStateId::Hunt, "noise order control: Hunt entry completed before fresh sound"))
+						return false;
+				}
 				struct NoiseDraws final : compat::IRandomTraceSink
 				{
-					unsigned startles = 0;
+					unsigned startles = 0, intervals = 0, points = 0;
+					std::function<void()> interrupt;
 					void record(const compat::RandomTraceRecord &draw) override
 					{
+						if (std::strcmp(draw.request.semanticId, "LookAround.StateInterval") == 0) ++intervals;
+						if (std::strcmp(draw.request.semanticId, "LookAround.ApproachPoint") == 0) ++points;
 						if (std::strcmp(draw.request.semanticId, "NoiseLook.StartleInhibit") == 0)
+						{
 							++startles;
+							if (interrupt) { auto callback = std::move(interrupt); interrupt = {}; callback(); }
+						}
 					}
 				} draws;
 				auto &source = gEntities[4];
@@ -725,6 +743,44 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				if (!check(draws.startles == 1,
 						"C02 rejected dangerous noise look still consumes native startle inhibition draw while grenade holds Primary"))
 					return false;
+				if (grenadeNoiseOrderFixture)
+				{
+					std::fprintf(stderr, "noise order draws startle=%u interval=%u point=%u\n", draws.startles, draws.intervals, draws.points);
+					if (!check(draws.intervals == 0 && draws.points == 0,
+							"handled dangerous noise returns before stationary lookaround interval/point draws even when grenade denies its spot"))
+						return false;
+				}
+				if (grenadeNoiseReentryFixture)
+				{
+					auto local = makeMovingBehavior();
+					runtime::MovementPhysicsState before{};
+					before.flags = gEntities[0].v.flags;
+					before.origin = {gEntities[0].v.origin.x, gEntities[0].v.origin.y, gEntities[0].v.origin.z};
+					const auto nav = grenadePorts.service_navPublisher().snapshot();
+					bool restarted = false, innerContinued = true;
+					NoiseDraws nested;
+					nested.interrupt = [&] {
+						auto &machine = const_cast<compat::CompatibilityStateMachine &>(local->managedBotStateMachines(0));
+						compat::StateUpdateContext context{};
+						context.actor = grenadeActor;
+						context.frame = {grenadeLife.mapGeneration(), grenadeLife.roundGeneration(), grenadePorts.service_adapterFrameCount()};
+						context.timestamp = globals.time;
+						context.fullUpdateSequence = grenadePorts.service_managedBotFullUpdateSequences()[0];
+						context.fullUpdate = context.alive = context.roundActive = true;
+						context.lifeAvailability = context.roundAvailability = context.attackObservation = compat::ObservationAvailability::Available;
+						restarted = machine.beginAttack(context) == compat::StateResult::Transitioned &&
+							machine.stopAttack(context) == compat::StateResult::Transitioned;
+						metamod::HuntApproachLook inner{};
+						innerContinued = local->updateHuntApproachLook(0, before, nav, {}, false, [] { return true; }, inner);
+					};
+					grenadePorts.service_compatibilityRandomSource().setTraceSink(&nested);
+					metamod::HuntApproachLook outer{};
+					const bool outerContinued = local->updateHuntApproachLook(0, before, nav, {}, false, [] { return true; }, outer);
+					grenadePorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+					if (!check(restarted && nested.startles == 1, "noise reentry control: one draw restarts Attack at identical full/time")) return false;
+					return check(!innerContinued && !outerContinued,
+						"invalidated in-progress same-full noise receipt aborts both nested and outer lookaround");
+				}
 				runtime::BotCommand refusedNoise{};
 				refusedNoise.viewAngles = {-12, 75, 0};
 				refusedNoise.movement = {120, 15, 0, IN_ATTACK, 0, 33};

@@ -25,6 +25,8 @@ ActionProposal BotBehaviorRuntime::decideManagedBotAction(std::size_t index,
 	ManagedActionContext ctx{index, before, movementAngles};
 	ctx.proposal = {ActionKind::None, movementAngles, movementButtons};
 	const auto finish = [&](ActionProposal proposal) {
+		if (proposal.executionAborted)
+			return proposal;
 		applyAttackPosture(index, proposal);
 		applyNativeGrenadeInput(index, proposal);
 		return proposal;
@@ -40,6 +42,8 @@ ActionProposal BotBehaviorRuntime::decideManagedBotAction(std::size_t index,
 		return finish(ctx.proposal);
 	if (decideObjectiveAction(ctx) == BehaviorPhaseResult::Complete)
 	{
+		if (ctx.proposal.executionAborted)
+			return ctx.proposal;
 		actors_[index].managedBotCombat.stopMovement();
 		return finish(ctx.proposal);
 	}
@@ -198,6 +202,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;
+	actors_[index].noiseLookDecision = {};
 	stopVoiceFeedback(index);
 	actors_[index].obstacleLook = {};
 	actors_[index].obstacleNextEquipAt = 0.0f;
@@ -266,6 +271,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;
+	actors_[index].noiseLookDecision = {};
 	actors_[index].reactionQueues.reset();
 	actors_[index].recognizedTargets = {};
 	actors_[index].recognizedReloading = false;
@@ -356,6 +362,7 @@ void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;
+	actors_[index].noiseLookDecision = {};
 	actors_[index].obstacleLook = {};
 	actors_[index].obstacleNextEquipAt = 0.0f;
 	actors_[index].obstaclePathActive = false;

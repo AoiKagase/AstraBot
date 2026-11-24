@@ -1653,7 +1653,13 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 			{
 				proposal.stopForWeapon = true;
 				if (scenario.action == compat::ScenarioAction::Guard)
+				{
 					updateGuardLook(ctx);
+					// Hide continues its holding posture after UpdateLookAround
+					// handles a noise without choosing a new approach spot.
+					if (!proposal.executionAborted && scenario.state == compat::CompatibilityStateId::Hide)
+						proposal.movementButtons |= IN_DUCK;
+				}
 				return BehaviorPhaseResult::Complete;
 			}
 			if (scenario.action == compat::ScenarioAction::Use &&

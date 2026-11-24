@@ -1759,17 +1759,20 @@ void PluginRuntime::onWriteCoord(float value)
 	observation_.onWriteCoord(value);
 }
 
-void PluginRuntime::prepareNeutralManagedBotCommand(
+bool PluginRuntime::prepareNeutralManagedBotCommand(
 	std::size_t index, FakeClientHandle &handle, const runtime::MovementPhysicsState &before)
 {
 	const auto draft = command_.beginNeutralCommand(index, handle, before);
 	if (!draft.ready)
 	{
-		return;
+		return false;
 	}
 	const auto action =
 		behavior_.decideManagedBotAction(index, before, draft.command.viewAngles, draft.command.movement.buttons);
+	if (action.executionAborted)
+		return false;
 	command_.finishNeutralCommand(index, handle, before, draft, action);
+	return true;
 }
 
 runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(
@@ -1782,6 +1785,12 @@ runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(
 	}
 	const auto action =
 		behavior_.decideManagedBotAction(index, draft.before, draft.command.viewAngles, draft.command.movement.buttons);
+	if (action.executionAborted)
+	{
+		auto receipt = draft.receipt;
+		receipt.result = runtime::DispatchResult::NoCommand;
+		return receipt;
+	}
 	return command_.finishDirectNeutralCommand(index, handle, milliseconds, draft, action);
 }
 
@@ -1803,7 +1812,7 @@ void PluginRuntime::buildAndExecuteMovement(std::size_t index, FakeClientHandle 
 	}
 	const auto action =
 		behavior_.decideManagedBotAction(index, before, draft.command.viewAngles, draft.command.movement.buttons);
-	if (!entryCurrent())
+	if (action.executionAborted || !entryCurrent())
 		return;
 	command_.finishMovementCommand(index, handle, token, before, movement, draft, action);
 }
@@ -1920,7 +1929,8 @@ void PluginRuntime::updateManagedBots()
 				if (blind)
 					command_.prepareBlindCommand(index, handle, before, {}, crouching);
 				else
-					prepareNeutralManagedBotCommand(index, handle, before);
+					if (!prepareNeutralManagedBotCommand(index, handle, before))
+						continue;
 			}
 			if (upkeepDue && command_.managedBotCommandTemplateValid(index))
 				command_.applyCombatUpkeep(index,
@@ -1975,7 +1985,8 @@ void PluginRuntime::updateManagedBots()
 		}
 		if (!stateUpdatePaused && behavior_.nativePlantEntryStopsMovement(index))
 		{
-			prepareNeutralManagedBotCommand(index, handle, before);
+			if (!prepareNeutralManagedBotCommand(index, handle, before))
+				continue;
 			if (!lifecycle_.isCurrent(token) || !handle.entity || !behavior_.nativePlantEntryStopsMovement(index))
 				continue;
 			const auto receipt = command_.executeManagedBotCommand(index, handle);
@@ -1996,7 +2007,8 @@ void PluginRuntime::updateManagedBots()
 			command_.applyCombatUpkeep(index, clearFire);
 			if (preparation.kind == MovementPreparationKind::Neutral)
 			{
-				prepareNeutralManagedBotCommand(index, handle, before);
+				if (!prepareNeutralManagedBotCommand(index, handle, before))
+					continue;
 				const auto receipt = command_.executeManagedBotCommand(index, handle);
 				navigation_.recordMovementPhysicsSample(index, before, receipt);
 				navigation_.completePreparation(index, preparation.completion);
@@ -2005,7 +2017,8 @@ void PluginRuntime::updateManagedBots()
 		}
 		if (behavior_.combatMovementActive(index))
 		{
-			prepareNeutralManagedBotCommand(index, handle, before);
+			if (!prepareNeutralManagedBotCommand(index, handle, before))
+				continue;
 			const auto receipt = command_.executeManagedBotCommand(index, handle);
 			navigation_.recordMovementPhysicsSample(index, before, receipt);
 			continue;
@@ -2054,7 +2067,8 @@ void PluginRuntime::updateManagedBots()
 			if (!roamDecision.huntWaitingForFriend && !(hunt && (command_.hasHuntApproachLook(index) ||
 				movement.huntApproachLook.tracking())))
 			{
-				prepareNeutralManagedBotCommand(index, handle, before);
+				if (!prepareNeutralManagedBotCommand(index, handle, before))
+					continue;
 				const runtime::CommandReceipt receipt = command_.executeManagedBotCommand(index, handle);
 				navigation_.recordMovementPhysicsSample(index, before, receipt);
 				continue;

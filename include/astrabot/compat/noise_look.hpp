@@ -156,8 +156,9 @@ public:
 	}
 	bool request(const NoiseLookInput &input, NoiseLookKind kind, const world::WorldPosition &point,
 		ICompatibilityRandomSource &random, RandomTimingContext timing, bool admitSpot = true,
-		const std::function<bool()> &current = {})
+		const std::function<bool()> &current = {}, bool *handled = nullptr)
 	{
+		if (handled) *handled = false;
 		if (kind == NoiseLookKind::None || !input.actor.isValid() || !input.frame.isValid() ||
 			!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z) || (current && !current()))
 			return false;
@@ -174,6 +175,7 @@ public:
 			return false;
 		if (draw.status != RandomStatus::Ok || !std::isfinite(draw.value) || draw.value < lower || draw.value > upper)
 			return false;
+		if (handled) *handled = true;
 		// UpdateLookAround inhibits even when SetLookAt is refused by a higher spot.
 		if (kind == NoiseLookKind::Startle)
 			inhibitedUntil_ = input.now + draw.value;

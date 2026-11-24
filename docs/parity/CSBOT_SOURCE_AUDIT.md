@@ -1,5 +1,9 @@
 # 23　CSBot参照実装との差分監査
 
+## C02-2d1 新規Noiseのhandled-returnとHide姿勢（2026-11-24）
+
+新規NoiseをHunt/Guardの選択前に処理し、拒否された音要求でも後続の低優先度抽選を止める。同full再入で旧処理を中止し、Hideのしゃがみを維持。重点14/14、Windows全体初回182/184後に台帳・厳密履歴補正を追加して関連3/3再検証、Linux183/183、PE/ELF各7export。固定履歴151933行の差は無武装Hideのしゃがみ6入力のみ、RNG510行不変。既存実機の公開銃声でactor slot2/full90のStartle→処理済み→Hunt打切り、LookAround抽選0を確認。実HLDS42184/CDB25376は終了0、core原文復元。大分類ごとの検証方針により今回のC4広範回帰は未実施。古いNoise active、Guard Native受付、他状態の後段再入停止は未完。C02部分対応・47残件を維持。[詳細](LOOK_NOISE_ORDER_C02_2D1.md)。コミット・master FFは統合前。
+
 ## C02-2c4 accepted-BEGINの旧Hunt LOW所有解除（2026-11-24）
 
 Windows182/182＋PE7、Linux181/181＋ELF7合格。両OS履歴151933行・RNG510行差0。既存実機・元NAVでactor2/full191の旧LOW1→0を最初のgrenade Upkeepより前に採録。C4 0/7/8も合格、全実PID終了0・core原文復元。旧LOW残留の限定修正で、実失効後の長期再開・全owner・Linux実機の合格ではない。C02は部分対応、47残件を維持。[詳細](GRENADE_OWNER_RETIREMENT_C02_2C4.md)。`889c35c` でコミット・ローカルmaster FF済み。後指紋も一致。

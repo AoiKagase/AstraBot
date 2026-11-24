@@ -237,12 +237,6 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 		machine.attackOverlayActive() || before.dead || (before.flags & FL_FROZEN) || !self || !engine ||
 		!engine->pfnTraceLine || !navigation.isValid() || !std::isfinite(now))
 		return true;
-	if (actor.noiseLook.active() || actor.noiseLook.inhibited(now) || actor.obstacleLook.entity ||
-		actor.weaponActions.grenadeInProgress())
-	{
-		look.update = HuntApproachLookUpdate::Clear;
-		return true;
-	}
 	constexpr float kStationarySpeed = 10.0f;
 	const auto &velocity = before.velocity;
 	const bool moving = velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z >=
@@ -262,6 +256,15 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 			controls.botEnable > 0.0f && controls.botStop == 0.0f &&
 			services_->service_navPublisher().snapshot().revision() == navigation.revision();
 	};
+	const auto noise = prepareNoiseLook(index);
+	if (noise == NoiseLookResult::Aborted || !current())
+		return false;
+	if (noise == NoiseLookResult::Handled || actor.noiseLook.active() || actor.noiseLook.inhibited(now) ||
+		actor.obstacleLook.entity || actor.weaponActions.grenadeInProgress())
+	{
+		look.update = HuntApproachLookUpdate::Clear;
+		return true;
+	}
 	const compat::RandomTimingContext timing{services_->command_managedBotCommandSequences(index), 0,
 		services_->service_managedBotFullUpdateSequences()[index]};
 	const compat::RandomActor randomActor{receipt.actor.slot, receipt.actor.generation};
@@ -383,6 +386,17 @@ void BotBehaviorRuntime::inhibitHuntApproachLook(std::size_t index, HuntApproach
 void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 {
 	auto &state = actors_[ctx.index];
+	const auto receipt = reactionContext(ctx.index);
+	const auto revision = state.executionRevision;
+	const auto normalEpoch = state.managedBotStateMachines.normalStateEpoch();
+	const auto attackEpoch = state.managedBotStateMachines.attackEntryEpoch();
+	const auto full = services_->service_managedBotFullUpdateSequences()[ctx.index];
+	const auto current = [&] {
+		return executionCurrent(ctx.index, receipt, revision) &&
+			state.managedBotStateMachines.normalStateEpoch() == normalEpoch &&
+			state.managedBotStateMachines.attackEntryEpoch() == attackEpoch &&
+			services_->service_managedBotFullUpdateSequences()[ctx.index] == full;
+	};
 	const auto &scenario = state.scenarioDecisions;
 	auto *self = ctx.handle->entity;
 	auto *engine = services_->service_engineFunctions();
@@ -396,6 +410,11 @@ void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 	compat::PublicActorState equipment{};
 	if (services_->observation_publicObservations().read(ctx.actor, ctx.frame, &equipment))
 		(void)decideEquipmentAction(ctx, equipment, false);
+	if (!current())
+	{
+		ctx.proposal.executionAborted = true;
+		return;
+	}
 	const auto &weapon = services_->observation_managedBotCurrentWeapons(ctx.index);
 	if (weapon.available && weapon.active && weapon.weaponId == kC4WeaponId)
 	{
@@ -407,7 +426,13 @@ void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 			: (inventory & pistols) != 0			   ? ActionKind::SelectPistol
 													   : ActionKind::SelectKnife;
 	}
-	if (state.noiseLook.active() || state.noiseLook.inhibited(services_->service_globals()->time))
+	const auto noise = prepareNoiseLook(ctx.index);
+	if (noise == NoiseLookResult::Aborted || !current())
+	{
+		ctx.proposal.executionAborted = true;
+		return;
+	}
+	if (noise == NoiseLookResult::Handled || state.noiseLook.active() || state.noiseLook.inhibited(services_->service_globals()->time))
 		return;
 	const auto navigation = services_->service_navPublisher().snapshot();
 	const float now = services_->service_globals()->time;

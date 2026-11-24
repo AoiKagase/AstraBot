@@ -408,6 +408,7 @@ void BotBehaviorRuntime::resetRoundRecognition(bool endingRound)
 		actor.closeFootstep = {};
 		actor.noiseBend = {};
 		actor.noiseLookUpdate = 0U;
+		actor.noiseLookDecision = {};
 		actor.lastVisibleEnemyTimes = 0.0f;
 		actor.recognizedTargets = {};
 		actor.recognitionSequences = 0U;
@@ -461,6 +462,7 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::Fram
 	actors_[index].closeFootstep = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;
+	actors_[index].noiseLookDecision = {};
 	actors_[index].reactionQueues.resetForLife();
 	finishDeathChatter(index, previousSpeech, deathFrame);
 }

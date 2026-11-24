@@ -168,6 +168,68 @@ bool testBombGuardLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	bool passed =
 		check(sharedGuardTrajectory, "guard uses one shared native spring step toward the open ray plus drift on every upkeep") &&
 		check(gLastRunPlayerMoveForward == 0 && gLastRunPlayerMoveSide == 0, "guard watches without leaving cover");
+	struct NoiseOrderDraws final : astrabot::compat::IRandomTraceSink
+	{
+		unsigned startles = 0, intervals = 0, points = 0;
+		std::function<void()> interrupt;
+		void record(const astrabot::compat::RandomTraceRecord &draw) override
+		{
+			if (std::strcmp(draw.request.semanticId, "NoiseLook.StartleInhibit") == 0)
+			{
+				++startles;
+				if (interrupt) { auto callback = std::move(interrupt); interrupt = {}; callback(); }
+			}
+			if (std::strcmp(draw.request.semanticId, "LookAround.StateInterval") == 0) ++intervals;
+			if (std::strcmp(draw.request.semanticId, "LookAround.ApproachPoint") == 0) ++points;
+		}
+	} noiseDraws;
+	enginefuncs_t soundHooks{};
+	int soundVersion = ENGINE_INTERFACE_VERSION;
+	if (!check(runtime.provideEngineFunctions(&soundHooks, &soundVersion) && soundHooks.pfnEmitSound,
+			"guard noise order uses the public sound callback")) return false;
+	// The stationary deadline is due before the sound, with no intervening
+	// update that could spend its interval draw.
+	globals.time += 2.1f;
+	auto &soundSource = gEntities[4];
+	soundSource = {};
+	soundSource.serialnumber = 44;
+	soundSource.v.origin = self.v.origin + Vector(0, 300, 0);
+	auto &guardPorts = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime);
+	guardPorts.service_compatibilityRandomSource().setTraceSink(&noiseDraws);
+	soundHooks.pfnEmitSound(&soundSource, 1, "weapons/ak47-1.wav", 1, 1, 0, 100);
+	tick();
+	guardPorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+	std::fprintf(stderr, "guard noise order startle=%u interval=%u point=%u buttons=%u\n",
+		noiseDraws.startles, noiseDraws.intervals, noiseDraws.points, gLastRunPlayerMoveButtons);
+	if (!check(noiseDraws.startles == 1 && noiseDraws.intervals == 0 && noiseDraws.points == 0,
+			"guard handles fresh dangerous noise before stationary lookaround draws")) return false;
+	if (!check((gLastRunPlayerMoveButtons & IN_DUCK) != 0 && gLastRunPlayerMoveForward == 0 && gLastRunPlayerMoveSide == 0,
+			"handled noise leaves Hide crouch and holding-position behavior intact")) return false;
+	globals.time += 4.1f;
+	bool restartedAttack = false;
+	noiseDraws.interrupt = [&] {
+		auto &machine = const_cast<astrabot::compat::CompatibilityStateMachine &>(
+			static_cast<astrabot::metamod::BotNavigationServices &>(runtime).behavior_managedBotStateMachines(0));
+		const auto &life = guardPorts.service_lifecycle();
+		const auto &handle = guardPorts.service_managedBotHandles()[0];
+		astrabot::compat::StateUpdateContext context{};
+		context.actor = {handle.actor.slot, handle.actor.actorGeneration};
+		context.frame = {life.mapGeneration(), life.roundGeneration(), guardPorts.service_adapterFrameCount()};
+		context.timestamp = globals.time;
+		context.fullUpdateSequence = guardPorts.service_managedBotFullUpdateSequences()[0];
+		context.fullUpdate = context.alive = context.roundActive = true;
+		context.lifeAvailability = context.roundAvailability = context.attackObservation = astrabot::compat::ObservationAvailability::Available;
+		restartedAttack = machine.beginAttack(context) == astrabot::compat::StateResult::Transitioned &&
+			machine.stopAttack(context) == astrabot::compat::StateResult::Transitioned;
+	};
+	guardPorts.service_compatibilityRandomSource().setTraceSink(&noiseDraws);
+	soundHooks.pfnEmitSound(&soundSource, 1, "weapons/ak47-1.wav", 1, 1, 0, 100);
+	const auto beforeReentryMove = gRunPlayerMoveCount;
+	tick();
+	guardPorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+	if (!check(restartedAttack, "guard noise callback changes Attack epoch and returns to Hide")) return false;
+	if (!check(gRunPlayerMoveCount == beforeReentryMove,
+			"guard noise reentry discards the old command draft before RunPlayerMove")) return false;
 	gHookedGameDllTable.pfnClientCommand = &guardGameCommand;
 	self.v.weapons = (1 << 22) | (1 << 6);
 	for (unsigned i = 0; i < 8; ++i)

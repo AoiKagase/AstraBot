@@ -1,0 +1,61 @@
+{
+  "description": "CSBot Hide crouches at its hiding spot independently of whether UpdateLookAround produces a goal. This historical fixture has an unarmed actor at NAV cover for six updates (compat_actor_command_tests.cpp2297-2325); the armed-watch early return previously suppressed its crouch. Only six actor1 buttons0->IN_DUCK4 records change. All151933 records and ordered510 RNG entries are retained; original baseline is unchanged. Reference b0889847fe6d03898be88acc9e366660efb40ab5 cs_bot_hide.cpp287-292. The same unconditional posture fix also has a separate fresh-Noise canonical RED->GREEN control.",
+  "platforms": {
+    "windows-x86": {
+      "baseline_sha256": "5a5cf091872c565b3b17c658feb4540d05ea123cdeddc9ce4c500f97f0c11b4c",
+      "corrected_sha256": "8c2e257cd521838f1d6bc28888677c6116a8502848d507164bdfb44740422171",
+      "records": 151933
+    },
+    "linux-x86": {
+      "baseline_sha256": "ec908943a6076db45d7600d33e7fcaf63202fc5f2e495d9ebccb7507aaf6d511",
+      "corrected_sha256": "6d6b71f20770ef2eaa45ce68d0aa743e82520de6f7703485ceb45cdd7d2edee0",
+      "records": 151933
+    }
+  },
+  "edits": [
+    [
+      128449,
+      0
+    ],
+    [
+      128614,
+      0
+    ],
+    [
+      128764,
+      0
+    ],
+    [
+      128915,
+      0
+    ],
+    [
+      129080,
+      0
+    ],
+    [
+      129231,
+      0
+    ]
+  ],
+  "patterns": [
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x1.68fa2e0000000p-1,0x1.63308e0000000p+7,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.68fa2e0000000p-1,0x1.63308e0000000p+7,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=4 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x1.68f9eep-1,0x1.633086p+7,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.68f9eep-1,0x1.633086p+7,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=4 msec=100"
+        ]
+      }
+    }
+  ]
+}

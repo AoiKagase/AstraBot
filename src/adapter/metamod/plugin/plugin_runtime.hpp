@@ -100,7 +100,7 @@ public:
 
 private:
 	bool movementSoundOrigin(const edict_t *source, world::WorldVector *origin) const;
-	void prepareNeutralManagedBotCommand(
+	bool prepareNeutralManagedBotCommand(
 		std::size_t index, FakeClientHandle &handle, const runtime::MovementPhysicsState &before);
 	runtime::CommandReceipt dispatchNeutralMovement(
 		std::size_t index, FakeClientHandle &handle, std::uint8_t milliseconds);

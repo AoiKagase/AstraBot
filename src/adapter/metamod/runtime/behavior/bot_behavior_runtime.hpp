@@ -362,6 +362,9 @@ private:
 		const std::function<bool()> &current);
 	void reportLostEnemy(std::size_t index, world::EntityKey target, const std::function<bool()> &current);
 	void updateGuardLook(ManagedActionContext &ctx);
+	enum class NoiseLookResult { NotHandled, Handled, Aborted };
+	NoiseLookResult prepareNoiseLook(std::size_t index);
+	NoiseLookResult processNoiseLook(std::size_t index, runtime::BotCommand &command, bool upkeepOnly, bool decisionOnly);
 	bool decideEquipmentAction(ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking);
 	bool equipBestWeapon(std::size_t index, bool mustEquip = false);
 	bool plantCommandCurrent(std::size_t index) const;
@@ -772,6 +775,14 @@ private:
 		compat::NoiseLookPlanner noiseLook{};
 		NoiseBendCache noiseBend{};
 		std::uint32_t noiseLookUpdate = 0U;
+		struct NoiseLookDecision
+		{
+			compat::ReactionContext receipt{};
+			std::uint64_t revision = 0, normalEpoch = 0, attackEpoch = 0, clearSequence = 0;
+			std::uint32_t full = 0;
+			bool valid = false, preparing = false, handled = false;
+		};
+		NoiseLookDecision noiseLookDecision{};
 		compat::BombGuardPlanner bombGuardPlanners{};
 		compat::GuardLookPlanner guardLook{};
 		compat::HuntEncounterPlanner huntEncounter{};

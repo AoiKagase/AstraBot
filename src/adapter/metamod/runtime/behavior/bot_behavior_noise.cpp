@@ -34,15 +34,27 @@ bool advanceNoiseLook(compat::NoiseLookPlanner &look, const edict_t &self, float
 
 void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command, bool upkeepOnly)
 {
+	(void)processNoiseLook(index, command, upkeepOnly, false);
+}
+
+BotBehaviorRuntime::NoiseLookResult BotBehaviorRuntime::prepareNoiseLook(std::size_t index)
+{
+	runtime::BotCommand unused{};
+	return processNoiseLook(index, unused, false, true);
+}
+
+BotBehaviorRuntime::NoiseLookResult BotBehaviorRuntime::processNoiseLook(
+	std::size_t index, runtime::BotCommand &command, bool upkeepOnly, bool decisionOnly)
+{
 	if (!services_ || index >= actors_.size())
-		return;
+		return NoiseLookResult::NotHandled;
 	auto &actor = actors_[index];
 	auto &look = actor.noiseLook;
 	const auto &belief = services_->observation_managedBotPerception(index).snapshot();
 	const auto &noise = belief.noise();
 	const bool enemySound = compat::hasNoiseLookPosition(noise);
-	if (!look.active() && !enemySound)
-		return;
+	if (!decisionOnly && !look.active() && !enemySound)
+		return NoiseLookResult::NotHandled;
 	const auto globals = services_->service_globals();
 	const auto &handle = services_->service_managedBotHandles()[index];
 	auto *self = handle.entity;
@@ -57,7 +69,8 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 	{
 		look.reset();
 		actor.noiseLookUpdate = 0;
-		return;
+		actor.noiseLookDecision = {};
+		return NoiseLookResult::NotHandled;
 	}
 	const world::FrameIdentity frame{
 		lifecycle.mapGeneration(), lifecycle.roundGeneration(), services_->service_adapterFrameCount()};
@@ -69,11 +82,11 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 	if (upkeepOnly)
 	{
 		if (grenadeSpot)
-			return;
+			return NoiseLookResult::NotHandled;
 		float goalYaw = 0.0f;
 		if (advanceNoiseLook(look, *self, globals->time, command, true, &goalYaw, [this, index](float time, float yaw, float pitch, float goalYaw, float goalPitch, bool attack, unsigned priority) { return services_->command_stepLook(index, time, yaw, pitch, goalYaw, goalPitch, attack, priority); }))
 			recordLookGoal(index, goalYaw);
-		return;
+		return NoiseLookResult::NotHandled;
 	}
 	bool visibleEnemy = false;
 	for (std::size_t i = 0; i < belief.actorCount(); ++i)
@@ -99,7 +112,7 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 	{
 		if (!panicLook)
 			look.clearLook();
-		return;
+		return NoiseLookResult::NotHandled;
 	}
 	const auto fullUpdate = services_->service_managedBotFullUpdateSequences()[index];
 	const auto receipt = reactionContext(index);
@@ -114,9 +127,30 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 			actor.managedBotStateMachines.lookClearSequence() == clearSequence &&
 			services_->service_managedBotFullUpdateSequences()[index] == fullUpdate;
 	};
+	auto &decision = actor.noiseLookDecision;
+	const bool cached = decision.valid && decision.full == fullUpdate &&
+		executionCurrent(index, decision.receipt, decision.revision) &&
+		decision.normalEpoch == normalEpoch && decision.attackEpoch == attackEpoch &&
+		decision.clearSequence == clearSequence;
+	// A callback cannot turn an in-flight or invalidated decision into a
+	// fresh "not handled" result. A completed decision may outlive its tick:
+	// upkeep and independent spot expiry must not retry it or be aborted just
+	// because time advanced without another full decision.
+	const bool decisionIdentityChanged = !(decision.receipt.actor == receipt.actor) ||
+		decision.receipt.entityGeneration != receipt.entityGeneration ||
+		decision.receipt.alive != receipt.alive || receipt.now < decision.receipt.now ||
+		receipt.frame.tick < decision.receipt.frame.tick ||
+		decision.receipt.frame.mapGeneration != receipt.frame.mapGeneration ||
+		decision.receipt.frame.roundGeneration != receipt.frame.roundGeneration ||
+		decision.revision != revision || decision.normalEpoch != normalEpoch ||
+		decision.attackEpoch != attackEpoch || decision.clearSequence != clearSequence;
+	if (decision.valid && decision.full == fullUpdate && (decision.preparing || decisionIdentityChanged))
+		return NoiseLookResult::Aborted;
+	bool handled = cached && decision.handled;
 	if (actor.noiseLookUpdate != fullUpdate)
 	{
 		actor.noiseLookUpdate = fullUpdate;
+		decision = {receipt, revision, normalEpoch, attackEpoch, clearSequence, fullUpdate, true, true, false};
 		compat::NoiseLookInput input{};
 		input.actor = {handle.actor.slot, handle.actor.actorGeneration};
 		input.frame = frame;
@@ -146,7 +180,7 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 			TraceResult trace{};
 			engine->pfnTraceLine(from, to, 0x101, self, &trace);
 			if (!current())
-				return;
+				return NoiseLookResult::Aborted;
 			input.clearLine = trace.flFraction >= 1.0f && !trace.fStartSolid && !trace.fAllSolid;
 			const auto kind = compat::noiseLookKind(input, look.inhibitedUntil());
 			world::WorldPosition point = target;
@@ -210,7 +244,7 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 						}
 					}
 					if (!current())
-						return;
+						return NoiseLookResult::Aborted;
 					cache = {true, havePoint, noise.timestampSeconds, nav.revision(), {origin.x, origin.y, origin.z},
 						noise.position, point};
 				}
@@ -221,7 +255,7 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 				{
 					const auto *player = engine->pfnPEntityOfEntIndex ? engine->pfnPEntityOfEntIndex(slot) : nullptr;
 					if (!current())
-						return;
+						return NoiseLookResult::Aborted;
 					if (player && !player->free && (player->v.flags & FL_CLIENT) && player->v.deadflag == DEAD_NO &&
 						player->v.health > 0)
 					{
@@ -231,15 +265,22 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 					}
 				}
 				(void)look.request(input, kind, point, services_->service_compatibilityRandomSource(),
-					{services_->command_managedBotCommandSequences(index), 0U, fullUpdate}, !grenadeSpot, current);
+					{services_->command_managedBotCommandSequences(index), 0U, fullUpdate}, !grenadeSpot, current, &handled);
 				if (!current())
-					return;
+					return NoiseLookResult::Aborted;
 			}
 		}
+		if (!current())
+			return NoiseLookResult::Aborted;
+		decision.preparing = false;
+		decision.handled = handled;
 	}
+	if (decisionOnly)
+		return handled ? NoiseLookResult::Handled : NoiseLookResult::NotHandled;
 	float goalYaw = 0.0f;
 	if (advanceNoiseLook(look, *self, globals->time, command, false, &goalYaw, [this, index](float time, float yaw, float pitch, float goalYaw, float goalPitch, bool attack, unsigned priority) { return services_->command_stepLook(index, time, yaw, pitch, goalYaw, goalPitch, attack, priority); }))
 		recordLookGoal(index, goalYaw);
+	return handled ? NoiseLookResult::Handled : NoiseLookResult::NotHandled;
 }
 } // namespace metamod
 } // namespace astrabot

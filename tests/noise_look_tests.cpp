@@ -124,13 +124,15 @@ int main()
 	in.actor = {1, 7};
 	denied.synchronize(in.actor, in.frame, in.now);
 	ScriptedRandomSource deniedStartle({RandomTapeEntry::floatEntry("NoiseLook.StartleInhibit", {1, 7}, timing, 2, 4, 3)});
-	check(!denied.request(in, NoiseLookKind::Startle, {0, 300, 36}, deniedStartle, timing, false) &&
+	bool handled = false;
+	check(!denied.request(in, NoiseLookKind::Startle, {0, 300, 36}, deniedStartle, timing, false, {}, &handled) && handled &&
 			deniedStartle.verifyComplete() && !denied.active() && denied.inhibited(52.9f) && !denied.inhibited(53),
 		"denied dangerous noise still draws and inhibits without creating a latent spot");
 	denied.clearLook();
 	check(denied.inhibited(52), "clearing a refused noise spot preserves the independent inhibit clock");
 	ScriptedRandomSource deniedOrdinary({RandomTapeEntry::floatEntry("NoiseLook.Duration", {1, 7}, timing, 1, 2, 1.5f)});
-	check(!denied.request(in, NoiseLookKind::Ordinary, {300, 0, 36}, deniedOrdinary, timing, false) &&
+	handled = false;
+	check(!denied.request(in, NoiseLookKind::Ordinary, {300, 0, 36}, deniedOrdinary, timing, false, {}, &handled) && handled &&
 			deniedOrdinary.verifyComplete() && !denied.active() && denied.inhibited(52),
 		"denied ordinary noise consumes its duration but creates no goal and does not alter inhibition");
 	check(!denied.update(54, {0, 0, 0}, {0, 0, 36}, 0, 0, &pitch, &yaw),
@@ -144,8 +146,9 @@ int main()
 	denied.synchronize(in.actor, in.frame, in.now);
 	ScriptedRandomSource reentered({RandomTapeEntry::floatEntry("NoiseLook.StartleInhibit", {1, 7}, timing, 2, 4, 3)});
 	reentered.setTraceSink(&reentry);
+	handled = true;
 	check(!denied.request(in, NoiseLookKind::Startle, {0, 300, 36}, reentered, timing, false,
-			[&] { return reentry.current; }) && reentered.verifyComplete() && !denied.active() && !denied.inhibited(50),
+			[&] { return reentry.current; }, &handled) && !handled && reentered.verifyComplete() && !denied.active() && !denied.inhibited(50),
 		"reentry during noise RNG consumes the draw but cannot publish the old inhibition clock");
 	return failures ? 1 : 0;
 }
