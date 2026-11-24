@@ -1,5 +1,9 @@
 # 全製品ソースと残件の監査（2026-11-22）
 
+## C02-2c3 moving Huntの遭遇視線抽選を限定対応（2026-11-24）
+
+Windows181/181＋PE7、Linux180/180＋ELF7合格。最終DLL `9f1815da0af2…` を既存実機へ再配備し、元NAV上のmoving HuntでNative手榴弾視線がある間、遭遇視線の抽選前に戻ることを74組で確認した。旧LOW所有なし・有効encounter・unsafe・抽選期限到達と、同frameの実入力を結び、うち2組はpin保持中。公開Frozen準備後に通常NAV移動する専用fixtureであり、自然起動や全経路一致の受入れではない。C4 0/7/8も合格、全実PID終了0・設定原文復元、サーバーコピー追加0。C02部分対応・49歴史項目／47残件を維持。Native開始時に旧Hunt LOW保持を退役させない所有残件をC02内へ明記した。詳細は [GRENADE_MOVING_ADMISSION_C02_2C3.md](GRENADE_MOVING_ADMISSION_C02_2C3.md)。以下は各時点の履歴を保持する。
+
 ## C02-2c2 静止・候補ありのHunt視線受付を限定対応（2026-11-24）
 
 Windows180/180＋PE7、Linux179/179＋ELF7合格。最終DLL `a8f15c2b5742…` を既存実機へ再配備し、元NAV・公開fixtureで候補抽選後の手榴弾視線優先を読取りCDBで確認した。同Actor/fullで候補拒否2件、native点・期限・待機を保持し、Hunt出力とcommand保持視線を変更しない。通常候補採用の対照も確認。C4 0/7/8は逐次合格、全実PID終了0・core.ini原文復元、追加サーバーコピー0。これは候補受付の限定対応で、同tick実角度差・FetchBomb実機・moving/Guard/Noise順序の一致は主張しない。C02部分対応、49歴史項目／47残件を維持。詳細は [GRENADE_HUNT_ADMISSION_C02_2C2.md](GRENADE_HUNT_ADMISSION_C02_2C2.md)。以下は各時点の履歴を保持する。
@@ -50,7 +54,7 @@ Windows173/173＋PE7、Linux172/172＋ELF7合格。最終DLL `456ccc43…95610` 
 |---|---|---|---|---|
 | C01 | 限定完了 | [共有角速度・1回相当積分](SHARED_LOOK_C01.md)。live範囲0/3/5、全軌跡は未受入れ | `include/astrabot/compat/combat_behavior.hpp:401`<br>`src/adapter/metamod/runtime/command/bot_command_runtime.hpp` | `regamedll/dlls/bot/cs_bot_vision.cpp:57`<br>`regamedll/dlls/bot/cs_bot_update.cpp:179` |
 | C16 | 限定完了 | Compatibility full視線保持・MoveTo/Follow/Escapeの次Ahead・停止時有限Ahead保持。最終実機598/598一致。旧86件の全branch帰属は主張しない | `src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1273`<br>`src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1489` | `regamedll/dlls/bot/cs_bot_vision.cpp:57`<br>`regamedll/dlls/bot/cs_bot_update.cpp:179` |
-| C02 | 部分対応 | [保持/認識敵の投擲と明示Clear](GRENADE_LIFECYCLE_C02_1.md)と[破壊物視線拒否・保持入力](GRENADE_OBSTACLE_ADMISSION_C02_2A.md)は部分完了。[音の受付拒否・抑制時計](GRENADE_NOISE_ADMISSION_C02_2B.md)も部分完了。stationary0 ClearはC02-2c1、静止候補ありの低優先度拒否は[C02-2c2](GRENADE_HUNT_ADMISSION_C02_2C2.md)で限定対応。Hunt/Guardの後続順・moving encounter・安全時間終了後の経路投擲は未完 | `src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1059`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1419` | `regamedll/dlls/bot/cs_bot_update.cpp:347`<br>`regamedll/dlls/bot/cs_bot_update.cpp:490` |
+| C02 | 部分対応 | [保持/認識敵の投擲と明示Clear](GRENADE_LIFECYCLE_C02_1.md)と[破壊物視線拒否・保持入力](GRENADE_OBSTACLE_ADMISSION_C02_2A.md)は部分完了。[音の受付拒否・抑制時計](GRENADE_NOISE_ADMISSION_C02_2B.md)も部分完了。stationary0 ClearはC02-2c1、静止候補ありの低優先度拒否は[C02-2c2](GRENADE_HUNT_ADMISSION_C02_2C2.md)で限定対応。moving Huntの抽選前抑止は[C02-2c3](GRENADE_MOVING_ADMISSION_C02_2C3.md)で限定対応。Native開始時の旧LOW退役、Guard/Noiseの後続順、FetchBomb実機、安全時間終了後の経路投擲は未完 | `src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1059`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1419` | `regamedll/dlls/bot/cs_bot_update.cpp:347`<br>`regamedll/dlls/bot/cs_bot_update.cpp:490` |
 | C03 | 差確定 | 通常Updateの装備再選択・安全時間中の装備 | `src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:8`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:74` | `regamedll/dlls/bot/cs_bot_update.cpp:519`<br>`regamedll/dlls/bot/cs_bot_update.cpp:526` |
 | C04 | 差確定 | SilencerCheck要求の実行時接続 | `include/astrabot/compat/weapon_actions.hpp:225`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1434` | `regamedll/dlls/bot/cs_bot_weapon.cpp:760`<br>`regamedll/dlls/bot/cs_bot_update.cpp:556` |
 | C05 | 差確定 | 遠距離ショットガンから拳銃への切替 | `include/astrabot/compat/weapon_actions.hpp:236`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1374` | `regamedll/dlls/bot/states/cs_bot_attack.cpp:319` |

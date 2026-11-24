@@ -1,5 +1,9 @@
 # 23　CSBot参照実装との差分監査
 
+## C02-2c3 moving Huntの遭遇視線抽選を限定対応（2026-11-24）
+
+Windows181/181＋PE7、Linux180/180＋ELF7合格。最終DLL `9f1815da0af2…` を既存実機へ再配備し、元NAV上のmoving HuntでNative手榴弾視線がある間、遭遇視線の抽選前に戻ることを74組で確認した。旧LOW所有なし・有効encounter・unsafe・抽選期限到達と、同frameの実入力を結び、うち2組はpin保持中。公開Frozen準備後に通常NAV移動する専用fixtureであり、自然起動や全経路一致の受入れではない。C4 0/7/8も合格、全実PID終了0・設定原文復元、サーバーコピー追加0。C02部分対応・49歴史項目／47残件を維持。Native開始時に旧Hunt LOW保持を退役させない所有残件をC02内へ明記した。詳細は [GRENADE_MOVING_ADMISSION_C02_2C3.md](GRENADE_MOVING_ADMISSION_C02_2C3.md)。以下は各時点の履歴を保持する。
+
 ## C02-2c2 静止・候補ありのHunt視線受付を限定対応（2026-11-24）
 
 Windows180/180＋PE7、Linux179/179＋ELF7合格。最終DLL `a8f15c2b5742…` を既存実機へ再配備し、元NAV・公開fixtureで候補抽選後の手榴弾視線優先を読取りCDBで確認した。同Actor/fullで候補拒否2件、native点・期限・待機を保持し、Hunt出力とcommand保持視線を変更しない。通常候補採用の対照も確認。C4 0/7/8は逐次合格、全実PID終了0・core.ini原文復元、追加サーバーコピー0。これは候補受付の限定対応で、同tick実角度差・FetchBomb実機・moving/Guard/Noise順序の一致は主張しない。C02部分対応、49歴史項目／47残件を維持。詳細は [GRENADE_HUNT_ADMISSION_C02_2C2.md](GRENADE_HUNT_ADMISSION_C02_2C2.md)。以下は各時点の履歴を保持する。

@@ -7921,7 +7921,7 @@
     },
     {
       "id": "C02",
-      "title": "Native grenade lifecycle and stationary Hunt admission partially implemented; moving/Guard order and safe path toss remain",
+      "title": "Native grenade lifecycle and stationary/moving Hunt admission partially implemented; accepted-BEGIN old LOW ownership, Guard order and safe path toss remain",
       "status": "partial_implementation",
       "astra": [
         "src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:469",
@@ -7933,7 +7933,7 @@
         "regamedll/dlls/bot/cs_bot_update.cpp:490",
         "regamedll/dlls/bot/cs_bot_weapon.cpp:576"
       ],
-      "evidence": "C02-1 public active weapon identity, no-target pin hold, recognized copied target, strict >3/alignment release, independent look/weapon-change lifecycle and explicit Clear receipt implemented. Final offline174/173+exports7; reused Windows realserver verifies no-target hold and recognized post-loss deadline release. Exact lowerpriority admission/RNG, obstacle interaction and safe-path initiation remain C02; cached trackedAim vs native IsAimingAtEnemy remains C08. C02-2a independently rejects breakable look while native grenade spot persists, retains Touch equipment/Primary effects, invalidates old admission only on accepted begin, and guards equipment callbacks with actor/frame/revision/normal/attack/full/target identity. Final offline175/174+exports7 and reused Windows real map Touch accepted. C10 common clock/deferred timing remains open. C02-2b denied noise requests consume duration/startle RNG, preserve independent inhibition, and publish no latent view. Accepted native begin clears old noise goal without clearing inhibition. Canonical public high-noise age.125<reaction.3 RED/GREEN plus core ordinary/startle/reentry tests, final176/175+exports7 and reused Windows public gunfire acceptance. Hunt/Guard branch/RNG order remains C02-2c. C02-2c1 clears the native grenade spot after stationary interval RNG with zero approach points, preserving pending pin/deadline/shared spring. Attack epoch/full sequence guard rejects stale RNG callback commits. Canonical corrected public Touch fixture RED/GREEN and Attack restart control passed; full178/177+exports7 and unchanged151933/RNG510 histories. Real Windows controlled NAV retains all737 areas geometry/connections/hiding/encounters/places and removes4803approaches only; zero3 positive clear+32hold+1strict release, original NAV/core restored, original-NAV C4 cases0/7/8 accepted. This does not establish natural default-map path parity. C02-2c2 stationary nonzero Hunt draws interval then point before refusing LOW Track while native grenade owns the spot; interval advances, point/look/pin/deadline and cached low-priority command owner unchanged. Canonical RED, ordinary positive and no-redraw controls; full180/179+exports7, unchanged151933/RNG510 histories. Reused original-NAV Windows real fixture validates helper/command state by same actor/full and C4 cases0/7/8. Moving/FetchBomb live/Guard/Noise order and safe path toss remain.",
+      "evidence": "C02-1 public active weapon identity, no-target pin hold, recognized copied target, strict >3/alignment release, independent look/weapon-change lifecycle and explicit Clear receipt implemented. Final offline174/173+exports7; reused Windows realserver verifies no-target hold and recognized post-loss deadline release. Exact lowerpriority admission/RNG, obstacle interaction and safe-path initiation remain C02; cached trackedAim vs native IsAimingAtEnemy remains C08. C02-2a independently rejects breakable look while native grenade spot persists, retains Touch equipment/Primary effects, invalidates old admission only on accepted begin, and guards equipment callbacks with actor/frame/revision/normal/attack/full/target identity. Final offline175/174+exports7 and reused Windows real map Touch accepted. C10 common clock/deferred timing remains open. C02-2b denied noise requests consume duration/startle RNG, preserve independent inhibition, and publish no latent view. Accepted native begin clears old noise goal without clearing inhibition. Canonical public high-noise age.125<reaction.3 RED/GREEN plus core ordinary/startle/reentry tests, final176/175+exports7 and reused Windows public gunfire acceptance. Hunt/Guard branch/RNG order remains C02-2c. C02-2c1 clears the native grenade spot after stationary interval RNG with zero approach points, preserving pending pin/deadline/shared spring. Attack epoch/full sequence guard rejects stale RNG callback commits. Canonical corrected public Touch fixture RED/GREEN and Attack restart control passed; full178/177+exports7 and unchanged151933/RNG510 histories. Real Windows controlled NAV retains all737 areas geometry/connections/hiding/encounters/places and removes4803approaches only; zero3 positive clear+32hold+1strict release, original NAV/core restored, original-NAV C4 cases0/7/8 accepted. This does not establish natural default-map path parity. C02-2c2 stationary nonzero Hunt draws interval then point before refusing LOW Track while native grenade owns the spot; interval advances, point/look/pin/deadline and cached low-priority command owner unchanged. Canonical RED, ordinary positive and no-redraw controls; full180/179+exports7, unchanged151933/RNG510 histories. Reused original-NAV Windows real fixture validates helper/command state by same actor/full and C4 cases0/7/8. Moving/FetchBomb live/Guard/Noise order and safe path toss remain. C02-2c3 moving Hunt refuses before interval/spot draws while independent native look is active; ordinary and post-look-expiry controls verified offline. Windows181/Linux180 plus exports7, historical151933/RNG510 delta0. Original-NAV public cold fixture yielded74 qualified same-frame actual input pairs (waiting pin2), final C4 cases0/7/8 passed, all actual exits0 and configs restored. Native accepted BEGIN still leaves old command Hunt LOW owner; moving2 masked by that owner, later resurrection remains unverified. Guard/Noise order, FetchBomb live, direct same-tick reentry and safe path toss remain.",
       "tests": "astrabot_native_grenade_lifecycle real full/RunPlayerMove path; weapon_actions native clock tests; compat_state_machine Clear receipt before reentrant callback. Valid Clear product RED→GREEN retained; earlier false-positive test excluded.",
       "backlog_mapping": "23/new explicit grenade unit",
       "confidence": "high",
@@ -7954,7 +7954,7 @@
         "source_manifest": "artifacts/local/debug/csbot-grenade-c02-20261123/final-v2/freeze.json",
         "dll_sha256": "77b92327d98d50e57825aac3e3e77856c4d09dbd03241b23a755d98e7b678c1b",
         "remaining": [
-          "Stationary nonzero Hunt admission bounded by C02-2c2; still open: moving encounter pre-draw inhibition, FetchBomb live acceptance, Guard/Noise handled-return order, direct same-time full reentry control",
+          "Stationary nonzero Hunt admission bounded by C02-2c2 and moving Hunt pre-draw inhibition bounded by C02-2c3; still open: accepted-BEGIN old Hunt LOW ownership retirement, FetchBomb live acceptance, Guard/Noise handled-return order, direct same-time full reentry control",
           "C02-3 safe-time path toss"
         ],
         "still_open": true,
@@ -7983,6 +7983,12 @@
             "record": "GRENADE_HUNT_ADMISSION_C02_2C2.md",
             "source_manifest": "artifacts/local/debug/csbot-grenade-hunt-admission-c02-2c2-20261124/final/freeze.json",
             "dll_sha256": "a8f15c2b57429365846cecb7f8201cb4b2ac06acdedfeb2b3b83ba6829d70517",
+            "still_open": true
+          },
+          {
+            "record": "GRENADE_MOVING_ADMISSION_C02_2C3.md",
+            "source_manifest": "artifacts/local/debug/csbot-grenade-moving-admission-c02-2c3-20261124/final/freeze.json",
+            "dll_sha256": "9f1815da0af2cb708478ca738d69d4e812d3c2fbb20189869660c3e628e7afc8",
             "still_open": true
           }
         ]
@@ -8826,6 +8832,21 @@
       ],
       "new_findings": [],
       "historical_inventory_scope": "Original inventory fingerprints retained; current source200 finalfreeze; stationary Hunt nonzero admission only."
+    },
+    {
+      "date": "2026-11-24",
+      "record": "GRENADE_MOVING_ADMISSION_C02_2C3.md",
+      "historical_findings": 49,
+      "open_findings": 47,
+      "partial_updates": [
+        "C02"
+      ],
+      "resolved_bounded": [
+        "C01",
+        "C16"
+      ],
+      "new_findings": [],
+      "historical_inventory_scope": "Original fingerprints retained; current source200 freeze; moving Hunt encounter admission only, accepted-BEGIN old LOW ownership explicitly remains."
     }
   ]
 }

@@ -272,7 +272,7 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 		const float roundStart = services_->service_roundFreezeGeneration() == receipt.frame.roundGeneration
 			? services_->service_roundFreezeUntil() : 0.0f;
 		const float aggression = static_cast<float>(actor.managedProfiles.aggression) / 100.0f;
-		if (!path.encounter || lookingAtSpot || !planner.selectionDue(now) ||
+		if (!path.encounter || lookingAtSpot || actor.nativeGrenade.looking() || !planner.selectionDue(now) ||
 			actor.enemyReaction.isSafe(now - roundStart, aggression) || isBlinded(receipt.actor, receipt.frame, now))
 			return true;
 		const auto &encounter = *path.encounter;

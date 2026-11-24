@@ -334,9 +334,10 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool grenadeNoiseFixture = scenario && std::strcmp(scenario, "native-grenade-noise") == 0;
 	const bool huntApproachControl = scenario && std::strcmp(scenario, "hunt-approach-control") == 0;
 	const bool grenadeHuntFixture = huntApproachControl || (scenario && std::strcmp(scenario, "native-grenade-hunt-admission") == 0);
+	const bool grenadeMovingFixture = scenario && std::strcmp(scenario, "native-grenade-moving-admission") == 0;
 	const bool grenadeZeroReentryFixture = scenario && std::strcmp(scenario, "native-grenade-zero-reentry") == 0;
 	const bool grenadeZeroApproachFixture = grenadeZeroReentryFixture || (scenario && std::strcmp(scenario, "native-grenade-zero-approach") == 0);
-	const bool nativeGrenadeFixture = grenadeAdmissionFixture || grenadeNoiseFixture || grenadeZeroApproachFixture || grenadeHuntFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
+	const bool nativeGrenadeFixture = grenadeAdmissionFixture || grenadeNoiseFixture || grenadeZeroApproachFixture || grenadeHuntFixture || grenadeMovingFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
@@ -398,6 +399,34 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		if (!check((gLastRunPlayerMoveButtons & IN_ATTACK) != 0,
 				"C02 public GameDLL grenade identity is positive even before CurWeapon updates"))
 			return false;
+		std::unique_ptr<metamod::BotBehaviorRuntime> movingBehavior;
+		runtime::MovementPhysicsState movingBefore{};
+		const auto makeMovingBehavior = [&] {
+			auto result = std::make_unique<metamod::BotBehaviorRuntime>();
+			result->bindServices(grenadePorts);
+			result->onActorRemembered(0, grenadeHandle);
+			compat::StateUpdateContext tick{};
+			tick.actor = grenadeActor;
+			tick.frame = {grenadeLife.mapGeneration(), grenadeLife.roundGeneration(), grenadePorts.service_adapterFrameCount()};
+			tick.timestamp = globals.time;
+			tick.fullUpdateSequence = grenadePorts.service_managedBotFullUpdateSequences()[0];
+			tick.fullUpdate = tick.alive = tick.roundActive = true;
+			tick.lifeAvailability = tick.roundAvailability = tick.attackObservation = compat::ObservationAvailability::Available;
+			auto &state = const_cast<compat::CompatibilityStateMachine &>(result->managedBotStateMachines(0));
+			state.initialize(tick);
+			state.transition(compat::CompatibilityStateId::Hunt, compat::StateTransitionReason::ExplicitRequest,
+				compat::StateTransitionId::ExplicitStateChange, tick);
+			return result;
+		};
+		if (grenadeMovingFixture)
+		{
+			globals.time += 25.0f; // Unsafe even with the maximum unadjusted native safe time.
+			movingBehavior = makeMovingBehavior();
+			movingBefore.grounded = true;
+			movingBefore.flags = gEntities[0].v.flags;
+			movingBefore.origin = {gEntities[0].v.origin.x, gEntities[0].v.origin.y, gEntities[0].v.origin.z};
+			movingBefore.velocity = {20, 0, 0};
+		}
 		auto &grenadeEnemy = gEntities[1];
 		const auto grenadeAimDrawsBefore = attackAimRefreshDraws;
 		runtime.onClientPutInServer(&grenadeEnemy);
@@ -407,6 +436,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		grenadeEnemy.v.deadflag = DEAD_NO;
 		grenadeEnemy.v.team = 2;
 		grenadeEnemy.v.origin = gEntities[0].v.origin + Vector(320, 0, 256);
+		const Vector grenadeObservedPoint = grenadeEnemy.v.origin;
 		grenadeEnemy.v.view_ofs = Vector(0, 0, 19);
 		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
 		runtime.onWriteByte(2);
@@ -425,6 +455,66 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				grenadeEnemy.v.origin = gEntities[0].v.origin + Vector(-1000, 0, -256);
 			}
 			stepRifle(30, 0.0f, 22); // Deliberately stale rifle message; API still reports grenade.
+			if (grenadeMovingFixture)
+			{
+				movingBehavior->updateManagedBotCompatibilityState(0, movingBefore, false);
+				if (grenadeFrameIndex == 11)
+				{
+					const auto pin = movingBehavior->decideManagedBotAction(0, movingBefore, {}, 0);
+					if (!check((pin.movementButtons & IN_ATTACK) && movingBehavior->upkeepGrenade(0, movingBefore).hasAim &&
+							loadMovingEncounterNav(runtime), "C02 moving control: native spot/pin alive and valid directional encounter NAV")) return false;
+					const auto navigation = grenadePorts.service_navPublisher().snapshot();
+					const auto *middle = navigation.document()->findArea(2);
+					if (!check(middle && middle->encounters.size() == 1 && navigation.findHidingSpot(42),
+							"C02 moving control: real loaded middle encounter and hiding spot")) return false;
+					const nav::NavHuntEncounter path{middle, &middle->encounters.front()};
+					movingBefore.origin = {200, 32, 36};
+					struct EncounterDraws final : compat::IRandomTraceSink
+					{
+						unsigned intervals = 0, points = 0;
+						std::string order;
+						void record(const compat::RandomTraceRecord &draw) override {
+							if (std::strcmp(draw.request.semanticId, "LookAround.EncounterInterval") == 0) { ++intervals; order += 'I'; }
+							if (std::strcmp(draw.request.semanticId, "LookAround.EncounterSpot") == 0) { ++points; order += 'P'; }
+						}
+					} draws;
+					auto ordinary = makeMovingBehavior();
+					metamod::HuntApproachLook ordinaryLook{};
+					grenadePorts.service_compatibilityRandomSource().setTraceSink(&draws);
+					const bool accepted = ordinary->updateHuntApproachLook(0, movingBefore, navigation, path, false, [] { return true; }, ordinaryLook);
+					grenadePorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+					if (!check(accepted && draws.intervals == 1 && draws.points == 1 && draws.order == "IP" && ordinaryLook.update == metamod::HuntApproachLookUpdate::TrackEncounter,
+							"C02 moving control: without native spot unsafe movement consumes both encounter draws and tracks")) return false;
+					draws.intervals = draws.points = 0;
+					draws.order.clear();
+					const auto &nativeState = movingBehavior->managedBotStateMachines(0);
+					if (!check(nativeState.state() == compat::CompatibilityStateId::Hunt && !nativeState.attackOverlayActive(),
+							"C02 moving control: native candidate reaches normal Hunt without an early overlay gate")) return false;
+					metamod::HuntApproachLook refused{};
+					grenadePorts.service_compatibilityRandomSource().setTraceSink(&draws);
+					const bool completed = movingBehavior->updateHuntApproachLook(0, movingBefore, navigation, path, false, [] { return true; }, refused);
+					grenadePorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+					if (!check(completed && draws.intervals == 0 && draws.points == 0 && refused.update == metamod::HuntApproachLookUpdate::Unchanged,
+						"C02 moving native grenade spot inhibits encounter selection before interval or candidate RNG")) return false;
+					const auto oldView = gEntities[0].v.v_angle;
+					const auto eye = gEntities[0].v.origin + gEntities[0].v.view_ofs;
+					const auto aligned = metamod::ActionAdapter::useEntityView(grenadeObservedPoint.x - eye.x,
+						grenadeObservedPoint.y - eye.y, grenadeObservedPoint.z - eye.z);
+					gEntities[0].v.v_angle = Vector(aligned.pitch, aligned.yaw, 0);
+					const bool retained = movingBehavior->upkeepGrenade(0, movingBefore).hasAim;
+					globals.time += 3.01f; // Expire only the independent, aligned look lifetime.
+					const bool finalAim = movingBehavior->upkeepGrenade(0, movingBefore).hasAim;
+					const bool expired = !movingBehavior->upkeepGrenade(0, movingBefore).hasAim;
+					gEntities[0].v.v_angle = oldView;
+					metamod::HuntApproachLook resumed{};
+					grenadePorts.service_compatibilityRandomSource().setTraceSink(&draws);
+					const bool resumedUpdate = movingBehavior->updateHuntApproachLook(0, movingBefore, navigation, path, false, [] { return true; }, resumed);
+					grenadePorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+					return check(retained && finalAim && expired && resumedUpdate && draws.intervals == 1 && draws.points == 1 && draws.order == "IP" &&
+						resumed.update == metamod::HuntApproachLookUpdate::TrackEncounter,
+						"C02 moving refusal preserves native look and leaves the encounter clock/spot eligible after look expiry");
+				}
+			}
 			if (grenadeHuntFixture && grenadeFrameIndex == 11)
 			{
 				if (!check((gLastRunPlayerMoveButtons & IN_ATTACK) && (huntApproachControl || combatCommandPitch < -1) &&

@@ -49,6 +49,6 @@ C4は元NAVで自然設置0・実zone退出7・実C4喪失8を確認する。最
 
 ## 残件と証拠
 
-moving encounterの抽選前抑止、Guard/Noiseのhandled-returnと後続順、FetchBomb実機、直接同時刻full再入対照、安全時間終了後の経路投擲は未完。自然NAVの全経路一致・全priority一致・Linux実機・継続性能は未受入れ。
+moving Huntの抽選前抑止は後続[C02-2c3](GRENADE_MOVING_ADMISSION_C02_2C3.md)で限定対応。Native開始時の旧Hunt LOW保持の退役、Guard/Noiseのhandled-returnと後続順、FetchBomb実機、直接同時刻full再入対照、安全時間終了後の経路投擲は未完。自然NAVの全経路一致・全priority一致・Linux実機・継続性能は未受入れ。
 
 証拠：`artifacts/local/debug/csbot-grenade-hunt-admission-c02-2c2-20261124/`。200製品ソース・12保護ファイル・検証入力の最終指紋は `final/freeze.json`、候補とcommandの対応は `hunt-1/acceptance.json`、各raw logとC4 receiptを保持する。49歴史項目／47残件を維持。コミット・local master FF後の最終指紋は `final/post-merge.json` に記録する。
