@@ -8,6 +8,7 @@ bool testNoiseLook(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalva
 	"Any { Name = \"Noise Bot\" Team = any Difficulty = 1 Skill = 70 ReactionTime = 0.125 }\n"
 #include "compat_actor_command_tests.cpp"
 #include "fixtures/noise_runtime_nav.hpp"
+#include "runtime/behavior/bot_behavior_runtime.hpp"
 namespace
 {
 bool noiseRayBlocked = false;
@@ -168,6 +169,106 @@ bool testNoiseLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &eng
 		return false;
 	if (!check(noiseGlassIgnoringRays > 0, "direct auditory look ignores glass without applying visual FOV"))
 		return false;
+	for (unsigned retainedCase = 0; retainedCase < 3; ++retainedCase)
+	{
+		using namespace astrabot;
+		if (retainedCase != 0)
+		{
+			if (!check(retainedCase == 1 ? loadInvestigationNav(runtime, true) : loadMovingEncounterNav(runtime),
+					"retained control: real approach or encounter NAV loads")) return false;
+			round();
+			globals.time += 25.0f; // Beyond the safe movement interval.
+			self.v.origin = retainedCase == 1 ? Vector(0, 64, 36) : Vector(200, 32, 36);
+			source.v.origin = self.v.origin + (retainedCase == 1 ? Vector(0, 300, 0) : Vector(300, 0, 0));
+			step(.12f);
+			emit("player/pl_step1.wav");
+			step(.2f);
+		}
+		auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+		metamod::BotBehaviorRuntime retained;
+		retained.bindServices(ports);
+		const auto &handle = ports.service_managedBotHandles()[0];
+		retained.onActorRemembered(0, handle);
+		retained.assignProfile(0, static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0));
+		compat::StateUpdateContext context{};
+		context.actor = {handle.actor.slot, handle.actor.actorGeneration};
+		context.frame = {ports.service_lifecycle().mapGeneration(), ports.service_lifecycle().roundGeneration(), ports.service_adapterFrameCount()};
+		context.timestamp = globals.time;
+		context.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0];
+		context.fullUpdate = context.alive = context.roundActive = true;
+		context.lifeAvailability = context.roundAvailability = context.attackObservation = compat::ObservationAvailability::Available;
+		auto &state = const_cast<compat::CompatibilityStateMachine &>(retained.managedBotStateMachines(0));
+		state.initialize(context);
+		state.transition(compat::CompatibilityStateId::Hunt, compat::StateTransitionReason::ExplicitRequest,
+			compat::StateTransitionId::ExplicitStateChange, context);
+		runtime::BotCommand heardCommand{};
+		retained.applyNoiseLookCommand(0, heardCommand, false);
+		if (!check(heardCommand.synchronizeCombatView, "retained control: public footstep supplies a local auditory look")) {
+			std::fprintf(stderr, "retained case=%u now=%.6f noise=%.6f\n", retainedCase, globals.time,
+				ports.observation_managedBotPerception(0).snapshot().noise().timestampSeconds);
+			return false;
+		}
+		globals.time += .4f; // Older than fresh-noise window, inside retained look lifetime.
+		struct Draws final : compat::IRandomTraceSink {
+			unsigned intervals = 0, points = 0, encounters = 0;
+			void record(const compat::RandomTraceRecord &draw) override {
+				if (std::strcmp(draw.request.semanticId, "LookAround.StateInterval") == 0) ++intervals;
+				if (std::strcmp(draw.request.semanticId, "LookAround.ApproachPoint") == 0) ++points;
+				if (std::strcmp(draw.request.semanticId, "LookAround.EncounterInterval") == 0 ||
+					std::strcmp(draw.request.semanticId, "LookAround.EncounterSpot") == 0) ++encounters;
+			}
+		} draws;
+		runtime::MovementPhysicsState stationary{};
+		stationary.flags = self.v.flags;
+		stationary.origin = {self.v.origin.x, self.v.origin.y, self.v.origin.z};
+		const auto nav = ports.service_navPublisher().snapshot();
+		if (!check(retained.refreshHuntApproaches(0, stationary, nav), "retained control: approach refresh completes")) return false;
+		nav::NavHuntEncounter path{};
+		if (retainedCase == 2)
+		{
+			stationary.velocity = {20, 0, 0};
+			const auto *middle = nav.document()->findArea(2);
+			if (!check(middle && middle->encounters.size() == 1 && nav.findHidingSpot(42), "retained control: valid encounter and spot")) return false;
+			path = {middle, &middle->encounters.front()};
+		}
+		metamod::HuntApproachLook look{};
+		ports.service_compatibilityRandomSource().setTraceSink(&draws);
+		const bool completed = retained.updateHuntApproachLook(0, stationary, nav, path, false, [] { return true; }, look);
+		ports.service_compatibilityRandomSource().setTraceSink(nullptr);
+		if (!check(completed && draws.intervals == (retainedCase == 2 ? 0U : 1U) &&
+				draws.points == (retainedCase == 1 ? 1U : 0U) && draws.encounters == 0 &&
+				look.update == metamod::HuntApproachLookUpdate::Clear,
+				"retained noise selects stationary LOW before denial but blocks moving selection")) return false;
+		runtime::BotCommand cleared{};
+		retained.applyNoiseLookCommand(0, cleared, true);
+		if (!check(cleared.synchronizeCombatView == (retainedCase != 0),
+				"only zero-approach Clear retires retained auditory view; denied LOW preserves it")) return false;
+		if (retainedCase != 0)
+		{
+			metamod::BotBehaviorRuntime ordinary;
+			ordinary.bindServices(ports);
+			ordinary.onActorRemembered(0, handle);
+			ordinary.assignProfile(0, static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0));
+			context.timestamp = globals.time;
+			auto &ordinaryState = const_cast<compat::CompatibilityStateMachine &>(ordinary.managedBotStateMachines(0));
+			ordinaryState.initialize(context);
+			ordinaryState.transition(compat::CompatibilityStateId::Hunt, compat::StateTransitionReason::ExplicitRequest,
+				compat::StateTransitionId::ExplicitStateChange, context);
+			if (!check(ordinary.refreshHuntApproaches(0, stationary, nav), "ordinary control: approaches refresh")) return false;
+			draws = {};
+			metamod::HuntApproachLook accepted{};
+			ports.service_compatibilityRandomSource().setTraceSink(&draws);
+			const bool ordinaryCompleted = ordinary.updateHuntApproachLook(0, stationary, nav, path, false, [] { return true; }, accepted);
+			ports.service_compatibilityRandomSource().setTraceSink(nullptr);
+			if (!check(ordinaryCompleted && (retainedCase == 1
+					? draws.intervals == 1 && draws.points == 1 && accepted.update == metamod::HuntApproachLookUpdate::Track
+					: draws.encounters == 2 && accepted.update == metamod::HuntApproachLookUpdate::TrackEncounter),
+					"without retained Noise the same stationary/moving route selects and adopts LOW")) return false;
+		}
+	}
+	if (!check(loadHearingNav(runtime), "restore simple hearing NAV after retained controls")) return false;
+	self.v.origin = Vector(0, 0, 36);
+	source.v.origin = Vector(0, 300, 0);
 	round();
 	noiseRayBlocked = true;
 	emit("player/pl_step1.wav");

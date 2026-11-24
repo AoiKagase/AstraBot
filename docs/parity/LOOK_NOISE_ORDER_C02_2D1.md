@@ -36,8 +36,8 @@ HLDS PID 42184・CDB PID 25376はともにexit 0、残プロセス0。core.ini�
 
 ## 残る範囲
 
-- 古いNoiseのactive視線による一律抑止と、静止時の抽選後受付／移動時の抽選前受付。
+- 保持NoiseのHunt受付は後続[C02-2d2](RETAINED_NOISE_ADMISSION_C02_2D2.md)で限定対応。Guard側のactive抑止と実機moving/zero条件は残る。
 - GuardのNative視線受付、候補ゼロのClear、全ownerの退役・失効後の再開。
 - 他状態の後段Noise処理の再入停止、FetchBomb実機、直接の再帰Root full更新。
-- 安全時間終了後の経路corner投擲、通常Noise・Guardの実機、Linux実機。
+- 安全時間終了後の経路corner投擲、通常Noiseのmoving/zero・Guardの実機、Linux実機（通常Noiseの静止保持条件はC02-2d2で限定受入れ）。
 - 今回の広範なC4 0/7/8再実行は未実施。ユーザーの検証簡略化指示により大分類完了時へ回す。以前の別製品の受入れを今回の製品へ流用しない。

@@ -24,7 +24,7 @@
 
 ## 現在の作業
 
-C02-2d1：[新規Noiseのhandled-returnとHide姿勢](docs/parity/LOOK_NOISE_ORDER_C02_2D1.md)は `438842e` でコミット・ローカルmaster FF済み。後指紋も確認済み。重点14/14、Windows初回182/184＋台帳/厳密履歴補正後3/3、Linux183/183、PE/ELF各7export。既存実機でactor slot2/full90の処理順と不要抽選0、実PID終了0・core復元を確認。固定履歴はしゃがみ6入力だけ変更、RNG510行不変。次は古いNoise activeの静止/移動受付、Guard Native受付、他状態の後段Noise再入停止。以後の個別修正は重点検証に絞り、広範な回帰は大分類完了時に実施する。
+C02-2d2：[保持NoiseのHunt受付](docs/parity/RETAINED_NOISE_ADMISSION_C02_2D2.md)を重点12/12と既存Windows実機の静止条件で検証済み。統合履歴はこの単位のGit履歴を参照。次はGuardのNoise/Native受付とゼロ候補Clear、他状態の後段Noise再入停止。全体の47残件は維持し、個別修正は重点検証、大分類完了時に全体検証する。
 
 ## 完了した修正単位（大項目の完了とは別）
 
@@ -38,6 +38,7 @@ C02-2d1：[新規Noiseのhandled-returnとHide姿勢](docs/parity/LOOK_NOISE_ORD
 | ☑ C02-2c3 | [moving Huntで遭遇抽選前にNative視線受付を確認](docs/parity/GRENADE_MOVING_ADMISSION_C02_2C3.md)。各記録の限定範囲で検証・コミット・masterマージ済み |
 | ☑ C02-2c4 | [accepted-BEGINでの旧Hunt LOW所有解除](docs/parity/GRENADE_OWNER_RETIREMENT_C02_2C4.md)。Win182/Linux181＋各7exports、同full実機採録、C4 0/7/8合格。`889c35c` コミット・master FF済み |
 | ☑ C02-2d1 | [新規Noise順序・再入停止・Hide姿勢](docs/parity/LOOK_NOISE_ORDER_C02_2D1.md)。重点14/14、Windows初回182/184＋修正後3/3、Linux183/183、各7exports、実機同full順序を限定受入れ。`438842e` コミット・master FF済み |
+| ☑ C02-2d2 | [保持NoiseのHunt受付](docs/parity/RETAINED_NOISE_ADMISSION_C02_2D2.md)。Windows重点12/12、同じ実機の静止保持条件を限定受入れ。moving/zero実機・Guardは未完 |
 
 既存Plantの早期判断・MoveTo開始順・末尾入力/退出・Plant前Idle経路抑止・cold Idle/Buy視線供給も限定完了。残る自然拾得・実水没・標準GameDLL受入れはS13/C14等へ分離している。過去の完了範囲は[STATUS](docs/parity/STATUS.md)を参照。
 
@@ -49,7 +50,8 @@ C02-2d1：[新規Noiseのhandled-returnとHide姿勢](docs/parity/LOOK_NOISE_ORD
 
 - [x] accepted-BEGIN時の旧Hunt LOW所有を退役する（C02-2c4、`889c35c`、検証・master FF済み）
 - [x] 新規Noiseのhandled-return・限定的な再入停止・Hide姿勢を合わせる（C02-2d1、`438842e`、検証・master FF済み）
-- [ ] 古いNoise activeの静止/移動受付、Guard Native受付、他状態の後段Noise再入停止を合わせる
+- [x] 保持NoiseのHunt静止/移動受付を合わせる（C02-2d2、重点12/12、実機静止条件のみ限定受入れ）
+- [ ] GuardのNoise/Native受付・ゼロ候補Clear、他状態の後段Noise再入停止を合わせる
 - [ ] FetchBomb実機と直接同時刻full再入を検証する
 - [ ] 安全時間終了後の経路corner投擲を実装・検証する
 
