@@ -1,6 +1,6 @@
 # AstraBot CSBot準拠タスク一覧
 
-更新：2026-11-25。今回の統合前基点：`5cae5dd`（ローカルmaster）。
+更新：2026-11-25。今回の統合前基点：`d52afa2`（ローカルmaster）。
 
 **大項目49件：限定完了2件、未完47件。部分対応は未完に含む。** チェック済みの修正単位があっても、大項目の未完数は減らない。S14は現対戦milestone外の差分として残し、対応済みには数えない。
 
@@ -23,6 +23,8 @@
 各修正単位のローカルmasterマージと指紋確認が完了したら、masterへ切り替えて当該作業ブランチを安全削除する。未マージ、別作業用、他worktreeで使用中のブランチは削除しない。次の修正はmasterを基点に新しい`codex/`ブランチで始める。
 
 ## 現在の作業
+C03-1：通常Updateの水没MUST_EQUIP接続を実装。正規RED→最終27重点シナリオ合格、実as_oilrigの高skill公開入力でwater3の132更新中131更新Glock保持、最終両実exit0・復元一致。その他C03装備分岐・自然遊泳/全境界・Linuxは残す。[範囲と証拠](docs/parity/UPDATE_UNDERWATER_C03_1.md)。
+
 C02-2d12：公開足音と専用NAVでFetchBomb保持Noiseを限定受入れ。移動gate16更新、静止ゼロClear1更新、候補1の抽選後LOW拒否2更新、各両exit0・復元一致。通常NAV自然発生・blind独立採録/全境界とV02旧原因を残す。[範囲と証拠](docs/parity/FETCH_NOISE_LIVE_C02_2D12.md)。
 
 C02-2d11：専用encounter候補0/1の最終DLL対照を限定受入れ。候補0のintervalのみ2更新・同fullの静止ゼロClear読点なし、候補1のspot抽選正例、各両exit0・復元一致。保持Noise/自然発生と過去Steam待機原因は残す。[範囲と証拠](docs/parity/FETCH_ZERO_LIVE_C02_2D11.md)。
@@ -101,16 +103,17 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 
 ### ☐ C03 — 通常Updateの装備再選択・安全時間中の装備
 
-状態：差確定。
+状態：部分対応（C03-1 水没接続実装・限定実機）。
 
-- [ ] 水没禁止の装備中武器に一般MUST_EQUIPを接続する
+- [x] 水没禁止の装備中武器に一般MUST_EQUIPを接続する（C03-1、通常full Update正規RED→27重点合格、実water3/使用可能XM1014→Glock、最終両実exit0。実active0/古いknife観測の再装備もオフライン確認）
+- [ ] 水没切替の自然遊泳・全profile/閾値/blind・Linux実機を検証する（C03-1は公開位置保持、skill100のWindows限定正例）
 - [ ] unsafe時の空弾倉/knife再装備を接続する
 - [ ] safe5秒のpistol→使用可能primaryを接続する
 - [ ] early-safeのgrenade/knife選択を接続する
 
 根拠：`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:8`、`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:74`、`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1374`。参照：`regamedll/dlls/bot/cs_bot_update.cpp:519`、`regamedll/dlls/bot/cs_bot_update.cpp:526`、`regamedll/dlls/bot/cs_bot_update.cpp:533`、`regamedll/dlls/bot/cs_bot_update.cpp:547`、`regamedll/dlls/bot/states/cs_bot_idle.cpp:66`。
 
-既存テスト／検証上の注意：weapon_equipment_tests.cpp:268-336 proves helper/timer/water matrix; weapon_switch_runtime_tests.cpp:184 proves primary-empty→pistol only.
+既存テスト／検証上の注意：C03-1の正規製品RED/最終27シナリオ/限定実機は[専用記録](docs/parity/UPDATE_UNDERWATER_C03_1.md)。unsafeの固定参照は総弾薬枯渇であり、clip0＋reserveありのReloadCheckと区別する。weapon_equipment_tests.cpp:268-336はhelper/timer/water matrix、weapon_switch_runtime_tests.cpp:184はprimary-empty→pistolのみ。旧14.51 compiler実体なしのcacheを保持し、今回14.52専用buildを使用。全CTest/両OS/export/固定履歴は未実施。
 
 ### ☐ C04 — SilencerCheck要求の実行時接続
 

@@ -1,3 +1,7 @@
+## C03-1 通常Updateの水没装備（2026-11-25）
+
+通常full Updateからskill>.4・完全水没・水中発射禁止/実activeなしのMUST_EQUIPを接続。公開activeを優先し、Actor/full/状態の再入を拒否する。古いCurWeapon29＋実active0のknife再装備も製品RED→修正。最終27重点シナリオ合格、既存as_oilrig実水域の公開位置保持でXM1014→Glock、water3の132更新中131更新Glock保持、両実HLDS/CDB exit0・復元一致。独立14.52 x86 buildを使用し、旧14.51 cache/製品は保持。全CTest/両OS/export/固定履歴は未実施。C03の他装備分岐、自然遊泳/全境界等は残し、大項目未完47を維持。[範囲と証拠](UPDATE_UNDERWATER_C03_1.md)。
+
 ## C02-2d3 Guard受付・独立Ahead（2026-11-24）
 
 ## C02-2d12 FetchBomb保持Noiseの限定実機（2026-11-25）

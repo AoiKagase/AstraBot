@@ -156,6 +156,8 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 		return;
 	if (!updateNativeGrenade(index, before))
 		return;
+	if (!updateUnderwaterEquipment(index))
+		return;
 	const auto receipt = reactionContext(index);
 	const auto revision = actors_[index].executionRevision;
 	const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();

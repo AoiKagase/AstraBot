@@ -8038,12 +8038,12 @@
     },
     {
       "id": "C03",
-      "title": "General weapon lifecycle rearming and early-safe grenade/knife selection are not wired",
-      "status": "implementation_gap",
+      "title": "Underwater ordinary Update MUST_EQUIP wired; other lifecycle rearming and early-safe selection remain",
+      "status": "partial_implementation",
       "astra": [
         "src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:8",
-        "src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:74",
-        "src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1374"
+        "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp:159",
+        "src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:58"
       ],
       "reference": [
         "regamedll/dlls/bot/cs_bot_update.cpp:519",
@@ -8052,13 +8052,25 @@
         "regamedll/dlls/bot/cs_bot_update.cpp:547",
         "regamedll/dlls/bot/states/cs_bot_idle.cpp:66"
       ],
-      "evidence": "equipBestWeapon has correct submerged candidate check, but all production callers are objective/scenario special cases. No general MUST_EQUIP on submerged forbidden active weapon; no unsafe empty/knife rearm; no safe5s pistol→usable primary; no native early-safe EquipGrenade/knife choice (no SelectGrenade action). These are missing triggers, distinct from direct real-submersion acceptance of already implemented selection.",
-      "tests": "weapon_equipment_tests.cpp:268-336 proves helper/timer/water matrix; weapon_switch_runtime_tests.cpp:184 proves primary-empty→pistol only.",
+      "evidence": "C03-1 wires ordinary full Update after native grenade: skill>.4, waterlevel3, forbidden/known-absent active item, MUST_EQUIP. Prediction identity preferred with reentry guards; helper also prefers actual0 over stale CurWeapon29 for knife fallback. Unsafe empty/knife rearm, safe5s pistol-to-primary and early-safe grenade/knife remain. Natural swimming/all thresholds/Linux not accepted.",
+      "tests": "Product RED red-2 and red-review-i1; final27 dedicated-cwd sequential scenarios exit0, including7 underwater cases and forced5s bypass; controlled real as_oilrig water positive in live-3-wolf, both actual exits0. See UPDATE_UNDERWATER_C03_1.md.",
       "backlog_mapping": "23/new explicit weapon lifecycle unit",
       "confidence": "high",
       "title_ja": "通常Updateの装備再選択・安全時間中の装備",
-      "status_ja": "差確定",
-      "group": 1
+      "status_ja": "部分対応（C03-1水没接続）",
+      "group": 1,
+      "partial_resolution": {
+        "date": "2026-11-25",
+        "record": "UPDATE_UNDERWATER_C03_1.md",
+        "source_manifest": "artifacts/local/debug/csbot-update-equipment-20261125/candidate.json",
+        "functional_manifest": "artifacts/local/debug/csbot-update-equipment-20261125/acceptance-final.json",
+        "still_open": true,
+        "offline_focused_scenarios": 27,
+        "full_ctest": false,
+        "normal_exit_gate_current_trial": true,
+        "historical_V02_closed": false,
+        "toolchain": "independent14.52 HostX86/x86 NMake Debug; old14.51 cache/products unchanged"
+      }
     },
     {
       "id": "C04",

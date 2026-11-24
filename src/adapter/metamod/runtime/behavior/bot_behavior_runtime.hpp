@@ -368,6 +368,7 @@ private:
 	NoiseLookResult processNoiseLook(std::size_t index, runtime::BotCommand &command, bool upkeepOnly, bool decisionOnly);
 	bool decideEquipmentAction(ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking);
 	bool equipBestWeapon(std::size_t index, bool mustEquip = false);
+	bool updateUnderwaterEquipment(std::size_t index);
 	bool plantCommandCurrent(std::size_t index) const;
 	bool updateNativeGrenade(std::size_t index, const runtime::MovementPhysicsState &before);
 	void rememberNativeSafeTime(std::size_t index, const compat::ReactionContext &receipt);

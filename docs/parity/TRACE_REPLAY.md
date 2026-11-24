@@ -1,5 +1,9 @@
 # P11 differential trace comparison
 
+## C03-1 通常Updateの水没装備（2026-11-25）
+
+通常full Updateからskill>.4・完全水没・水中発射禁止/実activeなしのMUST_EQUIPを接続。公開activeを優先し、Actor/full/状態の再入を拒否する。古いCurWeapon29＋実active0のknife再装備も製品RED→修正。最終27重点シナリオ合格、既存as_oilrig実水域の公開位置保持でXM1014→Glock、water3の132更新中131更新Glock保持、両実HLDS/CDB exit0・復元一致。独立14.52 x86 buildを使用し、旧14.51 cache/製品は保持。全CTest/両OS/export/固定履歴は未実施。C03の他装備分岐、自然遊泳/全境界等は残し、大項目未完47を維持。[範囲と証拠](UPDATE_UNDERWATER_C03_1.md)。
+
 ## C02-2d12 FetchBomb保持Noiseの限定実機（2026-11-25）
 
 製品変更なし。公開RunPlayerMove足音・専用NAVのFetchBombで、保持Noiseの移動gate16更新（encounter/LOW/Native/期限/safeを照合）に抽選開始読点なし、静止候補ゼロ1更新のClear経路と次full Noise0、静止候補1の2更新で抽選後LOW拒否・Noise/更新期限保持を限定受入れ。静止期限前は候補0で13更新、候補1で22更新。最終2試行は各実HLDS/CDB exit0、通常NAV/core復元・保護一致。blind内部の独立採録・通常NAV自然発生・全境界・V02旧原因は未完。大項目未完47を維持。[詳細と証拠](FETCH_NOISE_LIVE_C02_2D12.md)。

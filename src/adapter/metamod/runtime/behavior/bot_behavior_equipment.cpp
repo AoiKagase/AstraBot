@@ -5,6 +5,54 @@ namespace astrabot
 {
 namespace metamod
 {
+bool BotBehaviorRuntime::updateUnderwaterEquipment(std::size_t index)
+{
+	const auto &config = services_->service_compatibilitySurface().configuration();
+	auto &actor = actors_[index];
+	const auto &handle = services_->service_managedBotHandles()[index];
+	constexpr float kMinimumSkill = .4f;
+	const float skill = static_cast<float>(actor.managedProfiles.skill) / 100.0f;
+	if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0 || config.botStop != 0 ||
+		!handle.entity || handle.entity->v.waterlevel != 3 || !(skill > kMinimumSkill))
+		return true;
+	const auto receipt = reactionContext(index);
+	const auto revision = actor.executionRevision;
+	const auto full = services_->service_managedBotFullUpdateSequences()[index];
+	const auto normal = actor.managedBotStateMachines.normalStateEpoch();
+	const auto attack = actor.managedBotStateMachines.attackEntryEpoch();
+	const bool attacking = actor.managedBotStateMachines.attackOverlayActive();
+	const auto *entity = handle.entity;
+	const auto serial = entity->serialnumber;
+	const auto inventory = entity->v.weapons;
+	const auto current = [&] {
+		return executionCurrent(index, receipt, revision) && handle.entity == entity && !entity->free &&
+			entity->serialnumber == serial && entity->v.waterlevel == 3 && entity->v.weapons == inventory &&
+			services_->service_managedBotFullUpdateSequences()[index] == full &&
+			actor.managedBotStateMachines.normalStateEpoch() == normal &&
+			actor.managedBotStateMachines.attackEntryEpoch() == attack &&
+			actor.managedBotStateMachines.attackOverlayActive() == attacking;
+	};
+	int weapon = 0;
+	const bool predicted = services_->observation_activeWeaponIdentity(handle.entity, weapon);
+	if (!current())
+		return false;
+	const auto &store = services_->observation_publicObservations();
+	if (!predicted)
+	{
+		compat::PublicActorState observed{};
+		if (!store.read(receipt.actor, receipt.frame, &observed) || !observed.weaponKnown)
+			return true;
+		weapon = observed.weaponId;
+	}
+	const auto definition = store.definition(weapon);
+	const bool forbidden = definition.known ? (definition.flags & (1 << 5)) != 0
+		: weapon == 5 || weapon == 14 || weapon == 15 || weapon == 21;
+	// CBot treats a known absence of an active item as unable to fire, too.
+	if (weapon == 0 || forbidden)
+		(void)equipBestWeapon(index, true);
+	return current();
+}
+
 bool BotBehaviorRuntime::equipBestWeapon(std::size_t index, bool mustEquip)
 {
 	if (index >= actors_.size() || !services_->service_globals() ||
@@ -37,6 +85,10 @@ bool BotBehaviorRuntime::equipBestWeapon(std::size_t index, bool mustEquip)
 	(void)store.read(receipt.actor, receipt.frame, &known);
 	std::array<compat::EquipmentAmmo, compat::PublicActorState::kWeaponStateCapacity> ammo{};
 	const bool predicted = services_->observation_equipmentAmmo(handle.entity, ammo);
+	if (!current())
+		return false;
+	int activeWeapon = 0;
+	const bool activeKnown = services_->observation_activeWeaponIdentity(handle.entity, activeWeapon);
 	if (!current())
 		return false;
 	auto *engine = services_->service_engineFunctions();
@@ -72,7 +124,7 @@ bool BotBehaviorRuntime::equipBestWeapon(std::size_t index, bool mustEquip)
 	input.mustEquip = mustEquip;
 	input.skill = static_cast<float>(actor.managedProfiles.skill) / 100.0f;
 	input.fullySubmerged = handle.entity->v.waterlevel == 3;
-	input.currentWeapon = static_cast<std::uint16_t>(known.weaponKnown ? known.weaponId : 0);
+	input.currentWeapon = static_cast<std::uint16_t>(activeKnown ? activeWeapon : known.weaponKnown ? known.weaponId : 0);
 	input.hasKnife = (inventory & (1U << 29)) != 0;
 	const auto *primary = compat::carriedPrimaryWeapon(inventory);
 	if (primary)

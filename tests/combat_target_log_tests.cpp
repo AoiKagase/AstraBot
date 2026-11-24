@@ -362,6 +362,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool selfDefenseFixture = scenario && std::strcmp(scenario, "self-defense") == 0;
 	const bool shieldFixture = scenario && std::strcmp(scenario, "shield") == 0;
 	const bool bestEquipmentFixture = scenario && std::strcmp(scenario, "equip-best") == 0;
+	const bool underwaterEquipmentFixture = scenario && std::strcmp(scenario, "equip-underwater") == 0;
 	const bool plantTailFixture = scenario && std::strcmp(scenario, "plant-tail") == 0;
 	const bool clearLookFixture = scenario && std::strcmp(scenario, "clear-look") == 0;
 	const bool sharedLookFixture = scenario && std::strcmp(scenario, "shared-look") == 0;
@@ -2305,7 +2306,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		equipmentFixture = nullptr;
 		return result;
 	}
-	if (bestEquipmentFixture)
+	if (bestEquipmentFixture || underwaterEquipmentFixture)
 	{
 		using namespace astrabot;
 		using namespace astrabot::compat;
@@ -2320,8 +2321,9 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			return false;
 		EquipmentFixture fixture{};
 		equipmentFixture = &fixture;
-		combatGameDll->pfnUpdateClientData = [](const edict_t *, int, clientdata_t *data) {
+		combatGameDll->pfnUpdateClientData = [](const edict_t *entity, int, clientdata_t *data) {
 			data->m_iId = equipmentFixture->active;
+			if (equipmentFixture->replaceOnActiveRead) ++const_cast<edict_t *>(entity)->serialnumber;
 		};
 		combatGameDll->pfnGetWeaponData = [](edict_t *entity, weapon_data_t *data) {
 			data[6].m_iId = 6; data[6].m_iClip = 1;
@@ -2330,6 +2332,74 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			if (equipmentFixture->replaceEntity) ++entity->serialnumber;
 			return 1;
 		};
+		if (underwaterEquipmentFixture)
+		{
+			// The missing ordinary full-Update branch must select a usable pistol
+			// without a combat empty-clip request or a PlantBomb state exit.
+			for (const auto sample : {std::array<int, 6>{40, 3, 28, 0, 0, 0}, {41, 2, 28, 0, 0, 0},
+				{41, 3, 17, 0, 0, 0}, {41, 3, 28, 1, 0, 0}, {41, 3, 28, 0, 17, 0},
+				{41, 3, 0, 0, 17, 0}, {41, 3, 0, 0, 29, 1}})
+			{
+				fixture = {};
+				fixture.active = 28;
+				fixture.primaryClip = 30;
+				runtime.beginRoundGeneration();
+				auto &self = gEntities[0];
+				self.v.weapons = sample[5] ? (1 << 29) : (1 << 28) | (1 << 17) | (1 << 29);
+				self.v.waterlevel = 0;
+				stepRifle(sample[5] ? -1 : 30, 0, sample[5] ? 29 : 28);
+				auto behavior = std::make_unique<metamod::BotBehaviorRuntime>();
+				behavior->bindServices(ports);
+				const auto &handle = ports.service_managedBotHandles()[0];
+				behavior->onActorRemembered(0, handle);
+				auto profile = static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0);
+				profile.skill = sample[0];
+				behavior->assignProfile(0, profile);
+				auto &state = const_cast<CompatibilityStateMachine &>(behavior->managedBotStateMachines(0));
+				StateUpdateContext context{};
+				const auto &life = ports.service_lifecycle();
+				context.actor = {handle.actor.slot, handle.actor.actorGeneration};
+				context.frame = {life.mapGeneration(), life.roundGeneration(), ports.service_adapterFrameCount()};
+				context.timestamp = globals.time;
+				context.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0];
+				context.fullUpdate = context.alive = context.roundActive = true;
+				context.lifeAvailability = context.roundAvailability = context.attackObservation = ObservationAvailability::Available;
+				state.initialize(context);
+				(void)state.transition(CompatibilityStateId::Hunt, StateTransitionReason::ExplicitRequest,
+					StateTransitionId::ExplicitStateChange, context);
+				runtime::MovementPhysicsState before{};
+				before.grounded = true;
+				before.origin = {self.v.origin.x, self.v.origin.y, self.v.origin.z};
+				self.v.waterlevel = sample[1];
+				fixture.active = sample[2]; // CurWeapon still says 28; prediction is authoritative.
+				fixture.replaceOnActiveRead = sample[3] != 0;
+				const auto serial = self.serialnumber;
+				fixture.commands.clear();
+				behavior->updateManagedBotCompatibilityState(0, before, false);
+				fixture.replaceOnActiveRead = false;
+				self.serialnumber = serial;
+				const std::vector<unsigned> wanted = sample[4] ? std::vector<unsigned>{static_cast<unsigned>(sample[4])} : std::vector<unsigned>{};
+				std::fprintf(stderr, "underwater skill=%d water=%d active=%d replace=%d selected=%u count=%u expected=%d\n",
+					sample[0], sample[1], sample[2], sample[3], fixture.commands.empty() ? 0 : fixture.commands[0],
+					static_cast<unsigned>(fixture.commands.size()), sample[4]);
+				if (!check(fixture.commands == wanted,
+						"ordinary full Update honors water/skill and current prediction, discarding replaced actor"))
+					return false;
+				if (sample[4] == 17)
+				{
+					stepRifle(30, 0, 28);
+					fixture.active = 28;
+					fixture.commands.clear();
+					behavior->updateManagedBotCompatibilityState(0, before, false);
+					if (!check(fixture.commands == std::vector<unsigned>{17},
+							"underwater MUST_EQUIP bypasses the common equipment clock within five seconds"))
+						return false;
+				}
+			}
+			gEntities[0].v.waterlevel = 0;
+			equipmentFixture = nullptr;
+			return true;
+		}
 		const auto run = [&](int primary, int pistol, bool refuse, bool replace, unsigned expected, int mutation = 0, bool unknown = false) {
 			fixture = {};
 			fixture.primaryClip = primary;
