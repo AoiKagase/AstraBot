@@ -42,3 +42,5 @@ Guard対照は候補あり/ゼロのordinary NoiseとNative、Clear前のNative�
 他状態の後段Noise再入、FetchBomb実機、直接同時刻full再入、経路corner投擲などC02の残件は維持する。旧baselineは再生成していない。意図したRNG差は保持owner中のGuardで従来省略されていた間隔/候補抽選であり、全履歴の差数は未計測。
 
 後続更新：上記のGuard時計resetは[C02-2d4](GUARD_LOOK_CLOCK_C02_2D4.md)で修正し、実機Native保持63更新で期限前抑止・期限到達時の1〜2秒設定を限定確認した。旧31更新を時計一致の証拠へ読み替えない。保持Noise/zero・状態間時計の実機は残る。
+
+後続更新：保持Noiseの実機は[C02-2d5](GUARD_NOISE_LIVE_C02_2D5.md)の54更新で限定受入れ。旧失敗試行や旧証拠は維持し、zero・状態間時計の実機は残す。

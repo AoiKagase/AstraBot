@@ -1,6 +1,6 @@
 # AstraBot CSBot準拠タスク一覧
 
-更新：2026-11-24。直前の統合基点：`acb87da`（ローカルmaster）。
+更新：2026-11-24。直前の統合基点：`9a767aa`（ローカルmaster）。
 
 **大項目49件：限定完了2件、未完47件。部分対応は未完に含む。** チェック済みの修正単位があっても、大項目の未完数は減らない。S14は現対戦milestone外の差分として残し、対応済みには数えない。
 
@@ -24,7 +24,7 @@
 
 ## 現在の作業
 
-C02-2d4：[Guard/Hunt共有視線時計](docs/parity/GUARD_LOOK_CLOCK_C02_2D4.md)を重点16/16＋再入補強1/1、同一実機のNative保持63更新で限定検証。次はGuard保持Noise・ゼロ候補の実機対照と共有時計の状態間継続。大項目47件は維持する。
+C02-2d5：[Guard保持Noise実機対照](docs/parity/GUARD_NOISE_LIVE_C02_2D5.md)を同一最終DLL/PDBの54更新で限定受入れ。次はGuard候補ゼロの実機対照と共有時計の状態間継続。製品ソース変更なし。大項目47件は維持する。
 
 ## 完了した修正単位（大項目の完了とは別）
 
@@ -41,6 +41,7 @@ C02-2d4：[Guard/Hunt共有視線時計](docs/parity/GUARD_LOOK_CLOCK_C02_2D4.md
 | ☑ C02-2d2 | [保持NoiseのHunt受付](docs/parity/RETAINED_NOISE_ADMISSION_C02_2D2.md)。Windows重点12/12、同じ実機の静止保持条件を限定受入れ。moving/zero実機・Guardは未完 |
 | ☑ C02-2d3 | [Guard受付・独立Ahead](docs/parity/GUARD_LOOK_ADMISSION_C02_2D3.md)。重点16/16＋追加1/1、実機Native受付31更新。抽選時計・Noise/zero実機は未完 |
 | ☑ C02-2d4 | [Guard/Hunt共有視線時計](docs/parity/GUARD_LOOK_CLOCK_C02_2D4.md)。重点16/16＋再入補強1/1、実機Native保持63更新で期限を確認。状態間・Noise/zero実機は未完 |
+| ☑ C02-2d5 | [Guard保持Noise実機](docs/parity/GUARD_NOISE_LIVE_C02_2D5.md)。製品変更なし、54更新で時計・抽選後拒否・Noise保持を限定確認 |
 
 既存Plantの早期判断・MoveTo開始順・末尾入力/退出・Plant前Idle経路抑止・cold Idle/Buy視線供給も限定完了。残る自然拾得・実水没・標準GameDLL受入れはS13/C14等へ分離している。過去の完了範囲は[STATUS](docs/parity/STATUS.md)を参照。
 
@@ -56,7 +57,8 @@ C02-2d4：[Guard/Hunt共有視線時計](docs/parity/GUARD_LOOK_CLOCK_C02_2D4.md
 - [x] GuardのNoise/Native受付・ゼロ候補Clear・独立Aheadを実装する（C02-2d3、重点16/16＋追加1/1、実機Native受付のみ限定受入れ）
 - [x] 記憶敵候補・geometry再構築等によるGuard抽選時計のresetを修正する（C02-2d4、共有時計、重点16/16＋1/1、実機Native保持63更新）
 - [ ] Hunt↔Guardをまたぐ共有静止時計の継続を実機対照で確認する
-- [ ] Guard保持Noise・ゼロ候補の実機受入れを確認する
+- [x] Guard保持Noiseの実機受入れを確認する（C02-2d5、54更新の限定対照）
+- [ ] Guardゼロ候補の実機受入れを確認する
 - [ ] 他状態の後段Noise再入停止を合わせる
 - [ ] FetchBomb実機と直接同時刻full再入を検証する
 - [ ] 安全時間終了後の経路corner投擲を実装・検証する
