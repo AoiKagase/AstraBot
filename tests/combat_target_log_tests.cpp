@@ -40,6 +40,12 @@ float (*grenadeAdmissionOriginalFloat)(const char *) = nullptr;
 cvar_t grenadeAdmissionAllowed{};
 unsigned grenadeAdmissionResetCount = 0, grenadeAdmissionFloatReads = 0;
 bool grenadeAdmissionInReset = false;
+bool grenadeCornerTrace = false;
+unsigned grenadeCornerWallTraces = 0;
+unsigned grenadeCornerCase = 0;
+astrabot::metamod::PluginRuntime *grenadeCornerResetRuntime = nullptr;
+std::vector<Vector> grenadeCornerWallStarts;
+std::vector<std::pair<unsigned, unsigned short>> grenadeCornerSent;
 astrabot::compat::CompatibilityStateMachine *grenadeAdmissionAttackMachine = nullptr;
 astrabot::compat::StateUpdateContext grenadeAdmissionAttackContext{};
 unsigned grenadeAdmissionAttackMutations = 0;
@@ -103,6 +109,35 @@ float combatRandomFloat(float low, float high)
 void traceCombatVisibility(const float *start, const float *end, int ignoreMonsters, edict_t *self, TraceResult *result)
 {
 	traceObjectiveVisibility(start, end, ignoreMonsters, self, result);
+	if (grenadeCornerTrace && self == &gEntities[0])
+	{
+		if (ignoreMonsters == 0x101 && std::fabs(end[2] - 36.0f) < .01f)
+		{
+			result->flFraction = grenadeCornerCase == 3 ? .5f : grenadeCornerCase == 4 ? 1.0f :
+				end[0] >= (grenadeCornerCase == 6 ? 420.0f : 200.0f) ? .5f : 1.0f;
+			if (grenadeCornerResetRuntime)
+			{
+				auto *runtime = grenadeCornerResetRuntime;
+				grenadeCornerResetRuntime = nullptr;
+				runtime->beginRoundGeneration();
+			}
+		}
+		if (ignoreMonsters == 0x100 && std::fabs(end[0] - start[0]) > 999.0f)
+		{
+			++grenadeCornerWallTraces;
+			grenadeCornerWallStarts.emplace_back(start[0], start[1], start[2]);
+			if (end[0] > start[0])
+			{
+				result->flFraction = .02f;
+				result->vecEndPos = Vector(start[0] + 20.0f, start[1], start[2]);
+			}
+		}
+		if (ignoreMonsters == 0x100 && std::fabs(end[1] - start[1]) > 999.0f)
+		{
+			++grenadeCornerWallTraces;
+			grenadeCornerWallStarts.emplace_back(start[0], start[1], start[2]);
+		}
+	}
 	if (occludedAimTraces && self == &gEntities[0] && ignoreMonsters == 0)
 		occludedAimTraces->emplace_back(end[0], end[1], end[2]);
 	if (enemyBehindCover && self == &gEntities[0] && (ignoreMonsters & 0xff) == 1 &&
@@ -185,6 +220,8 @@ void runCombatPlayerMove(edict_t *entity, const float *angles, float forward, fl
 		combatCommandYaw = angles[1];
 	if (entity == &gEntities[0])
 	{
+		if (grenadeCornerTrace)
+			grenadeCornerSent.emplace_back(astrabot::metamod::PluginRuntime::instance().snapshot().roundGeneration, buttons);
 		combatCommandPitch = angles[0];
 		combatCommandForward = forward;
 		combatCommandSide = side;
@@ -330,6 +367,13 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool sharedLookFixture = scenario && std::strcmp(scenario, "shared-look") == 0;
 	const bool sharedReentryFixture = scenario && std::strcmp(scenario, "shared-look-reentry") == 0;
 	const bool plantEntryFixture = scenario && std::strcmp(scenario, "plant-entry") == 0;
+	const bool grenadeCornerFixture = scenario && std::strncmp(scenario, "native-grenade-corner", 21) == 0;
+	grenadeCornerCase = scenario && std::strstr(scenario, "-he-boundary") ? 1U :
+		scenario && std::strstr(scenario, "-flash-boundary") ? 2U :
+		scenario && std::strstr(scenario, "-first-hidden") ? 3U :
+		scenario && std::strstr(scenario, "-all-visible") ? 4U :
+		scenario && std::strstr(scenario, "-reentry") ? 5U :
+		scenario && std::strstr(scenario, "-diagonal") ? 6U : 0U;
 	const bool grenadeAdmissionFixture = scenario && std::strcmp(scenario, "native-grenade-admission") == 0;
 	const bool grenadeNoiseReentryFixture = scenario && std::strcmp(scenario, "native-grenade-noise-reentry") == 0;
 	const bool grenadeNoiseOrderFixture = grenadeNoiseReentryFixture || (scenario && std::strcmp(scenario, "native-grenade-noise-order") == 0);
@@ -343,7 +387,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool grenadeRootFrameReentryFixture = scenario && std::strcmp(scenario, "native-grenade-root-frame-reentry") == 0;
 	const bool grenadeZeroApproachFixture = grenadeZeroReentryFixture || grenadeRootReentryFixture ||
 		grenadeRootFrameReentryFixture || (scenario && std::strcmp(scenario, "native-grenade-zero-approach") == 0);
-	const bool nativeGrenadeFixture = grenadeAdmissionFixture || grenadeNoiseFixture || grenadeZeroApproachFixture || grenadeHuntFixture || grenadeMovingFixture || grenadeOwnerFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
+	const bool nativeGrenadeFixture = grenadeCornerFixture || grenadeAdmissionFixture || grenadeNoiseFixture || grenadeZeroApproachFixture || grenadeHuntFixture || grenadeMovingFixture || grenadeOwnerFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
@@ -406,6 +450,87 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				"C02 public GameDLL grenade identity is positive even before CurWeapon updates"))
 			return false;
 		std::unique_ptr<metamod::BotBehaviorRuntime> movingBehavior;
+		if (grenadeCornerFixture)
+		{
+			if (!check(loadMovingEncounterNav(runtime), "corner control: connected native route NAV loads")) return false;
+			for (unsigned n = 0; n < 8; ++n) stepRifle(1, 0, 4);
+			const auto nav = grenadePorts.service_navPublisher().snapshot();
+			const world::FrameIdentity frame{grenadeLife.mapGeneration(), grenadeLife.roundGeneration(),
+				grenadePorts.service_adapterFrameCount()};
+			const float targetY = grenadeCornerCase == 6 ? 50.0f : 32.0f;
+			if (!check(grenadePorts.navigation_tryFollowCoverPath(0, nav, frame, 1, 3, {450, targetY, 0}, [] { return true; }) &&
+				grenadePorts.navigation_hasActivePath(0), "corner control: real current navigation owns the path")) return false;
+			const auto path = grenadePorts.navigation_grenadePath(0, nav);
+			if (!check(path.next == 1U && path.points.size() == 4U && path.points[1].x == 105.0f &&
+				path.points[2].x == 305.0f && path.points[3].x == 450.0f,
+				"corner control: native portal geometry and current next index are published without advancing the route")) return false;
+			const float roundStart = grenadePorts.service_roundFreezeGeneration() == frame.roundGeneration
+				? grenadePorts.service_roundFreezeStartTime() : 0.0f;
+			const float aggression = static_cast<float>(static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0).aggression) / 100.0f;
+			const float safe = 15.0f + 5.0f * aggression;
+			grenadeCornerTrace = true;
+			grenadeCornerWallTraces = 0;
+			grenadeCornerWallStarts.clear();
+			const int weapon = grenadeCornerCase == 2 ? 25 : 4;
+			if (weapon == 25)
+			{
+				gEntities[0].v.weapons |= 1 << 25;
+				combatGameDll->pfnUpdateClientData = [](const edict_t *, int, clientdata_t *data) { data->m_iId = 25; };
+			}
+			if (grenadeCornerCase == 1 || grenadeCornerCase == 2)
+			{
+				globals.time = roundStart + safe - .125f;
+				stepRifle(1, 0, weapon); // Exactly the strict safe boundary, before wellPastSafe.
+			}
+			if (grenadeCornerCase == 1)
+			{
+				if (!check(grenadeCornerWallTraces == 0, "C02-3 HE refuses the ordinary safe edge before wellPastSafe")) return false;
+				globals.time += 30.0f;
+				stepRifle(1, 0, weapon);
+				return check(grenadeCornerWallTraces == 0, "C02-3 consumed safe edge does not retry HE on a later unsafe full update");
+			}
+			if (grenadeCornerCase != 2)
+			{
+				globals.time = roundStart + 1.25f * safe + .25f;
+				if (grenadeCornerCase == 5) grenadeCornerResetRuntime = &runtime;
+				const auto moves = gRunPlayerMoveCount;
+				grenadeCornerSent.clear();
+				stepRifle(1, 0, weapon);
+				if (grenadeCornerCase == 5)
+				{
+					std::fprintf(stderr, "corner reentry callback=%d walls=%u moves=%u->%u attack=%u round=%u->%u\n",
+						grenadeCornerResetRuntime == nullptr ? 1 : 0, grenadeCornerWallTraces, moves, gRunPlayerMoveCount,
+						gLastRunPlayerMoveButtons & IN_ATTACK, frame.roundGeneration, grenadeLife.roundGeneration());
+					return check(grenadeCornerResetRuntime == nullptr && grenadeCornerWallTraces == 0 && gRunPlayerMoveCount == moves + 1 &&
+						grenadeCornerSent.size() == 1U && grenadeCornerSent[0].first == grenadeLife.roundGeneration() &&
+						grenadeCornerSent[0].second == 0U && combatCommandForward == 0.0f && combatCommandSide == 0.0f,
+						"C02-3 round reentry aborts stale corner work and sends only the new generation neutral input");
+				}
+			}
+			if (grenadeCornerCase == 3 || grenadeCornerCase == 4)
+				return check(grenadeCornerWallTraces == 0 && (gLastRunPlayerMoveButtons & IN_ATTACK) != 0,
+					grenadeCornerCase == 3 ? "C02-3 invisible first path node cannot begin a toss" :
+					"C02-3 entirely visible path has no occluded successor and never reads past its end");
+			if (!check(grenadeCornerWallTraces == 4, "C02-3 safe edge selects the path corner and applies four wall buffers")) return false;
+			// Fixed-reference Vector::NormalizeInPlace divides each component before t*dir.
+			const float expectedX = grenadeCornerCase == 6 ? 404.23828125f : 180.0f;
+			const float expectedY = grenadeCornerCase == 6 ? 44.319236755371094f : 32.0f;
+			const float bufferedX = expectedX - 30.0f;
+			if (!check(grenadeCornerWallStarts.size() == 4U && grenadeCornerWallStarts[0].x == expectedX &&
+				grenadeCornerWallStarts[0].y == expectedY && grenadeCornerWallStarts[0].z == 46.0f &&
+				grenadeCornerWallStarts[1].x == bufferedX && grenadeCornerWallStarts[2].x == bufferedX &&
+				grenadeCornerWallStarts[3].x == bufferedX,
+				"C02-3 samples at 25 units with half-height plus ten and applies wall buffers in native order")) return false;
+			bool released = false;
+			for (unsigned n = 0; n < 30; ++n)
+			{
+				stepRifle(1, 180, weapon); // Remain unaligned: strict three-second fallback releases.
+				released = released || (gLastRunPlayerMoveButtons & IN_ATTACK) == 0;
+			}
+			grenadeCornerTrace = false;
+			return check(released && grenadeCornerWallTraces == 4,
+				"C02-3 path-corner toss releases through real RunPlayerMove without an enemy or repeated selection");
+		}
 		runtime::MovementPhysicsState movingBefore{};
 		const auto makeMovingBehavior = [&] {
 			auto result = std::make_unique<metamod::BotBehaviorRuntime>();

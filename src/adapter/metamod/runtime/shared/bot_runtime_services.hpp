@@ -110,6 +110,8 @@ public:
 	virtual nav::AreaId navigation_knownArea(
 		std::size_t index, world::ActorKey actor, world::FrameIdentity frame, std::uint64_t revision) const = 0;
 	virtual bool navigation_hasActivePath(std::size_t index) const = 0;
+	virtual std::uint64_t navigation_routeRevision(std::size_t index) const = 0;
+	virtual nav::NavGrenadePath navigation_grenadePath(std::size_t index, const nav::NavSnapshot &snapshot) const = 0;
 	virtual bool navigation_tryFollowCoverPath(std::size_t index, const nav::NavSnapshot &snapshot,
 		world::FrameIdentity frame, nav::AreaId start, nav::AreaId goal, const nav::NavVector &point,
 		const std::function<bool()> &current) = 0;

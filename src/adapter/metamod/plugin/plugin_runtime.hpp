@@ -439,6 +439,14 @@ private:
 	{
 		return navigation_.hasActivePath(index);
 	}
+	std::uint64_t navigation_routeRevision(std::size_t index) const override
+	{
+		return navigation_.routeRevision(index);
+	}
+	nav::NavGrenadePath navigation_grenadePath(std::size_t index, const nav::NavSnapshot &snapshot) const override
+	{
+		return navigation_.grenadePath(index, snapshot);
+	}
 	bool navigation_tryFollowCoverPath(std::size_t index, const nav::NavSnapshot &snapshot,
 		world::FrameIdentity frame, nav::AreaId start, nav::AreaId goal, const nav::NavVector &point,
 		const std::function<bool()> &current) override

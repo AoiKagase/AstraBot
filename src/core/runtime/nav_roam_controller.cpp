@@ -2921,6 +2921,71 @@ bool NavRoamController::hasPath() const
 	return routeState().hasActiveRoute;
 }
 
+nav::NavGrenadePath NavRoamController::grenadePath(const nav::NavSnapshot &snapshot) const
+{
+	nav::NavGrenadePath result{};
+	if (!hasPath() || !snapshot.isValid())
+		return result;
+	const auto &route = routeState();
+	const auto &corridor = route.activeCorridor;
+	if (snapshot.revision() != corridor.navRevision || snapshot.mapGeneration() != corridor.mapGeneration ||
+		corridor.areas.empty())
+		return result;
+	if (!corridor.huntWaypoints.empty())
+	{
+		for (const auto &waypoint : corridor.huntWaypoints)
+			result.points.push_back(waypoint.position);
+		result.next = locomotion_.currentHuntWaypointIndex();
+		return result;
+	}
+	const auto &document = *snapshot.document();
+	const auto *first = document.findArea(corridor.areas.front());
+	if (!first)
+		return result;
+	result.points.push_back(nav::extentCenterOf(*first));
+	result.next = 1U;
+	for (std::size_t i = 0; i < corridor.links.size(); ++i)
+	{
+		const auto &link = corridor.links[i];
+		const auto *from = document.findArea(link.fromArea), *to = document.findArea(link.toArea);
+		if (!from || !to)
+			return {};
+		if (i + 1U <= route.activeCorridorIndex)
+			result.next = result.points.size();
+		const auto ladder = std::find_if(corridor.nativeLadders.begin(), corridor.nativeLadders.end(),
+			[i](const nav::NavLadderStep &step) { return step.linkIndex == i; });
+		if (ladder != corridor.nativeLadders.end())
+		{
+			const bool up = link.fromArea == ladder->ladder.bottomArea;
+			auto point = up ? ladder->ladder.bottom : ladder->ladder.top;
+			const auto direction = up ? ladder->ladder.direction : (ladder->ladder.direction + 2U) % 4U;
+			point.x += direction == 1U ? 32.0f : direction == 3U ? -32.0f : 0.0f;
+			point.y += direction == 2U ? 32.0f : direction == 0U ? -32.0f : 0.0f;
+			result.points.push_back(point);
+			continue;
+		}
+		const bool reverse = std::any_of(to->connections.begin(), to->connections.end(), [&](const auto &neighbors) {
+			return std::find(neighbors.begin(), neighbors.end(), from->id) != neighbors.end();
+		});
+		auto point = nav::nativeGroundPortal(document, link, result.points.back(), reverse);
+		result.points.push_back(point);
+		if (!reverse)
+		{
+			point.x += link.direction == 1U ? 25.0f : link.direction == 3U ? -25.0f : 0.0f;
+			point.y += link.direction == 2U ? 25.0f : link.direction == 0U ? -25.0f : 0.0f;
+			point.z = nav::surfaceZAt(*to, point.x, point.y);
+			result.points.push_back(point);
+		}
+	}
+	if (corridor.hasEndpoint)
+	{
+		result.points.push_back(corridor.endpoint);
+		if (locomotion_.targetingEndpoint())
+			result.next = result.points.size() - 1U;
+	}
+	return result;
+}
+
 float NavRoamController::pathDistanceRemaining(const nav::NavSnapshot &snapshot) const
 {
 	if (!hasPath())

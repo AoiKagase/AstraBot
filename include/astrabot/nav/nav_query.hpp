@@ -134,6 +134,12 @@ struct NavHuntWaypoint
 	std::size_t areaIndex;
 };
 
+struct NavGrenadePath
+{
+	std::vector<NavVector> points;
+	std::size_t next = 0U;
+};
+
 // The encounter and its middle area are owned by the queried snapshot.
 struct NavHuntEncounter
 {
@@ -257,6 +263,8 @@ public:
 		float verticalTolerance, NavVector *target, AreaId *targetArea, NavHuntSteeringContext hunt = {});
 	bool isActive() const;
 	std::size_t currentIndex() const;
+	std::size_t currentHuntWaypointIndex() const { return huntWaypointIndex_; }
+	bool targetingEndpoint() const { return endpointTargeted_; }
 	NavHuntEncounter huntEncounter(const NavSnapshot &snapshot) const;
 	bool hasHuntWaypointSuccessor() const { return active_ && huntWaypointIndex_ + 1 < huntWaypoints_.size(); }
 	static bool nearHuntCorner(const NavVector &origin, const NavVector &target);
@@ -282,6 +290,7 @@ private:
 	bool hasEndpoint_ = false;
 	bool huntEndpointSteering_ = false;
 	bool huntWalking_ = false;
+	bool endpointTargeted_ = false;
 	NavVector endpoint_ = {};
 };
 }

@@ -466,6 +466,91 @@ void BotBehaviorRuntime::syncNativeGrenadeLook(std::size_t index)
 	}
 }
 
+void BotBehaviorRuntime::rememberNativeSafeTime(std::size_t index, const compat::ReactionContext &receipt)
+{
+	const float start = services_->service_roundFreezeGeneration() == receipt.frame.roundGeneration
+		? services_->service_roundFreezeStartTime() : 0.0f;
+	actors_[index].nativeWasSafe = actors_[index].enemyReaction.isSafe(receipt.now - start,
+		static_cast<float>(actors_[index].managedProfiles.aggression) / 100.0f);
+}
+
+bool BotBehaviorRuntime::findGrenadeTossPathTarget(
+	std::size_t index, world::WorldPosition *target, const std::function<bool()> &current)
+{
+	const auto navigation = services_->service_navPublisher().snapshot();
+	const auto route = services_->navigation_routeRevision(index);
+	const auto path = services_->navigation_grenadePath(index, navigation);
+	auto *engine = services_->service_engineFunctions();
+	auto *self = services_->service_managedBotHandles()[index].entity;
+	if (!target || !self || !engine || !engine->pfnTraceLine || path.next >= path.points.size())
+		return false;
+	const auto trace = engine->pfnTraceLine;
+	const auto valid = [&] {
+		return current() && services_->service_engineFunctions() == engine && engine->pfnTraceLine == trace &&
+			services_->navigation_routeRevision(index) == route &&
+			services_->service_navPublisher().snapshot().revision() == navigation.revision();
+	};
+	const auto eye = self->v.origin + self->v.view_ofs;
+	const auto visible = [&](const nav::NavVector &point) {
+		const float start[] = {eye.x, eye.y, eye.z}, end[] = {point.x, point.y, point.z};
+		TraceResult result{};
+		trace(start, end, 0x101, self, &result); // FVisible: ignore monsters and glass.
+		return valid() && result.flFraction == 1.0f;
+	};
+	if (!valid())
+		return false;
+	std::size_t i = path.next;
+	for (; i < path.points.size(); ++i)
+	{
+		auto point = path.points[i];
+		point.z += 36.0f; // HalfHumanHeight.
+		if (!visible(point))
+			break;
+	}
+	// A corner requires a visible predecessor and an occluded successor.
+	// Do not read the native fixed array's unused tail when the entire path is visible.
+	if (!valid() || i == path.next || i >= path.points.size())
+		return false;
+	const auto &from = path.points[i - 1U], &to = path.points[i];
+	const float x = to.x - from.x, y = to.y - from.y, z = to.z - from.z;
+	const float length = std::sqrt(x * x + y * y + z * z);
+	const nav::NavVector pathDirection = length > 0.0f
+		? nav::NavVector{x / length, y / length, z / length} : nav::NavVector{0.0f, 0.0f, 1.0f};
+	auto spot = from;
+	for (float t = 0.0f; t < length; t += 25.0f)
+	{
+		const nav::NavVector point{from.x + t * pathDirection.x, from.y + t * pathDirection.y,
+			from.z + t * pathDirection.z + 36.0f};
+		if (!visible(point))
+			break;
+		spot = point;
+	}
+	if (!valid())
+		return false;
+	spot.z += 10.0f;
+	for (unsigned direction = 0; direction < 4U; ++direction)
+	{
+		const bool alongX = direction < 2U, positive = (direction % 2U) == 0U;
+		const float start[] = {spot.x, spot.y, spot.z};
+		float end[] = {spot.x, spot.y, spot.z};
+		end[alongX ? 0 : 1] += positive ? 999.9f : -999.9f;
+		TraceResult result{};
+		trace(start, end, 0x100, self, &result); // Wall buffer includes actors, ignores glass.
+		if (!valid())
+			return false;
+		if (result.flFraction < 1.0f)
+		{
+			float &coordinate = alongX ? spot.x : spot.y;
+			const float hit = alongX ? result.vecEndPos.x : result.vecEndPos.y;
+			const float range = positive ? hit - coordinate : coordinate - hit;
+			if (range < 50.0f)
+				coordinate = hit + (positive ? -50.0f : 50.0f);
+		}
+	}
+	*target = {spot.x, spot.y, spot.z};
+	return true;
+}
+
 bool BotBehaviorRuntime::updateNativeGrenade(std::size_t index, const runtime::MovementPhysicsState &before)
 {
 	syncNativeGrenadeLook(index);
@@ -546,6 +631,22 @@ bool BotBehaviorRuntime::updateNativeGrenade(std::size_t index, const runtime::M
 			pending.begin(receipt.now, {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z});
 			beganLook = !wasWaiting && pending.waiting();
 		}
+	}
+	const float roundStart = services_->service_roundFreezeGeneration() == receipt.frame.roundGeneration
+		? services_->service_roundFreezeStartTime() : 0.0f;
+	const float aggression = static_cast<float>(actor.managedProfiles.aggression) / 100.0f;
+	const float elapsed = receipt.now - roundStart;
+	if (equipped && actor.nativeWasSafe && !actor.enemyReaction.isSafe(elapsed, aggression) &&
+		(weapon != 4U || actor.enemyReaction.wellPastSafe(elapsed, aggression)) && !pending.waiting())
+	{
+		world::WorldPosition target{};
+		if (findGrenadeTossPathTarget(index, &target, current))
+		{
+			pending.begin(receipt.now, target);
+			beganLook = pending.waiting();
+		}
+		if (!current())
+			return false;
 	}
 	const bool primary = pending.primary(receipt.now, equipped);
 	if (!current())

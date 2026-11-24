@@ -1,5 +1,9 @@
 # 23　CSBot参照実装との差分監査
 
+## C02-3 定義済みcorner投擲の限定対応（2026-11-24）
+
+安全時間のsafe→unsafe更新だけで経路corner投擲を開始し、HEのwellPastSafe、認識敵優先、待機重複抑止を接続。現行経路/index、可視36・25刻み・追加10・4方向50bufferを固定参照へ合わせ、終点phaseと斜め1ULPを正規RED→GREENで修正した。最終Windows関連29/29（2.86秒）＋構造/武器/float重点9/9（2.73秒）。最終DLLで通常NAV・moving Hunt・公開flash・自然safe16秒の境界を確認し、actor1/full136のcorner開始→22full保持→full158の実attack解放を限定受入れ。HLDS11112/CDB40156はexit0・実PID0・core原文復元・保護指紋一致。全可視/自明経路の未使用tailは安全拒否しており完全parityではない。進行後drop/梯子index、HE実機、着弾、FetchBomb未採録範囲、V02過去の正常終了不合格を残す。大項目47件を維持。[詳細と証拠](GRENADE_CORNER_C02_3.md)。
+
 ## C02-2d9 FetchBombと直接Root再帰（2026-11-24）
 
 製品変更なし。正規Rootの同時刻再帰2対照を追加し、nested fullの受付抑止、同frameの外側1送信、新frameの旧送信/clock公開停止を確認。最終Windows重点20/20、初回fixture open失敗19/20は別保存。同一実機のFetchBomb Native保持静止45更新・抽選後LOW拒否4回を機能採録し、移動中Native保持8更新も確認。移動encounter受付の因果対照・候補ゼロ等は未実施。quit後Steam待機でユーザー許可後にHLDS11228/CDB30732を個別終了（両0xFFFFFFFF）。実PID0・core原文復元・保護指紋一致。正常終了は不合格としてV02へ残す。corner投擲と大項目47件を継続。[詳細と証拠](FETCH_ROOT_REENTRY_C02_2D9.md)。

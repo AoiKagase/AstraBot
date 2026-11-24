@@ -170,6 +170,8 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 		actors_[index].managedBotStateMachines.normalStateEpoch() != epoch)
 		return;
 	commitBehaviorState(index, context, stateBehavior, &currentPlantMove);
+	if (executionCurrent(index, receipt, revision))
+		rememberNativeSafeTime(index, receipt);
 	if (plantMove && executionCurrent(index, receipt, revision) &&
 		!actors_[index].managedBotStateMachines.attackOverlayActive())
 		*plantMove = currentPlantMove;
@@ -190,6 +192,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 {
 	actors_[index].lookAroundStateTimestamp = 0.0f;
 	actors_[index].nativeGrenade.reset();
+	actors_[index].nativeWasSafe = true;
 	actors_[index].grenadeCommand = {};
 	actors_[index].morale = {};
 	invalidateHelpExecution(index);
@@ -253,6 +256,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 {
 	actors_[index].lookAroundStateTimestamp = 0.0f;
 	actors_[index].nativeGrenade.reset();
+	actors_[index].nativeWasSafe = true;
 	actors_[index].grenadeCommand = {};
 	resetEncouragement();
 	actors_[index].morale = {};
@@ -310,6 +314,7 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 	{
 		actor.lookAroundStateTimestamp = 0.0f;
 		actor.nativeGrenade.reset();
+		actor.nativeWasSafe = true;
 		actor.grenadeCommand = {};
 		if (++actor.executionRevision == 0)
 			++actor.executionRevision;
@@ -348,6 +353,7 @@ void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 {
 	actors_[index].lookAroundStateTimestamp = 0.0f;
 	actors_[index].nativeGrenade.reset();
+	actors_[index].nativeWasSafe = true;
 	actors_[index].grenadeCommand = {};
 	invalidateHelpExecution(index);
 	actors_[index].flashResponse = {};
@@ -387,6 +393,7 @@ void BotBehaviorRuntime::resetRoundTactics()
 	for (auto &actor : actors_)
 	{
 		actor.nativeGrenade.reset();
+		actor.nativeWasSafe = true;
 		actor.grenadeCommand = {};
 		if (++actor.executionRevision == 0)
 			++actor.executionRevision;

@@ -4190,8 +4190,56 @@ bool testDefuseMoveToRetainsFirstPointAfterDrift(bool clear)
 		"C4 MoveTo steers toward the retained portal after drifting into area 54 without another draw");
 }
 
+bool testGrenadePathTracksCommittedEndpointPhase()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto first = area(1U, 0, 100), middle = area(2U, 100, 300), last = area(3U, 300, 600);
+	first.connections[1] = {2U}; middle.connections[3] = {1U};
+	middle.connections[1] = {3U}; last.connections[3] = {2U};
+	document.addArea(first); document.addArea(middle); document.addArea(last);
+	nav::NavSnapshotPublisher publisher;
+	if (publisher.publish(&document, 1U) != nav::NavSnapshotResult::Published) return false;
+	compat::ScriptedRandomSource random({compat::RandomTapeEntry::floatEntry(
+		"CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .6f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1U, 1U}; observation.frame = {1U, 1U, 1U}; observation.team = 1U;
+	observation.locomotion.position = {50, 32, 0};
+	observation.locomotion.standingClearance = 72; observation.locomotion.crouchingClearance = 36;
+	observation.locomotion.grounded = observation.locomotion.timingAvailable = true;
+	observation.locomotion.observedAt = 1.0f;
+	observation.hasObjectiveTarget = observation.nativeSameAreaEndpoint = observation.followPath = true;
+	observation.followGoalArea = 3U; observation.objectiveTarget = {450, 32, 0};
+	nav::LocomotionIntent intent{};
+	runtime::NavRoamDecision decision{};
+	const auto snapshot = publisher.snapshot();
+	if (!check(controller.grenadePath(snapshot).points.empty(), "C02-3 inactive route has no grenade path")) return false;
+	controller.update(snapshot, observation, &intent, &decision);
+	const auto revision = controller.routeRevision();
+	for (unsigned n = 0; n < 3; ++n)
+	{
+		observation.frame.tick = n + 2U; observation.locomotion.observedAt = 1.1f + .1f * n;
+		observation.locomotion.position.x = n == 0 ? 50.0f : n == 1 ? 150.0f : 320.0f;
+		controller.update(snapshot, observation, &intent, &decision);
+		const auto path = controller.grenadePath(snapshot);
+		if (!check(path.points.size() == 4U && controller.routeRevision() == revision,
+			"C02-3 route progression preserves the same four native nodes")) return false;
+		if (n == 0 && !check(path.next == 1U, "C02-3 first committed target is the first portal")) return false;
+		if (n == 1 && !check(path.next == 2U, "C02-3 entering the last area still retains its committed portal")) return false;
+		if (n == 2 && !check(decision.targetPosition.x == 450.0f && path.next == 3U,
+			"C02-3 after endpoint steering commits the grenade index must retire the old portal")) return false;
+	}
+	controller.destroyPath();
+	return check(controller.grenadePath(snapshot).points.empty() && random.verifyComplete(),
+		"C02-3 destroyed path cannot expose retained grenade geometry or consume new RNG");
+}
+
 int main()
 {
+	if (!testGrenadePathTracksCommittedEndpointPhase()) return 1;
 	if (!testRemainingPathDistance() || !testDefuseMoveToPreparesPathBeforeMoving() || !testFetchBombPositionPath() ||
 		!testDefuseMoveToRetainsFirstPointAfterDrift(true) || !testDefuseMoveToRetainsFirstPointAfterDrift(false))
 		return 1;

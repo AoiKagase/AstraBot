@@ -142,6 +142,8 @@ public:
 		return config_.averageVelocityStuckMonitor ? referenceStuck_ : stuckFrames_ >= config_.stuckFrameLimit;
 	}
 	std::size_t currentCorridorIndex() const;
+	std::size_t currentHuntWaypointIndex() const { return pathFollower_.currentHuntWaypointIndex(); }
+	bool targetingEndpoint() const { return pathFollower_.targetingEndpoint(); }
 	bool hasHuntWaypointSuccessor() const { return pathFollower_.hasHuntWaypointSuccessor(); }
 	NavHuntEncounter huntEncounter(const NavSnapshot &snapshot) const
 	{

@@ -370,6 +370,8 @@ private:
 	bool equipBestWeapon(std::size_t index, bool mustEquip = false);
 	bool plantCommandCurrent(std::size_t index) const;
 	bool updateNativeGrenade(std::size_t index, const runtime::MovementPhysicsState &before);
+	void rememberNativeSafeTime(std::size_t index, const compat::ReactionContext &receipt);
+	bool findGrenadeTossPathTarget(std::size_t index, world::WorldPosition *target, const std::function<bool()> &current);
 	void applyNativeGrenadeInput(std::size_t index, ActionProposal &proposal) const;
 	bool nativeGrenadeCommandCurrent(std::size_t index) const;
 	void syncNativeGrenadeLook(std::size_t index);
@@ -708,6 +710,7 @@ private:
 		compat::BotMorale morale{};
 		std::uint64_t executionRevision = 1;
 		compat::NativeGrenadeThrow nativeGrenade{};
+		bool nativeWasSafe = true;
 		std::uint64_t grenadeLookClearSequence = 0;
 		struct GrenadeCommand
 		{

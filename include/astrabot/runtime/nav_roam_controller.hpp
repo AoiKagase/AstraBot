@@ -311,6 +311,7 @@ public:
 	}
 	bool hasNativeLadderPath() const;
 	float pathDistanceRemaining(const nav::NavSnapshot &snapshot) const;
+	nav::NavGrenadePath grenadePath(const nav::NavSnapshot &snapshot) const;
 
 private:
 	nav::NativeLadderRecovery nativeLadderRecovery_{};

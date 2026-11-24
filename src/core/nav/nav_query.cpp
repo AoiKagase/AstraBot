@@ -1467,6 +1467,7 @@ NavFollowerResult NavPathFollower::start(const NavCorridor &corridor)
 	huntEndpointSteering_ = corridor.huntEndpointSteering;
 	huntWalking_ = false;
 	endpoint_ = corridor.endpoint;
+	endpointTargeted_ = false;
 	currentIndex_ = 0U;
 	huntWaypointIndex_ = huntWaypoints_.empty() ? 0U : 1U;
 	if (huntWaypointIndex_ != 0U)
@@ -1662,6 +1663,7 @@ NavFollowerResult NavPathFollower::update(const NavSnapshot &snapshot, const Nav
 		huntWalking_ = false;
 	if (hasEndpoint_ && atEndpoint)
 	{
+		endpointTargeted_ = huntWaypoints_.empty();
 		const auto toEnd = displacement(position, endpoint_);
 		const float distanceSquared = dotProduct(toEnd, toEnd);
 		constexpr float walkRange = 200.0f;

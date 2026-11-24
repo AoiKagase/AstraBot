@@ -61,6 +61,10 @@ public:
 	{
 		return actors_[index].managedBotMovement.pathDistanceRemaining(snapshot);
 	}
+	nav::NavGrenadePath grenadePath(std::size_t index, const nav::NavSnapshot &snapshot) const
+	{
+		return actors_[index].managedBotMovement.grenadePath(snapshot);
+	}
 
 	const compat::NavigationStep &managedNavigationSteps(std::size_t index) const
 	{

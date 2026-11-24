@@ -1,6 +1,6 @@
 # AstraBot CSBot準拠タスク一覧
 
-更新：2026-11-24。直前の統合基点：`0760166`（ローカルmaster）。
+更新：2026-11-24。今回の統合前基点：`b6c8864`（ローカルmaster）。
 
 **大項目49件：限定完了2件、未完47件。部分対応は未完に含む。** チェック済みの修正単位があっても、大項目の未完数は減らない。S14は現対戦milestone外の差分として残し、対応済みには数えない。
 
@@ -24,7 +24,7 @@
 
 ## 現在の作業
 
-C02-2d9：[FetchBomb静止Native受付と直接同時刻Root再帰](docs/parity/FETCH_ROOT_REENTRY_C02_2D9.md)を限定検証。Windows最終重点20/20（初回19/20のfixture open失敗は保存）。FetchBomb静止45更新・抽選後LOW拒否4回、移動中Native保持8更新を機能採録。同時刻Root再帰はschedulerがnested fullを拒否し、同frameは外側1送信・新frameは旧処理停止。quit後Steam待機でユーザー許可後にHLDS11228/CDB30732を個別終了（両0xFFFFFFFF）、core原文復元・実PID0。正常終了はV02に残す。次はcorner投擲。大項目47件を維持。
+C02-3：安全時間のsafe→unsafe更新だけで経路corner投擲を開始し、HEのwellPastSafe、認識敵優先、待機重複抑止を接続。現行経路/index、可視36・25刻み・追加10・4方向50bufferを固定参照へ合わせ、終点phaseと斜め1ULPを正規RED→GREENで修正した。最終Windows関連29/29（2.86秒）＋構造/武器/float重点9/9（2.73秒）。最終DLLで通常NAV・moving Hunt・公開flash・自然safe16秒の境界を確認し、actor1/full136のcorner開始→22full保持→full158の実attack解放を限定受入れ。HLDS11112/CDB40156はexit0・実PID0・core原文復元・保護指紋一致。全可視/自明経路の未使用tailは安全拒否しており完全parityではない。進行後drop/梯子index、HE実機、着弾、FetchBomb未採録範囲、V02過去の正常終了不合格を残す。大項目47件を維持。[詳細と証拠](docs/parity/GRENADE_CORNER_C02_3.md)。 次はC02の全可視/自明経路の参照監査を行い、未採録のFetchBomb受付・HE/drop/梯子実機も継続する。
 
 ## 完了した修正単位（大項目の完了とは別）
 
@@ -46,6 +46,7 @@ C02-2d9：[FetchBomb静止Native受付と直接同時刻Root再帰](docs/parity/
 | ☑ C02-2d7 | [Hunt/Guard共有時計の状態間継続](docs/parity/LOOK_CLOCK_TRANSITIONS_C02_2D7.md)。通常NAV・C4落下/回収で往復の期限保持を実機確認 |
 | ☑ C02-2d8 | [後段Noise再入停止](docs/parity/LATE_NOISE_ABORT_C02_2D8.md)。正規RED→GREEN、Windows重点18/18、同一実機で通常Noise継続3更新を限定確認 |
 | ☑ C02-2d9 | [FetchBombと直接Root再帰](docs/parity/FETCH_ROOT_REENTRY_C02_2D9.md)。重点20/20、静止Native LOW拒否4回。実機は機能のみ、正常終了は不合格・復元済み |
+| ☑ C02-3 | [定義済みcorner投擲](docs/parity/GRENADE_CORNER_C02_3.md)。正規RED→GREEN、最終重点29/29＋追加9/9、通常NAV自然safe境界のflash実機入力を限定受入れ。全可視tail・HE/進行後drop/梯子実機等は残す |
 
 既存Plantの早期判断・MoveTo開始順・末尾入力/退出・Plant前Idle経路抑止・cold Idle/Buy視線供給も限定完了。残る自然拾得・実水没・標準GameDLL受入れはS13/C14等へ分離している。過去の完了範囲は[STATUS](docs/parity/STATUS.md)を参照。
 
@@ -66,7 +67,9 @@ C02-2d9：[FetchBomb静止Native受付と直接同時刻Root再帰](docs/parity/
 - [x] 他状態の後段Noise再入停止を合わせる（C02-2d8、MoveToの正規4条件・Windows重点18/18。実機は通常継続smokeのみ）
 - [x] FetchBomb静止Native受付と直接同時刻Root再帰を限定検証する（C02-2d9、重点20/20。nested fullはschedulerで受付抑止。実機45静止/4拒否/8移動Native保持、正常終了はV02不合格）
 - [ ] FetchBombの移動encounter受付条件・候補ゼロ等の未採録実機範囲を検証する（C02-2d9は移動中Native保持のみで、移動抽選抑止の因果対照は未実施）
-- [ ] 安全時間終了後の経路corner投擲を実装・検証する
+- [x] 安全時間終了時の定義済みcorner投擲を実装・限定検証する（C02-3、最終Windows重点29/29＋追加契約/武器/float9/9、通常NAVの自然flash境界で開始→22full保持→実attack解放）
+- [ ] 全可視/自明経路で固定参照が読む未使用tailの挙動を監査する（C02-3は全可視を安全拒否し、完全parityではない）
+- [ ] 進行後drop上下段・梯子index、HE corner実機、着弾/跳ね返り等の未受入れ範囲を確認する
 
 根拠：`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:469`、`include/astrabot/compat/weapon_actions.hpp:43`、`src/core/compat/state_machine.cpp:900`。参照：`regamedll/dlls/bot/cs_bot_update.cpp:347`、`regamedll/dlls/bot/cs_bot_update.cpp:490`、`regamedll/dlls/bot/cs_bot_weapon.cpp:576`。
 
