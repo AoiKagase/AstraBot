@@ -1,6 +1,6 @@
 # AstraBot CSBot準拠タスク一覧
 
-更新：2026-11-24。今回の統合前基点：`ed4d36b`（ローカルmaster）。
+更新：2026-11-24。今回の統合前基点：`5a7a64d`（ローカルmaster）。
 
 **大項目49件：限定完了2件、未完47件。部分対応は未完に含む。** チェック済みの修正単位があっても、大項目の未完数は減らない。S14は現対戦milestone外の差分として残し、対応済みには数えない。
 
@@ -23,11 +23,14 @@
 各修正単位のローカルmasterマージと指紋確認が完了したら、masterへ切り替えて当該作業ブランチを安全削除する。未マージ、別作業用、他worktreeで使用中のブランチは削除しない。次の修正はmasterを基点に新しい`codex/`ブランチで始める。
 
 ## 現在の作業
-C02-5：成功経路の全可視tail履歴を限定実装。長短経路・DestroyPath/reset/round保持と新bot消去、容量255/256/257・旧map拒否を対照化し、最終Windows重点32/32。実機は不可視cornerの25full保持→attack解放のみ限定受入れ、両exit0・復元/指紋一致。全可視実機、失敗生成の書込み済みslot、NAV削除RemovePath、はしごsuffix等は未完。大項目47件を維持。[詳細と証拠](docs/parity/GRENADE_VISIBLE_TAIL_C02_5.md)。次は失敗生成の履歴を固定参照でRED化し、全可視実機も継続する。
+C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で監査。成功経路のみの履歴モデルをmutationで反証したが、再現入力は欠落梯子parentの明示不整合。通常の固定探索/Astra公開入力で同じ失敗に至る経路は未確認のため、製品RED・修正完了とは数えない。[監査と残条件](docs/parity/GRENADE_FAILED_TAIL_C02_5A.md)。次は独立して進められる全可視/reset/rebuild実機対照を優先し、失敗履歴は到達入力の確定から継続する。
+
+直前のC02-5では成功経路の全可視tail履歴を限定実装し、Windows重点32/32。実機は不可視cornerの25full保持→attack解放のみ限定受入れ、両exit0・復元/指紋一致。全可視実機、失敗生成の書込み済みslot、NAV削除RemovePath、はしごsuffix等は未完。[詳細と証拠](docs/parity/GRENADE_VISIBLE_TAIL_C02_5.md)。
 ## 完了した修正単位（大項目の完了とは別）
 
 | 単位 | 完了範囲・証拠 |
 |---|---|
+| ☑ C02-5a（監査のみ） | [失敗経路tail監査](docs/parity/GRENADE_FAILED_TAIL_C02_5A.md)。固定19対照と誤モデルmutation。製品変更なし、失敗履歴の実装/通常入力到達性は未完 |
 | ☑ C02-5 | [成功経路の全可視tail履歴](docs/parity/GRENADE_VISIBLE_TAIL_C02_5.md)。正規RED→GREEN、Windows重点32/32。実機は不可視corner限定、全可視/失敗生成等は残す |
 | ☑ C02-4 | [全可視/自明経路tail監査](docs/parity/GRENADE_VISIBLE_TAIL_C02_4.md)。固定実関数11対照、Windows corner重点7/7。製品変更なし、tail履歴の実装は未完 |
 | ☑ C02-1 | [保持・認識敵への投擲・独立look/投擲時計](docs/parity/GRENADE_LIFECYCLE_C02_1.md)。各記録の限定範囲で検証・コミット・masterマージ済み |
@@ -70,7 +73,9 @@ C02-5：成功経路の全可視tail履歴を限定実装。長短経路・Destr
 - [x] 安全時間終了時の定義済みcorner投擲を実装・限定検証する（C02-3、最終Windows重点29/29＋追加契約/武器/float9/9、通常NAVの自然flash境界で開始→22full保持→実attack解放）
 - [x] 全可視/自明経路で固定参照が読む未使用tailの挙動を監査する（C02-4、固定実関数11対照。初期zero・履歴保持・RemovePath消去・最大長slot256境界を確定。製品変更なし）
 - [x] 成功経路の全可視tail履歴を限定実装する（C02-5、初期zero・長短経路再利用・ResetValues/DestroyPath/round保持・新bot消去、容量/旧map拒否。重点32/32、全可視実機は未受入れ）
-- [ ] 失敗生成の書込み済みslot履歴、NAV area削除通知のRemovePath/新tail消去、はしごsuffix/容量超過のnative対応を実装・検証する（C02-5は成功経路限定、配列外slot256は推定しない）
+- [x] 失敗ComputePathPositionsのground書込み・未書込みsuffix保持を固定実関数で監査する（C02-5a、19対照。探索stubの不整合入力であり製品REDではない）
+- [ ] 失敗生成の書込み済みslot履歴の製品対応を実装・検証する（C02-5aで固定失敗の意味を確定。通常探索/Astra公開入力の到達例と正規製品REDは未確認。任意のNoRouteを同一視しない）
+- [ ] NAV area削除通知のRemovePath/新tail消去、はしごsuffix/容量超過のnative対応を実装・検証する（C02-5は成功経路限定、配列外slot256は推定しない）
 - [ ] 全可視/自明経路と長短経路・reset履歴を最終DLLの実機で因果対照する（C02-5実機はi10/length31の不可視cornerで代替しない）
 - [ ] 進行後drop上下段・梯子index、HE corner実機、着弾/跳ね返り等の未受入れ範囲を確認する
 

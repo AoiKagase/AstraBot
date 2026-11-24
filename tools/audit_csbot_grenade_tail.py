@@ -93,13 +93,22 @@ def main():
     rows = [json.loads(line) for line in raw.decode().splitlines()]
     expected = {"no-path", "fresh-trivial", "fresh-multi", "reused-trivial", "destroy-rebuild",
                 "equal-tail", "hidden-first", "hidden-tail-segment", "remove-clears-tail",
-                "max-all-visible", "max-first-hidden"}
+                "max-all-visible", "max-first-hidden",
+                "failed-up-fresh", "failed-up-fresh-rebuild",
+                "failed-down-fresh", "failed-down-fresh-rebuild",
+                "failed-up-reused", "failed-up-reused-rebuild",
+                "failed-up-early", "failed-up-early-rebuild"}
     if {row["case"] for row in rows} != expected or len(rows) != len(expected):
         raise ValueError("missing or duplicate reference case")
     # This comparison deliberately falsifies a tail-independent endpoint policy.
     by_name = {row["case"]: row for row in rows}
     if by_name["fresh-trivial"]["target"] == by_name["reused-trivial"]["target"]:
         raise ValueError("history-dependence control failed")
+    for name in ("failed-up-fresh", "failed-down-fresh", "failed-up-reused"):
+        if by_name[name]["length"] != 0 or by_name[name + "-rebuild"]["target"] != [900, 0, 46]:
+            raise ValueError("failed position-write history control failed: " + name)
+    if by_name["failed-up-early-rebuild"]["target"] != by_name["reused-trivial"]["target"]:
+        raise ValueError("unwritten suffix preservation control failed")
     manifest = {
         "reference_pin": PIN, "reference_source_sha256": hashes,
         "excerpt_sha256": sha(code.encode()), "driver_sha256": sha(DRIVER.read_bytes()),
@@ -108,6 +117,8 @@ def main():
         "compiler_arch": os.environ.get("VSCMD_ARG_TGT_ARCH"),
         "command": command, "cases": len(rows), "all_cases_passed": True,
         "tail_independent_hypothesis": "refuted: same current trivial path, different previous path",
+        "success_only_history_hypothesis": "refuted: failed ComputePath writes prefix before DestroyPath; trivial rebuild exposes it",
+        "failure_input_scope": "Scripted search selects a ladder parent edge absent from its source list. Proves pinned failure semantics, not reachability through native NAV search or Astra public inputs.",
         "scope": "Pinned bodies and Vector, scripted flat NAV/visibility/trace host; checked slot 256 traps before any UB. No full GameDLL, no live acceptance, no product parity claim.",
         "static_reset_evidence": "reset-values.txt: counters reset, path slots retained",
         "static_initialization_evidence": "constructor.txt and pinned-vector.h: empty CCSBot constructor body; Vector default constructor zeros positions. Host real_t=float is the non-PLAY_GAMEDLL mathlib branch.",

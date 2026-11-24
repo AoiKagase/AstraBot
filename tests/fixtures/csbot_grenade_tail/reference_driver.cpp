@@ -33,11 +33,12 @@ struct CNavArea
 {
     Vector center;
     CNavArea *parent = nullptr;
+    NavTraverseType parentHow = GO_EAST;
     float west = 0;
     NavLadderList ladders;
     const Vector *GetCenter() const { return &center; }
     CNavArea *GetParent() const { return parent; }
-    NavTraverseType GetParentHow() const { return GO_EAST; }
+    NavTraverseType GetParentHow() const { return parentHow; }
     float GetZ(const Vector *) const { return 0; }
     bool IsConnected(CNavArea *, NavDirType) const { return true; }
     const NavLadderList *GetLadderList(int) const { return &ladders; }
@@ -155,8 +156,44 @@ void longPath(CCSBot &bot, std::array<CNavArea, 3> &areas)
     require(bot.ComputePath(&areas[2], &end, FASTEST_ROUTE), "real ComputePath parent chain");
     require(bot.m_pathLength == 4 && bot.m_path[2].pos == Vector(405, 0, 0), "native portal writes prior slot 2");
 }
+void failedPathTail(const char *failureName, const char *rebuildName,
+    NavTraverseType how, bool reused, unsigned failureIndex)
+{
+    CCSBot bot;
+    std::array<CNavArea, 3> oldAreas;
+    if (reused) longPath(bot, oldAreas);
+    std::array<CNavArea, 4> areas;
+    for (unsigned i = 0; i < areas.size(); ++i)
+    {
+        areas[i].center = Vector(100.0f + 400.0f * i, 0, 0);
+        areas[i].west = 500.0f + 200.0f * i;
+        areas[i].parent = i == 0 ? nullptr : &areas[i - 1];
+    }
+    // Scripted inconsistent parent edge: no matching ladder in source list.
+    // This establishes failure semantics, not real NAV search reachability.
+    areas[failureIndex].parentHow = how;
+    bot.m_lastKnownArea = &areas[0];
+    const Vector end(1500, 0, 0);
+    require(!bot.ComputePath(&areas.back(), &end, FASTEST_ROUTE), "real ComputePath rejects missing ladder");
+    const Vector tail = failureIndex > 2 ? Vector(905, 0, 0) : reused ? Vector(405, 0, 0) : Vector(0, 0, 0);
+    require(bot.m_pathLength == 0 && bot.m_path[0].pos == Vector(100, 0, 0),
+        "failed ComputePath destroys counters after writing slot 0");
+    require(bot.m_path[2].pos == tail, "failure retains written prefix and untouched suffix");
+    require(bot.m_path[3].pos == (reused ? Vector(550, 0, 0) : Vector(0, 0, 0)),
+        "failure does not write missing-ladder slot or append endpoint");
+    sample(failureName, bot, false, Vector(-999, -999, -999));
+    trivial(bot, areas[0], 200);
+    require(bot.m_path[2].pos == tail, "trivial rebuild preserves failed attempt tail");
+    sample(rebuildName, bot, true,
+        failureIndex > 2 ? Vector(900, 0, 46) : reused ? Vector(400, 0, 46) : Vector(25, 0, 46));
+}
+
 int main()
 {
+    failedPathTail("failed-up-fresh", "failed-up-fresh-rebuild", GO_LADDER_UP, false, 3);
+    failedPathTail("failed-down-fresh", "failed-down-fresh-rebuild", GO_LADDER_DOWN, false, 3);
+    failedPathTail("failed-up-reused", "failed-up-reused-rebuild", GO_LADDER_UP, true, 3);
+    failedPathTail("failed-up-early", "failed-up-early-rebuild", GO_LADDER_UP, true, 1);
     const Vector untouched(-999, -999, -999);
     CNavArea area;
     area.center = Vector(100, 0, 0);

@@ -1,5 +1,9 @@
 ## C02-2d3 Guard受付・独立Ahead（2026-11-24）
 
+## C02-5a 失敗経路のtail履歴監査（2026-11-24）
+
+固定ComputePath失敗前のground書込みと未書込みsuffix保持を19実関数対照で確定し、成功経路限定モデルをmutationで反証。再現は欠落梯子parentの明示不整合で、通常探索/Astra公開入力での到達性と製品REDは未確認。製品修正・実機受入れは追加せず未完を維持する。[監査と残条件](GRENADE_FAILED_TAIL_C02_5A.md)。次は全可視/reset/rebuild実機対照を優先する。
+
 ## C02-5 成功経路の全可視tail履歴（2026-11-24）
 
 C02-5：成功経路の全可視tail履歴を限定実装。長短経路・DestroyPath/reset/round保持と新bot消去、容量255/256/257・旧map拒否を対照化し、最終Windows重点32/32。実機は不可視cornerの25full保持→attack解放のみ限定受入れ、両exit0・復元/指紋一致。全可視実機、失敗生成の書込み済みslot、NAV削除RemovePath、はしごsuffix等は未完。大項目47件を維持。[詳細と証拠](GRENADE_VISIBLE_TAIL_C02_5.md)。次は失敗生成の履歴を固定参照でRED化し、全可視実機も継続する。
