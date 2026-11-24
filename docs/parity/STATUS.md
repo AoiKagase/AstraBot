@@ -1,3 +1,7 @@
+## C03-2 通常Updateのunsafe再装備（2026-11-25）
+
+unsafe・非grenadeの総弾薬枯渇/既知activeなし、退避外knifeへ通常EquipBestWeaponを接続。clip0＋予備あり/Unknownは枯渇としない。helper callback後のfresh activeとcaller条件を送信直前に再検証し、失効を旧更新中断へ伝播。正規RED2種→最終28重点シナリオ合格、既存as_oilrigの制御入力で弾切れpistol/knife→AK47を限定機能採録。quit後Steam待機で正常終了不合格、ユーザー閉鎖後実PID[]・core/fixture復元と保護11一致。終了コード未取得/null、エージェント強制終了0。C03のsafe5秒/early-safe・未採録境界とV02は未完、大項目未完47を維持。[範囲と証拠](UPDATE_UNSAFE_C03_2.md)。
+
 ## C03-1 通常Updateの水没装備（2026-11-25）
 
 通常full Updateからskill>.4・完全水没・水中発射禁止/実activeなしのMUST_EQUIPを接続。公開activeを優先し、Actor/full/状態の再入を拒否する。古いCurWeapon29＋実active0のknife再装備も製品RED→修正。最終27重点シナリオ合格、既存as_oilrig実水域の公開位置保持でXM1014→Glock、water3の132更新中131更新Glock保持、両実HLDS/CDB exit0・復元一致。独立14.52 x86 buildを使用し、旧14.51 cache/製品は保持。全CTest/両OS/export/固定履歴は未実施。C03の他装備分岐、自然遊泳/全境界等は残し、大項目未完47を維持。[範囲と証拠](UPDATE_UNDERWATER_C03_1.md)。
