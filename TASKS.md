@@ -1,6 +1,6 @@
 # AstraBot CSBot準拠タスク一覧
 
-更新：2026-11-24。今回の統合前基点：`5a7a64d`（ローカルmaster）。
+更新：2026-11-24。今回の統合前基点：`6558a0f`（ローカルmaster）。
 
 **大項目49件：限定完了2件、未完47件。部分対応は未完に含む。** チェック済みの修正単位があっても、大項目の未完数は減らない。S14は現対戦milestone外の差分として残し、対応済みには数えない。
 
@@ -23,6 +23,8 @@
 各修正単位のローカルmasterマージと指紋確認が完了したら、masterへ切り替えて当該作業ブランチを安全削除する。未マージ、別作業用、他worktreeで使用中のブランチは削除しない。次の修正はmasterを基点に新しい`codex/`ブランチで始める。
 
 ## 現在の作業
+C02-2d10：最新製品・専用NAVのFetchBombで、他条件が開いたNative保持13更新（後の正例と同じencounterは6更新）の抽選前拒否、静止ゼロClear、解除後の候補1件抽選を機能採録。静止ゼロの先行2試行は両exit0。最終移動対照を含むlive6/7/8はquit後Steam待機で正常終了不合格、各PIDのユーザー許可後に終了・通常NAV/core復元・保護一致。製品変更なし。[範囲と証拠](docs/parity/FETCH_ADMISSION_LIVE_C02_2D10.md)。保持Noise/移動候補ゼロ/通常NAV自然発生とV02は残す。
+
 C02-5b：専用NAVで全可視5点/4点・同一area自明2点経路を最終DLLで採録し、長短/reset履歴と25刻み・36+10・4方向bufferを因果対照。固定関数再生4/4、endpoint-only mutationはexit1。全3試行の両プロセスexit0、通常NAV/core復元、製品変更なし。[限定実機の証拠](docs/parity/GRENADE_VISIBLE_LIVE_C02_5B.md)。通常NAV自然発生や失敗履歴/RemovePath/梯子suffix等を完了には数えない。
 
 C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で監査。成功経路のみの履歴モデルをmutationで反証したが、再現入力は欠落梯子parentの明示不整合。通常の固定探索/Astra公開入力で同じ失敗に至る経路は未確認のため、製品RED・修正完了とは数えない。[監査と残条件](docs/parity/GRENADE_FAILED_TAIL_C02_5A.md)。後続C02-5bで全可視/reset/rebuildの限定実機を追加。失敗履歴は到達入力の確定から継続する。
@@ -32,6 +34,7 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 
 | 単位 | 完了範囲・証拠 |
 |---|---|
+| ☑ C02-2d10（限定機能） | [FetchBomb移動Native受付・静止ゼロ](docs/parity/FETCH_ADMISSION_LIVE_C02_2D10.md)。抽選前拒否→Clear→再開を採録。製品変更なし、最終移動試行の正常終了はV02不合格 |
 | ☑ C02-5b（限定実機） | [全可視・自明経路tail](docs/parity/GRENADE_VISIBLE_LIVE_C02_5B.md)。専用NAVで長短/reset履歴・25刻み・bufferを採録、固定再生4/4。製品変更なし |
 | ☑ C02-5a（監査のみ） | [失敗経路tail監査](docs/parity/GRENADE_FAILED_TAIL_C02_5A.md)。固定19対照と誤モデルmutation。製品変更なし、失敗履歴の実装/通常入力到達性は未完 |
 | ☑ C02-5 | [成功経路の全可視tail履歴](docs/parity/GRENADE_VISIBLE_TAIL_C02_5.md)。正規RED→GREEN、Windows重点32/32。実機は不可視corner限定、全可視/失敗生成等は残す |
@@ -72,7 +75,9 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 - [x] Guardゼロ候補の実機機能を確認する（C02-2d6、専用NAVでNative1更新・Noise1更新。Noise試行の正常終了は不合格、V02で追跡。通常NAV自然発生は未確認）
 - [x] 他状態の後段Noise再入停止を合わせる（C02-2d8、MoveToの正規4条件・Windows重点18/18。実機は通常継続smokeのみ）
 - [x] FetchBomb静止Native受付と直接同時刻Root再帰を限定検証する（C02-2d9、重点20/20。nested fullはschedulerで受付抑止。実機45静止/4拒否/8移動Native保持、正常終了はV02不合格）
-- [ ] FetchBombの移動encounter受付条件・候補ゼロ等の未採録実機範囲を検証する（C02-2d9は移動中Native保持のみで、移動抽選抑止の因果対照は未実施）
+- [x] FetchBomb移動Nativeの抽選前受付拒否と解除後の再開を限定機能採録する（C02-2d10、最終13更新・同一encounter厳密6更新→静止Clear→候補1件。最終試行の正常終了はV02不合格）
+- [x] FetchBomb静止候補ゼロでNative視線Clearを限定確認する（C02-2d10、同full前後の1→0と期限更新。先行2試行は各両exit0、通常NAV自然発生やpin保持は含まない）
+- [ ] FetchBomb保持Noise・移動候補ゼロ・通常NAV自然発生等の未採録実機範囲を検証する（C02-2d10は専用NAVのNative移動拒否/静止ゼロ/再開のみ、正常終了問題はV02へ保持）
 - [x] 安全時間終了時の定義済みcorner投擲を実装・限定検証する（C02-3、最終Windows重点29/29＋追加契約/武器/float9/9、通常NAVの自然flash境界で開始→22full保持→実attack解放）
 - [x] 全可視/自明経路で固定参照が読む未使用tailの挙動を監査する（C02-4、固定実関数11対照。初期zero・履歴保持・RemovePath消去・最大長slot256境界を確定。製品変更なし）
 - [x] 成功経路の全可視tail履歴を限定実装する（C02-5、初期zero・長短経路再利用・ResetValues/DestroyPath/round保持・新bot消去、容量/旧map拒否。重点32/32、当該時点では全可視実機未受入れ。後続C02-5bの限定受入れを参照）
@@ -642,7 +647,7 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 - [ ] 人間クライアントでAimせず通過・旋回カクつきを確認する
 - [ ] 多数Bot・長時間・map切替・FPS/lagの継続性能を測定する
 - [ ] C02-2d6 Noise試行のquit後Steam stalled cross-thread pipeを切り分け、正常終了を再確認する（手動終了0xC000013A、元NAV/core復元済み）
-- [ ] C02-2d9 FetchBomb試行のquit後Steam待機を切り分け、正常終了を再確認する（機能採録のみ。ユーザー許可でHLDS11228/CDB30732終了、両0xFFFFFFFF。実PID0・core原文復元済み）
+- [ ] C02-2d9/2d10 FetchBomb試行のquit後Steam待機を切り分け、正常終了を再確認する（2d9のHLDS11228/CDB30732に加え、2d10 live6/7/8も機能採録のみ。各回の明示許可で終了、各両0xFFFFFFFF、実PID0・通常NAV/core復元・保護一致。[最新証拠](docs/parity/FETCH_ADMISSION_LIVE_C02_2D10.md)）
 - [ ] Windowsの限定受入れを全体合格と扱わない
 
 根拠：`src/adapter/metamod/diagnostics/runtime_profiler.cpp:314`、`src/adapter/metamod/plugin/plugin_runtime.cpp:854`。参照：`regamedll/dlls/bot/cs_bot_vision.cpp:57`、`regamedll/dlls/bot/cs_bot_update.cpp:186`。

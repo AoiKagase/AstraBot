@@ -1,5 +1,9 @@
 ## C02-2d3 Guard受付・独立Ahead（2026-11-24）
 
+## C02-2d10 FetchBomb移動Native受付・静止候補ゼロ（2026-11-24）
+
+製品変更なし。最新DLL/PDBと専用6area NAV・公開originの連続移動で、他条件が開いたNative保持13更新（同じencounterの厳密対照6更新）の抽選前拒否→静止候補ゼロの同full Clear→解除後interval/候補1/spot0を機能採録。静止ゼロ先行2試行は各両exit0。最終移動試行を含むlive6/7/8はquit後Steam待機で正常終了不合格、個別PID許可後に終了し通常NAV/core復元・保護一致。保持Noise/移動ゼロ/通常NAV自然発生/V02等は未完。機能合格と終了失敗を分離し、大項目未完47を維持。[詳細と証拠](FETCH_ADMISSION_LIVE_C02_2D10.md)。
+
 ## C02-5b 全可視・自明経路tailの限定実機対照（2026-11-24）
 
 専用BサイトNAVと公開入力だけで全可視5点/4点および同一areaの自明2点経路を最終DLLで採録。長→短のprefix更新・suffix/reset保持、25刻み・36+10・4方向bufferを照合し、採録4入力を無改変の固定関数へ再生して一致。endpoint-only誤モデルはexit1。全HLDS/CDBはexit0・通常NAV/core復元・保護指紋一致。製品変更なし、通常NAV自然発生/全map・失敗履歴/RemovePath/梯子suffix等は未受入れ。大項目未完47を維持。[詳細と証拠](GRENADE_VISIBLE_LIVE_C02_5B.md)。
