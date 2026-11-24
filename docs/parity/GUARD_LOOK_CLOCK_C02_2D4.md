@@ -30,3 +30,5 @@ HuntとGuardの共有接続はソース確認と関連オフライン回帰で�
 後続更新：保持Noiseの実機は[C02-2d5](GUARD_NOISE_LIVE_C02_2D5.md)の54更新で限定受入れ。旧失敗試行や旧証拠は維持し、zero・状態間時計の実機は残す。
 
 後続更新：候補ゼロの実機は[C02-2d6](GUARD_ZERO_LIVE_C02_2D6.md)の専用NAV対照でNative/Noise Clearを限定受入れ。通常NAVでの自然発生・状態間時計の実機を証明するものではない。
+
+後続更新：Hunt/Guard状態間の共有時計は[C02-2d7](LOOK_CLOCK_TRANSITIONS_C02_2D7.md)で公開C4落下/回収による往復を実機確認。全状態・全mapの一致やV02終了問題の解決は主張しない。

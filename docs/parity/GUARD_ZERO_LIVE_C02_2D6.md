@@ -30,3 +30,5 @@ C02-2d4の重点16/16＋Guard1/1と同一製品ソース/テストを指紋確�
 ## 残件
 
 Hunt↔Guardの共有時計継続、他状態の後段Noise再入、FetchBomb/同時刻full再入、corner投擲は未完。Clear後のlight Ahead/sharedspringは既存オフライン対照のみで、今回実機の正確な角速度一致まで主張しない。大項目47件を維持する。
+
+後続更新：Hunt/Guard状態間の共有時計は[C02-2d7](LOOK_CLOCK_TRANSITIONS_C02_2D7.md)で公開C4落下/回収による往復を実機確認。全状態・全mapの一致やV02終了問題の解決は主張しない。
