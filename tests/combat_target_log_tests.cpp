@@ -332,9 +332,11 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool plantEntryFixture = scenario && std::strcmp(scenario, "plant-entry") == 0;
 	const bool grenadeAdmissionFixture = scenario && std::strcmp(scenario, "native-grenade-admission") == 0;
 	const bool grenadeNoiseFixture = scenario && std::strcmp(scenario, "native-grenade-noise") == 0;
+	const bool huntApproachControl = scenario && std::strcmp(scenario, "hunt-approach-control") == 0;
+	const bool grenadeHuntFixture = huntApproachControl || (scenario && std::strcmp(scenario, "native-grenade-hunt-admission") == 0);
 	const bool grenadeZeroReentryFixture = scenario && std::strcmp(scenario, "native-grenade-zero-reentry") == 0;
 	const bool grenadeZeroApproachFixture = grenadeZeroReentryFixture || (scenario && std::strcmp(scenario, "native-grenade-zero-approach") == 0);
-	const bool nativeGrenadeFixture = grenadeAdmissionFixture || grenadeNoiseFixture || grenadeZeroApproachFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
+	const bool nativeGrenadeFixture = grenadeAdmissionFixture || grenadeNoiseFixture || grenadeZeroApproachFixture || grenadeHuntFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
@@ -399,7 +401,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		auto &grenadeEnemy = gEntities[1];
 		const auto grenadeAimDrawsBefore = attackAimRefreshDraws;
 		runtime.onClientPutInServer(&grenadeEnemy);
-		grenadeEnemy.free = false;
+		grenadeEnemy.free = huntApproachControl;
 		grenadeEnemy.v.flags = FL_CLIENT | FL_ONGROUND;
 		grenadeEnemy.v.health = 100.0f;
 		grenadeEnemy.v.deadflag = DEAD_NO;
@@ -423,6 +425,46 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				grenadeEnemy.v.origin = gEntities[0].v.origin + Vector(-1000, 0, -256);
 			}
 			stepRifle(30, 0.0f, 22); // Deliberately stale rifle message; API still reports grenade.
+			if (grenadeHuntFixture && grenadeFrameIndex == 11)
+			{
+				if (!check((gLastRunPlayerMoveButtons & IN_ATTACK) && (huntApproachControl || combatCommandPitch < -1) &&
+						loadInvestigationNav(runtime, true),
+						"C02-2c2 control: retained native grenade spot/pin and connected NAV with approaches")) return false;
+				stepRifle(30, 0, 4);
+				stepRifle(30, 0, 4);
+				const auto &state = static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedBotStateMachines(0);
+				const auto epoch = state.normalStateEpoch();
+				if (!check(state.state() == compat::CompatibilityStateId::Hunt && !state.attackOverlayActive(),
+						"C02-2c2 control: normal Hunt after movement warmup")) return false;
+				struct HuntDraws final : compat::IRandomTraceSink
+				{
+					unsigned intervals = 0, points = 0;
+					std::string order;
+					void record(const compat::RandomTraceRecord &draw) override
+					{
+						if (std::strcmp(draw.request.semanticId, "LookAround.StateInterval") == 0) { ++intervals; order += 'I'; }
+						if (std::strcmp(draw.request.semanticId, "LookAround.ApproachPoint") == 0) { ++points; order += 'P'; }
+					}
+				} draws;
+				gMovementLogs.clear();
+				gProfileEnabled = true;
+				grenadePorts.service_compatibilityRandomSource().setTraceSink(&draws);
+				stepRifle(30, 0, 4);
+				gProfileEnabled = false;
+				const bool published = std::any_of(gMovementLogs.begin(), gMovementLogs.end(), [](const std::string &line) {
+					return line.find("hunt approach look slot=") != std::string::npos;
+				});
+				const bool firstDraws = draws.intervals == 1 && draws.points == 1;
+				stepRifle(30, 0, 4);
+				grenadePorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+				if (!check(state.state() == compat::CompatibilityStateId::Hunt && state.normalStateEpoch() == epoch && firstDraws &&
+						draws.intervals == 1 && draws.points == 1 && draws.order == "IP" && (gLastRunPlayerMoveButtons & IN_ATTACK) &&
+						(huntApproachControl || combatCommandPitch < -1),
+						"C02-2c2 control: stationary candidate draws interval then point while native pin is held")) return false;
+				return check(published == huntApproachControl, huntApproachControl
+					? "C02-2c2 ordinary Hunt accepts the stationary candidate without a native grenade spot"
+					: "C02-2c2 native grenade spot refuses the lower-priority stationary Hunt candidate after both draws");
+			}
 			if (grenadeZeroApproachFixture && grenadeFrameIndex == 11)
 			{
 				engine.pfnSzFromIndex = &grenadeAdmissionString;

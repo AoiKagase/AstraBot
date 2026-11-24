@@ -44,7 +44,7 @@ inline bool loadHearingNav(astrabot::metamod::PluginRuntime &runtime, const char
 	std::remove(path);
 	return loaded;
 }
-inline bool loadInvestigationNav(astrabot::metamod::PluginRuntime &runtime)
+inline bool loadInvestigationNav(astrabot::metamod::PluginRuntime &runtime, bool approaches = false)
 {
 	const char *path = "astrabot_investigation_fixture.nav";
 	std::vector<std::uint8_t> bytes;
@@ -77,7 +77,15 @@ inline bool loadInvestigationNav(astrabot::metamod::PluginRuntime &runtime)
 				u32(id == 1 ? 2 : 1);
 		}
 		bytes.push_back(0);
-		bytes.push_back(0);
+		bytes.push_back(approaches ? 1 : 0);
+		if (approaches)
+		{
+			u32(id == 1 ? 2 : 1);
+			u32(id);
+			bytes.push_back(id == 1 ? 2 : 0);
+			u32(0);
+			bytes.push_back(0);
+		}
 		u32(0);
 	}
 	auto *file = openFixture(path, "wb");

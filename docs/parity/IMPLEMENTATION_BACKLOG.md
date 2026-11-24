@@ -1,5 +1,9 @@
 # Remaining CSBot implementation work
 
+## C02-2c2 静止・候補ありのHunt視線受付を限定対応（2026-11-24）
+
+Windows180/180＋PE7、Linux179/179＋ELF7合格。最終DLL `a8f15c2b5742…` を既存実機へ再配備し、元NAV・公開fixtureで候補抽選後の手榴弾視線優先を読取りCDBで確認した。同Actor/fullで候補拒否2件、native点・期限・待機を保持し、Hunt出力とcommand保持視線を変更しない。通常候補採用の対照も確認。C4 0/7/8は逐次合格、全実PID終了0・core.ini原文復元、追加サーバーコピー0。これは候補受付の限定対応で、同tick実角度差・FetchBomb実機・moving/Guard/Noise順序の一致は主張しない。C02部分対応、49歴史項目／47残件を維持。詳細は [GRENADE_HUNT_ADMISSION_C02_2C2.md](GRENADE_HUNT_ADMISSION_C02_2C2.md)。以下は各時点の履歴を保持する。
+
 ## C02-2c1 静止候補ゼロのClearLookを限定対応（2026-11-24）
 
 Windows178/178＋PE7、Linux177/177＋ELF7合格。最終DLL `c76563d679cf…` を既存実機へ再配備し、候補配列だけをゼロにした有効な専用NAV入力で、手榴弾視線の解除・独立したピン保持32入力・期限後解放1入力を読取りCDB/実入力で確認した。形状・接続・隠れ場所・遭遇・場所情報は元NAVと同じで、試行終了後に元NAVの原文とmetadataを復元した。元NAVでC4 0/7/8も逐次合格、各実HLDS/CDB終了0・core.ini原文復元、追加サーバーコピー0。自然de_dust2の全経路一致とは扱わない。C02全体は部分対応、49歴史項目／47残件を維持。次はC02-2c2の非ゼロ・moving・Guard/Noise順序。詳細は [GRENADE_ZERO_APPROACH_C02_2C1.md](GRENADE_ZERO_APPROACH_C02_2C1.md)。以下は各時点の履歴を保持する。

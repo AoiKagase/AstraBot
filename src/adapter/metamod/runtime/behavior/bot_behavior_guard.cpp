@@ -353,6 +353,13 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 		actor.huntApproaches.nextLookAt = now + wait.value;
 		return true;
 	}
+	// Native LOW SetLookAt rejects this candidate after both draws, without
+	// changing the uninterruptible grenade-owned spot or its lifetime.
+	if (actor.nativeGrenade.looking())
+	{
+		actor.huntApproaches.nextLookAt = now + wait.value;
+		return true;
+	}
 	look.spot = actor.huntApproaches.points[which.value];
 	look.spot.z += 36.0f;
 	look.update = HuntApproachLookUpdate::Track;

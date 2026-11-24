@@ -49,7 +49,7 @@ zero試行後に原文NAV・core.iniを復元し、元NAVでC4 0/7/8の自然設
 
 ## 残件
 
-1. C02-2c2：非ゼロ選択後の拒否、moving encounterの抽選前抑止、Guard/Noiseのhandled-returnと後続順、直接同時刻full再入対照。
+1. 非ゼロ選択後の拒否は後続[C02-2c2](GRENADE_HUNT_ADMISSION_C02_2C2.md)で静止Huntに限定対応。moving encounterの抽選前抑止、FetchBomb実機、Guard/Noiseのhandled-returnと後続順、直接同時刻full再入対照は残件。
 2. C02-3：安全時間終了後の経路投擲と点列境界。
 3. C08/C10：Aim所有、共通装備時計・遅延Touch・C4/USE例外。
 4. V01/V02：参照全RNG/全軌跡、Linux実機、多数Botの継続性能。
