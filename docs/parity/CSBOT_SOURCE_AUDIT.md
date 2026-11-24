@@ -1,5 +1,9 @@
 # 23　CSBot参照実装との差分監査
 
+## C02-2d8 後段Noise再入停止（2026-11-24）
+
+helperが破棄していたAbortedを内部service経由で伝え、旧コマンドの後続処理と送信を停止。MoveToの正規callback対照でRED→GREEN、Windows重点18/18。最終DLLの既存Windows実機は通常Noise継続3更新とfixture完走を限定確認し、callback失効の実機受入れとは区別する。HLDS13084/CDB40860はexit0、core原文復元・コピー追加0。FetchBomb実機・直接Root再帰full・corner投擲と大項目47件は継続。[詳細と証拠](LATE_NOISE_ABORT_C02_2D8.md)。
+
 ## C02-2d7 Hunt/Guard状態間の共有時計（2026-11-24）
 
 通常NAV・公開C4落下/回収入力でHunt→Guard→Idle→Huntを実機採録。期限の全更新を追い、状態間で同じ時計を保持することを確認。製品変更なし、HLDS47024/CDB9172はexit0・core原文復元・コピー追加0。前回のSteam終了停止はV02の未完として維持。[詳細](LOOK_CLOCK_TRANSITIONS_C02_2D7.md)。

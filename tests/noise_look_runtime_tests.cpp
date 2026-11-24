@@ -521,8 +521,85 @@ bool testNoiseLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &eng
 	noiseApproachRays = 0;
 	emit("player/pl_step1.wav");
 	step(.2f);
-	return check(noiseApproachRays == 0 && self.v.v_angle.y < 90.0f &&
+	if (!check(noiseApproachRays == 0 && self.v.v_angle.y < 90.0f &&
 			!machine.attackOverlayActive() && (gLastRunPlayerMoveButtons & (IN_ATTACK | IN_ATTACK2)) == 0,
-			"recent acquired contact looks directly at the occluded footstep after combat stops");
+			"recent acquired contact looks directly at the occluded footstep after combat stops"))
+		return false;
+
+	// Exercise the late command consumer, outside Hunt/Guard preparation. A
+	// lost abort result here would submit the pre-callback movement draft.
+	if (!check(loadHearingNav(runtime), "late noise: hearing NAV loads")) return false;
+	noiseRayBlocked = noiseApproachVisible = false;
+	for (unsigned mutation = 0; mutation < 4; ++mutation)
+	{
+		round();
+		globals.time += 1.0f;
+		self.v.origin = Vector(0, 0, 36);
+		source.v.origin = Vector(0, 300, 0);
+		emit("weapons/ak47-1.wav");
+		// Drive the real observation/command phases separately so no early
+		// Hunt/Guard decision can consume the sound before late dispatch.
+		++const_cast<std::uint32_t &>(observations.service_managedBotFullUpdateSequences()[0]);
+		world::WorldSnapshot lateSnapshot{};
+		metamod::ThreatObservation threats{};
+		if (!check(static_cast<metamod::BotBehaviorServices &>(runtime).
+			observation_collectManagedPerception(0, &lateSnapshot, &threats), "late noise: public sound perception collected"))
+			return false;
+		const auto &heard = static_cast<metamod::BotBehaviorServices &>(runtime).
+			observation_managedBotPerception(0).snapshot().noise();
+		if (!check(compat::hasNoiseLookPosition(heard) && heard.priority == world::NoisePriority::High,
+			"late noise: localized dangerous gunfire is real input")) return false;
+		attackContext.actor = machine.actor();
+		attackContext.frame = {life.mapGeneration(), life.roundGeneration(), observations.service_adapterFrameCount()};
+		attackContext.timestamp = globals.time;
+		attackContext.fullUpdateSequence = observations.service_managedBotFullUpdateSequences()[0];
+		machine.transition(compat::CompatibilityStateId::MoveTo, compat::StateTransitionReason::ExplicitRequest,
+			compat::StateTransitionId::ExplicitStateChange, attackContext);
+		metamod::BotCommandRuntime late;
+		late.bindServices(commands);
+		late.onActorRemembered(0);
+		const_cast<std::uint32_t &>(late.managedBotCommandSequences(0)) =
+			static_cast<metamod::BotBehaviorServices &>(runtime).command_managedBotCommandSequences(0) + mutation;
+		auto handle = commands.service_managedBotHandles()[0];
+		runtime::MovementPhysicsState before{};
+		auto draft = late.beginNeutralCommand(0, handle, before);
+		metamod::ActionProposal proposal{};
+		late.finishNeutralCommand(0, handle, before, draft, proposal);
+		struct Interrupt final : compat::IRandomTraceSink
+		{
+			std::function<void()> callback;
+			unsigned startles = 0;
+			void record(const compat::RandomTraceRecord &draw) override
+			{
+				if (std::strcmp(draw.request.semanticId, "NoiseLook.StartleInhibit") != 0) return;
+				++startles;
+				if (callback) { auto once = std::move(callback); callback = {}; once(); }
+			}
+		} interrupt;
+		bool changed = mutation == 0;
+		interrupt.callback = [&] {
+			if (mutation == 1)
+				changed = machine.beginAttack(attackContext) == compat::StateResult::Transitioned &&
+					machine.stopAttack(attackContext) == compat::StateResult::Transitioned;
+			if (mutation == 2)
+				changed = machine.transition(compat::CompatibilityStateId::Idle, compat::StateTransitionReason::ExplicitRequest,
+					compat::StateTransitionId::ExplicitStateChange, attackContext) == compat::StateResult::Transitioned;
+			if (mutation == 3) { runtime.beginRoundGeneration(); changed = true; }
+		};
+		const int sent = gRunPlayerMoveCount;
+		observations.service_compatibilityRandomSource().setTraceSink(&interrupt);
+		const auto receipt = late.executeManagedBotCommand(0, handle);
+		observations.service_compatibilityRandomSource().setTraceSink(nullptr);
+		if (!check(interrupt.startles == 1 && changed, "late noise: callback reached and requested mutation completed")) return false;
+		if (!check(mutation == 0 ? receipt.result == runtime::DispatchResult::Dispatched && gRunPlayerMoveCount == sent + 1
+			: receipt.result == runtime::DispatchResult::NoCommand && gRunPlayerMoveCount == sent,
+			"late noise: invalidated callback aborts old RunPlayerMove; unchanged execution dispatches"))
+		{
+			std::fprintf(stderr, "late noise mutation=%u result=%u moves=%d/%d\n", mutation,
+				static_cast<unsigned>(receipt.result), gRunPlayerMoveCount, sent);
+			return false;
+		}
+	}
+	return true;
 }
 }

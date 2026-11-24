@@ -858,8 +858,9 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 	if (actor.useEntityLookActive || (actor.defusePathLook && !machine.attackOverlayActive() &&
 		(isDefuseApproach(machine) || machine.state() == compat::CompatibilityStateId::DefuseBomb)))
 		command.viewAngles = {handle.entity->v.v_angle.x, handle.entity->v.v_angle.y, handle.entity->v.v_angle.z};
-	if (!actor.useEntityLookActive && !actor.nativeLadderControl && (!actor.blindCommand || !machine.attackOverlayActive()))
-		services_->behavior_applyNoiseLookCommand(index, command, actor.blindCommand);
+	if (!actor.useEntityLookActive && !actor.nativeLadderControl && (!actor.blindCommand || !machine.attackOverlayActive()) &&
+		!services_->behavior_applyNoiseLookCommand(index, command, actor.blindCommand))
+		return receipt;
 	if (!descentLookAdvanced)
 		services_->behavior_applyNativeLadderLookCommand(index, command, actor.nativeLadderControl || actor.blindCommand);
 	if (!actor.blindCommand && !actor.useEntityLookActive)

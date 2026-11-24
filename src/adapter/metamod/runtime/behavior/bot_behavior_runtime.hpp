@@ -80,7 +80,8 @@ public:
 	void observeObstacleTouch(edict_t *entity, edict_t *other);
 	void observeWeaponTouch(edict_t *box, edict_t *self);
 	void applyNativeLadderLookCommand(std::size_t index, runtime::BotCommand &command, bool localMovement);
-	void applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command, bool upkeepOnly);
+	// False invalidates the caller's command; it must stop before dispatch.
+	bool applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command, bool upkeepOnly);
 	bool refreshHuntApproaches(std::size_t index, const runtime::MovementPhysicsState &before,
 		const nav::NavSnapshot &navigation);
 	bool updateEncounterPeripheralVision(std::size_t index, const runtime::MovementPhysicsState &before,

@@ -32,9 +32,10 @@ bool advanceNoiseLook(compat::NoiseLookPlanner &look, const edict_t &self, float
 }
 }
 
-void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command, bool upkeepOnly)
+bool BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command, bool upkeepOnly)
 {
-	(void)processNoiseLook(index, command, upkeepOnly, false);
+	const auto result = processNoiseLook(index, command, upkeepOnly, false);
+	return result != NoiseLookResult::Aborted;
 }
 
 BotBehaviorRuntime::NoiseLookResult BotBehaviorRuntime::prepareNoiseLook(std::size_t index)

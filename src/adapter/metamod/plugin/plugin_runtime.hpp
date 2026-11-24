@@ -711,9 +711,9 @@ private:
 		return behavior_.bombObjectiveEnemyAim(index, spring, point);
 	}
 
-	void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command, bool upkeepOnly) override
+	bool behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command, bool upkeepOnly) override
 	{
-		behavior_.applyNoiseLookCommand(index, command, upkeepOnly);
+		return behavior_.applyNoiseLookCommand(index, command, upkeepOnly);
 	}
 	void behavior_recordLookGoal(std::size_t index, float yaw) override
 	{

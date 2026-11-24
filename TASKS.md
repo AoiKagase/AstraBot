@@ -24,7 +24,7 @@
 
 ## 現在の作業
 
-C02-2d7：[Hunt/Guard状態間共有時計](docs/parity/LOOK_CLOCK_TRANSITIONS_C02_2D7.md)を公開C4落下/回収による往復で実機確認。次は他状態の後段Noise再入停止。製品変更なし、大項目47件は維持する。V02のSteam終了停止も未完。
+C02-2d8：[後段Noise再入停止](docs/parity/LATE_NOISE_ABORT_C02_2D8.md)を修正。Windows重点18/18、最終DLLの通常Noise継続を既存実機で限定確認。次はFetchBomb実機と直接同時刻Root再帰full。大項目47件は維持し、V02のSteam終了停止も未完。
 
 ## 完了した修正単位（大項目の完了とは別）
 
@@ -44,6 +44,7 @@ C02-2d7：[Hunt/Guard状態間共有時計](docs/parity/LOOK_CLOCK_TRANSITIONS_C
 | ☑ C02-2d5 | [Guard保持Noise実機](docs/parity/GUARD_NOISE_LIVE_C02_2D5.md)。製品変更なし、54更新で時計・抽選後拒否・Noise保持を限定確認 |
 | ☑ C02-2d6 | [Guard候補ゼロ実機](docs/parity/GUARD_ZERO_LIVE_C02_2D6.md)。専用NAVでNative1更新・Noise1更新のClear、Native投擲待機保持を限定確認 |
 | ☑ C02-2d7 | [Hunt/Guard共有時計の状態間継続](docs/parity/LOOK_CLOCK_TRANSITIONS_C02_2D7.md)。通常NAV・C4落下/回収で往復の期限保持を実機確認 |
+| ☑ C02-2d8 | [後段Noise再入停止](docs/parity/LATE_NOISE_ABORT_C02_2D8.md)。正規RED→GREEN、Windows重点18/18、同一実機で通常Noise継続3更新を限定確認 |
 
 既存Plantの早期判断・MoveTo開始順・末尾入力/退出・Plant前Idle経路抑止・cold Idle/Buy視線供給も限定完了。残る自然拾得・実水没・標準GameDLL受入れはS13/C14等へ分離している。過去の完了範囲は[STATUS](docs/parity/STATUS.md)を参照。
 
@@ -61,7 +62,7 @@ C02-2d7：[Hunt/Guard状態間共有時計](docs/parity/LOOK_CLOCK_TRANSITIONS_C
 - [x] Hunt↔Guardをまたぐ共有静止時計の継続を実機対照で確認する（C02-2d7、通常NAV・C4落下/回収、期限全更新との照合）
 - [x] Guard保持Noiseの実機受入れを確認する（C02-2d5、54更新の限定対照）
 - [x] Guardゼロ候補の実機機能を確認する（C02-2d6、専用NAVでNative1更新・Noise1更新。Noise試行の正常終了は不合格、V02で追跡。通常NAV自然発生は未確認）
-- [ ] 他状態の後段Noise再入停止を合わせる
+- [x] 他状態の後段Noise再入停止を合わせる（C02-2d8、MoveToの正規4条件・Windows重点18/18。実機は通常継続smokeのみ）
 - [ ] FetchBomb実機と直接同時刻full再入を検証する
 - [ ] 安全時間終了後の経路corner投擲を実装・検証する
 
