@@ -38,6 +38,6 @@
 
 1. ComputePathPositionsが欠落梯子等でfalseになる前に書いたground slotの履歴。現行cacheは成功経路のみで、失敗履歴のparityは未実装。DestroyPathは書込み済みposを保持する。
 2. NAV area削除通知→RemovePathのmemmove/新tail消去、はしごsuffixのnative全経路/index、容量超過時native切詰め。
-3. 全可視/自明経路とreset/rebuild履歴の実機因果対照。今回の不可視cornerで代替しない。
+3. 全可視/自明経路とreset/rebuild履歴は後続[C02-5b](GRENADE_VISIBLE_LIVE_C02_5B.md)で専用NAVの限定実機を採録済み。今回C02-5の不可視cornerとは区別する。通常NAV自然発生/全mapへの一般化は未受入れ。
 4. 進行後drop/梯子・HE・着弾/跳ね返り、FetchBomb未採録、V02過去の正常終了不合格。
 5. 両OS全build/全CTest・各7exports・固定履歴・広範実機/多人数は大分類完了時。未完47件、群別11/16/6/12/2を維持する。

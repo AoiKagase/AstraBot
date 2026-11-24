@@ -1,12 +1,16 @@
 # P11 differential trace comparison
 
+## C02-5b 全可視・自明経路tailの限定実機対照（2026-11-24）
+
+専用BサイトNAVと公開入力だけで全可視5点/4点および同一areaの自明2点経路を最終DLLで採録。長→短のprefix更新・suffix/reset保持、25刻み・36+10・4方向bufferを照合し、採録4入力を無改変の固定関数へ再生して一致。endpoint-only誤モデルはexit1。全HLDS/CDBはexit0・通常NAV/core復元・保護指紋一致。製品変更なし、通常NAV自然発生/全map・失敗履歴/RemovePath/梯子suffix等は未受入れ。大項目未完47を維持。[詳細と証拠](GRENADE_VISIBLE_LIVE_C02_5B.md)。
+
 ## C02-5a 失敗経路のtail履歴監査（2026-11-24）
 
-固定ComputePath失敗前のground書込みと未書込みsuffix保持を19実関数対照で確定し、成功経路限定モデルをmutationで反証。再現は欠落梯子parentの明示不整合で、通常探索/Astra公開入力での到達性と製品REDは未確認。製品修正・実機受入れは追加せず未完を維持する。[監査と残条件](GRENADE_FAILED_TAIL_C02_5A.md)。次は全可視/reset/rebuild実機対照を優先する。
+固定ComputePath失敗前のground書込みと未書込みsuffix保持を19実関数対照で確定し、成功経路限定モデルをmutationで反証。再現は欠落梯子parentの明示不整合で、通常探索/Astra公開入力での到達性と製品REDは未確認。製品修正・実機受入れは追加せず未完を維持する。[監査と残条件](GRENADE_FAILED_TAIL_C02_5A.md)。全可視/reset/rebuildは後続C02-5bの限定実機を参照し、失敗履歴の通常到達入力は未確定のまま残す。
 
 ## C02-5 成功経路の全可視tail履歴（2026-11-24）
 
-C02-5：成功経路の全可視tail履歴を限定実装。長短経路・DestroyPath/reset/round保持と新bot消去、容量255/256/257・旧map拒否を対照化し、最終Windows重点32/32。実機は不可視cornerの25full保持→attack解放のみ限定受入れ、両exit0・復元/指紋一致。全可視実機、失敗生成の書込み済みslot、NAV削除RemovePath、はしごsuffix等は未完。大項目47件を維持。[詳細と証拠](GRENADE_VISIBLE_TAIL_C02_5.md)。次は失敗生成の履歴を固定参照でRED化し、全可視実機も継続する。
+C02-5：成功経路の全可視tail履歴を限定実装。長短経路・DestroyPath/reset/round保持と新bot消去、容量255/256/257・旧map拒否を対照化し、最終Windows重点32/32。実機は不可視cornerの25full保持→attack解放のみ限定受入れ、両exit0・復元/指紋一致。全可視実機、失敗生成の書込み済みslot、NAV削除RemovePath、はしごsuffix等は未完。大項目47件を維持。[詳細と証拠](GRENADE_VISIBLE_TAIL_C02_5.md)。後続C02-5a/5bの監査・限定実機で進展した範囲は各節を参照。失敗履歴の通常到達入力等は未確定。
 
 
 ## C02-4 全可視/自明経路tail監査（2026-11-24）

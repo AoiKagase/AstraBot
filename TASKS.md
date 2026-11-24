@@ -23,13 +23,16 @@
 各修正単位のローカルmasterマージと指紋確認が完了したら、masterへ切り替えて当該作業ブランチを安全削除する。未マージ、別作業用、他worktreeで使用中のブランチは削除しない。次の修正はmasterを基点に新しい`codex/`ブランチで始める。
 
 ## 現在の作業
-C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で監査。成功経路のみの履歴モデルをmutationで反証したが、再現入力は欠落梯子parentの明示不整合。通常の固定探索/Astra公開入力で同じ失敗に至る経路は未確認のため、製品RED・修正完了とは数えない。[監査と残条件](docs/parity/GRENADE_FAILED_TAIL_C02_5A.md)。次は独立して進められる全可視/reset/rebuild実機対照を優先し、失敗履歴は到達入力の確定から継続する。
+C02-5b：専用NAVで全可視5点/4点・同一area自明2点経路を最終DLLで採録し、長短/reset履歴と25刻み・36+10・4方向bufferを因果対照。固定関数再生4/4、endpoint-only mutationはexit1。全3試行の両プロセスexit0、通常NAV/core復元、製品変更なし。[限定実機の証拠](docs/parity/GRENADE_VISIBLE_LIVE_C02_5B.md)。通常NAV自然発生や失敗履歴/RemovePath/梯子suffix等を完了には数えない。
+
+C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で監査。成功経路のみの履歴モデルをmutationで反証したが、再現入力は欠落梯子parentの明示不整合。通常の固定探索/Astra公開入力で同じ失敗に至る経路は未確認のため、製品RED・修正完了とは数えない。[監査と残条件](docs/parity/GRENADE_FAILED_TAIL_C02_5A.md)。後続C02-5bで全可視/reset/rebuildの限定実機を追加。失敗履歴は到達入力の確定から継続する。
 
 直前のC02-5では成功経路の全可視tail履歴を限定実装し、Windows重点32/32。実機は不可視cornerの25full保持→attack解放のみ限定受入れ、両exit0・復元/指紋一致。全可視実機、失敗生成の書込み済みslot、NAV削除RemovePath、はしごsuffix等は未完。[詳細と証拠](docs/parity/GRENADE_VISIBLE_TAIL_C02_5.md)。
 ## 完了した修正単位（大項目の完了とは別）
 
 | 単位 | 完了範囲・証拠 |
 |---|---|
+| ☑ C02-5b（限定実機） | [全可視・自明経路tail](docs/parity/GRENADE_VISIBLE_LIVE_C02_5B.md)。専用NAVで長短/reset履歴・25刻み・bufferを採録、固定再生4/4。製品変更なし |
 | ☑ C02-5a（監査のみ） | [失敗経路tail監査](docs/parity/GRENADE_FAILED_TAIL_C02_5A.md)。固定19対照と誤モデルmutation。製品変更なし、失敗履歴の実装/通常入力到達性は未完 |
 | ☑ C02-5 | [成功経路の全可視tail履歴](docs/parity/GRENADE_VISIBLE_TAIL_C02_5.md)。正規RED→GREEN、Windows重点32/32。実機は不可視corner限定、全可視/失敗生成等は残す |
 | ☑ C02-4 | [全可視/自明経路tail監査](docs/parity/GRENADE_VISIBLE_TAIL_C02_4.md)。固定実関数11対照、Windows corner重点7/7。製品変更なし、tail履歴の実装は未完 |
@@ -72,11 +75,11 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 - [ ] FetchBombの移動encounter受付条件・候補ゼロ等の未採録実機範囲を検証する（C02-2d9は移動中Native保持のみで、移動抽選抑止の因果対照は未実施）
 - [x] 安全時間終了時の定義済みcorner投擲を実装・限定検証する（C02-3、最終Windows重点29/29＋追加契約/武器/float9/9、通常NAVの自然flash境界で開始→22full保持→実attack解放）
 - [x] 全可視/自明経路で固定参照が読む未使用tailの挙動を監査する（C02-4、固定実関数11対照。初期zero・履歴保持・RemovePath消去・最大長slot256境界を確定。製品変更なし）
-- [x] 成功経路の全可視tail履歴を限定実装する（C02-5、初期zero・長短経路再利用・ResetValues/DestroyPath/round保持・新bot消去、容量/旧map拒否。重点32/32、全可視実機は未受入れ）
+- [x] 成功経路の全可視tail履歴を限定実装する（C02-5、初期zero・長短経路再利用・ResetValues/DestroyPath/round保持・新bot消去、容量/旧map拒否。重点32/32、当該時点では全可視実機未受入れ。後続C02-5bの限定受入れを参照）
 - [x] 失敗ComputePathPositionsのground書込み・未書込みsuffix保持を固定実関数で監査する（C02-5a、19対照。探索stubの不整合入力であり製品REDではない）
 - [ ] 失敗生成の書込み済みslot履歴の製品対応を実装・検証する（C02-5aで固定失敗の意味を確定。通常探索/Astra公開入力の到達例と正規製品REDは未確認。任意のNoRouteを同一視しない）
 - [ ] NAV area削除通知のRemovePath/新tail消去、はしごsuffix/容量超過のnative対応を実装・検証する（C02-5は成功経路限定、配列外slot256は推定しない）
-- [ ] 全可視/自明経路と長短経路・reset履歴を最終DLLの実機で因果対照する（C02-5実機はi10/length31の不可視cornerで代替しない）
+- [x] 全可視/自明経路と長短経路・reset履歴を最終DLLの実機で限定因果対照する（C02-5b：専用NAVの5点/4点・同一area2点、固定再生4/4。通常NAV自然発生/全mapや着弾の受入れは含まない）
 - [ ] 進行後drop上下段・梯子index、HE corner実機、着弾/跳ね返り等の未受入れ範囲を確認する
 
 根拠：`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:469`、`include/astrabot/compat/weapon_actions.hpp:43`、`src/core/compat/state_machine.cpp:900`。参照：`regamedll/dlls/bot/cs_bot_update.cpp:347`、`regamedll/dlls/bot/cs_bot_update.cpp:490`、`regamedll/dlls/bot/cs_bot_weapon.cpp:576`。
