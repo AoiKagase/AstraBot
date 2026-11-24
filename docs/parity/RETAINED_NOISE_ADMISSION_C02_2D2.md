@@ -37,3 +37,5 @@ HLDS25560/CDB35084（試行1）、HLDS41196/CDB2800（試行2）はすべてexit
 ## 残る範囲
 
 GuardのNative/Noise受付・ゼロ候補Clear・全owner退役、他状態の後段Noise再入停止、FetchBomb実機、直接の再帰Root full更新、期限切れ後の長期所有権は未完。今回のmoving/zero条件はオフライン合格であり実機合格ではない。Linux実機・広範なC4回帰も今回未実施。
+
+後続更新（2026-11-24）：Guardの受付・ゼロClear・独立Aheadは[C02-2d3](GUARD_LOOK_ADMISSION_C02_2D3.md)で実装・重点検証、実機Native受付を限定確認。Guard抽選時計、保持Noise/zero実機は引き続き未完。

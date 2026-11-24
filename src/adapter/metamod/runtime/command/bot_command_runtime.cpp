@@ -587,6 +587,10 @@ void BotCommandRuntime::applyUseEntityLook(std::size_t index, const edict_t &ent
 	actor.lookOwnerInitialized = true;
 	const auto state = services_->behavior_managedBotStateMachines(index).state();
 	const bool ordinaryIdle = state == compat::CompatibilityStateId::Idle || state == compat::CompatibilityStateId::Buy;
+	const bool guardAhead = state == compat::CompatibilityStateId::Hide && action.hasGuardAhead &&
+		std::isfinite(action.guardAheadYaw);
+	if (guardAhead)
+		actor.defaultLookAheadYaw = action.guardAheadYaw;
 	if (action.hasCombatAim || action.hasGuardLook ||
 		services_->behavior_managedBotStateMachines(index).attackOverlayActive())
 		actor.resumedDefaultLook = false;
@@ -614,7 +618,7 @@ void BotCommandRuntime::applyUseEntityLook(std::size_t index, const edict_t &ent
 		command.viewAngles = {entity.v.v_angle.x, entity.v.v_angle.y, entity.v.v_angle.z};
 		command.synchronizeCombatView = true;
 	}
-	else if ((actor.useEntityLookActive || (ordinaryIdle && !actor.resumedDefaultLook)) &&
+	else if ((actor.useEntityLookActive || ((ordinaryIdle || guardAhead) && !actor.resumedDefaultLook)) &&
 		!action.hasCombatAim && !action.hasGuardLook &&
 		!services_->behavior_managedBotStateMachines(index).attackOverlayActive() &&
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)

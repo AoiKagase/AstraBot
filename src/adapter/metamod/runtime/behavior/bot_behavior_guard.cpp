@@ -408,9 +408,11 @@ void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 	if (scenario.state != compat::CompatibilityStateId::Hide || !self || !engine || !engine->pfnTraceLine ||
 		ctx.before.dead || (ctx.before.flags & FL_FROZEN) != 0 || state.weaponActions.grenadeInProgress())
 		return;
-	// A guard must have a usable weapon before settling into an armed watch.
+	const bool compatibility = services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	// Native Hide updates its look independently of firearm ownership, including
+	// while its uninterruptible grenade spot is retained.
 	const auto inventory = static_cast<std::uint32_t>(self->v.weapons);
-	if ((inventory & ~kUnarmedInventoryMask) == 0)
+	if (!compatibility && (inventory & ~kUnarmedInventoryMask) == 0)
 		return;
 	compat::PublicActorState equipment{};
 	if (services_->observation_publicObservations().read(ctx.actor, ctx.frame, &equipment))
@@ -437,10 +439,12 @@ void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 		ctx.proposal.executionAborted = true;
 		return;
 	}
-	if (noise == NoiseLookResult::Handled || state.noiseLook.active() || state.noiseLook.inhibited(services_->service_globals()->time))
-		return;
 	const auto navigation = services_->service_navPublisher().snapshot();
 	const float now = services_->service_globals()->time;
+	const std::function<bool()> geometryCurrent = [&] {
+		return current() && services_->service_engineFunctions() == engine &&
+			services_->service_navPublisher().snapshot().revision() == navigation.revision();
+	};
 	const nav::NavVector spot = {scenario.target.position.x, scenario.target.position.y, scenario.target.position.z};
 	if (!state.guardLook.current(ctx.actor, ctx.frame, scenario.target.entity, spot, navigation.revision(), now))
 	{
@@ -455,6 +459,11 @@ void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 							eye.z};
 			TraceResult trace{};
 			engine->pfnTraceLine(a, b, kIgnoreMonstersAndGlassTrace, self, &trace);
+			if (!geometryCurrent())
+			{
+				ctx.proposal.executionAborted = true;
+				return;
+			}
 			if (!trace.fStartSolid && !trace.fAllSolid && trace.flFraction > best)
 			{
 				best = trace.flFraction;
@@ -480,25 +489,62 @@ void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 						continue;
 					const auto point = compat::guardApproachPoint(*previous, *here, approach.previousToHereHow);
 					nav::NavVector bend{};
-					if (bendLookApproach(
-							*engine, self, {self->v.origin.x, self->v.origin.y, self->v.origin.z}, point, &bend))
+					const bool visible = bendLookApproach(
+						*engine, self, {self->v.origin.x, self->v.origin.y, self->v.origin.z}, point, &bend, &geometryCurrent);
+					if (!geometryCurrent())
+					{
+						ctx.proposal.executionAborted = true;
+						return;
+					}
+					if (visible)
 						points.push_back(bend);
 				}
 		}
 		state.guardLook.begin(
 			ctx.actor, ctx.frame, scenario.target.entity, spot, navigation.revision(), now, openYaw, points);
 	}
+	if (compatibility)
+	{
+		ctx.proposal.hasGuardAhead = true;
+		ctx.proposal.guardAheadYaw = state.guardLook.aheadYaw();
+		if (state.noiseLook.active() || state.nativeGrenade.looking())
+			state.guardLook.retireGoal();
+	}
+	if (noise == NoiseLookResult::Handled || state.noiseLook.inhibited(now))
+		return;
 	const bool sniper = weapon.available &&
 		(weapon.weaponId == kScoutWeaponId || weapon.weaponId == kSg550WeaponId || weapon.weaponId == kAwpWeaponId ||
 			weapon.weaponId == kG3sg1WeaponId);
 	float pitch = ctx.movementAngles.pitch, yaw = ctx.movementAngles.yaw;
-	if (state.guardLook.update(now, sniper,
+	bool hasGoal = false;
+	if (compatibility)
+	{
+		const auto selected = state.guardLook.selectGoal(now, sniper,
+			{self->v.origin.x + self->v.view_ofs.x, self->v.origin.y + self->v.view_ofs.y,
+				self->v.origin.z + self->v.view_ofs.z}, services_->service_compatibilityRandomSource(),
+			{services_->command_managedBotCommandSequences(ctx.index), 0, full},
+			[&] { return !state.noiseLook.active() && !state.nativeGrenade.looking(); }, geometryCurrent);
+		if (selected == compat::GuardLookSelection::Aborted)
+		{
+			ctx.proposal.executionAborted = true;
+			return;
+		}
+		if (selected == compat::GuardLookSelection::Clear)
+		{
+			state.nativeGrenade.clearLook();
+			state.noiseLook.clearLook();
+		}
+		hasGoal = selected == compat::GuardLookSelection::Track;
+		if (hasGoal) { pitch = state.guardLook.desiredPitch(); yaw = state.guardLook.desiredYaw(); }
+	}
+	else hasGoal = state.guardLook.update(now, sniper,
 			{self->v.origin.x + self->v.view_ofs.x, self->v.origin.y + self->v.view_ofs.y,
 				self->v.origin.z + self->v.view_ofs.z},
 			self->v.v_angle.x, self->v.v_angle.y, services_->service_compatibilityRandomSource(),
 			{services_->command_managedBotCommandSequences(ctx.index), 0,
 				services_->service_managedBotFullUpdateSequences()[ctx.index]},
-			&pitch, &yaw, services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility))
+			&pitch, &yaw);
+	if (hasGoal)
 	{
 		recordLookGoal(ctx.index, state.guardLook.desiredYaw());
 		ctx.proposal.viewAngles = {pitch, yaw, 0};

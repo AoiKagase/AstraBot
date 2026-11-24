@@ -1368,7 +1368,8 @@ int siteFixtureUserMessageId(plid_t, const char *name, int *)
 											   : 0;
 }
 
-bool writeTwoSiteNavigation(const char *path, bool rightReachable, bool withCover = false, const char *place = nullptr)
+bool writeTwoSiteNavigation(const char *path, bool rightReachable, bool withCover = false, const char *place = nullptr,
+	bool withApproaches = false)
 {
 	std::vector<std::uint8_t> bytes;
 	const auto u32 = [&](std::uint32_t value)
@@ -1422,7 +1423,16 @@ bool writeTwoSiteNavigation(const char *path, bool rightReachable, bool withCove
 			if (place)
 				bytes.push_back(1U);
 		}
-		bytes.push_back(0U);
+		const bool approach = withApproaches && (id == 1U || id == 4U);
+		bytes.push_back(approach ? 1U : 0U);
+		if (approach)
+		{
+			u32(id == 1U ? 4U : 1U);
+			u32(id == 1U ? 3U : 2U);
+			bytes.push_back(id == 1U ? 1U : 3U);
+			u32(0U);
+			bytes.push_back(0U);
+		}
 		u32(0U);
 		if (place)
 		{

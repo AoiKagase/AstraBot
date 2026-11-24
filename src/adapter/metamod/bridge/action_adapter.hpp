@@ -50,6 +50,9 @@ struct ActionProposal
 	bool runAfterPlantTimeout = false;
 	// Discard this draft after a reentrant callback invalidates its decision.
 	bool executionAborted = false;
+	// Hide arrival supplies ordinary Ahead independently of a LOW look spot.
+	bool hasGuardAhead = false;
+	float guardAheadYaw = 0.0f;
 };
 
 struct CombatUpkeepUpdate

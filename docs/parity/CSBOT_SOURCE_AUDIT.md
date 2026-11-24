@@ -1,12 +1,16 @@
 # 23　CSBot参照実装との差分監査
 
+## C02-2d3 Guard受付・独立Ahead（2026-11-24）
+
+Guard静止の抽選後Noise/Native受付、ゼロ候補Clear、独立Ahead、geometry/RNG再入停止、銃所持による視線省略を修正。Windows重点16/16＋テスト補強後1/1、同一実機のNative保持→interval→point→LOW拒否をactor1の31更新で限定確認。DLL `e1df4a813555…`、全実PID終了0・core復元・コピー追加0。保持Noise/ゼロ候補の実機と、記憶敵候補等でresetされるGuard抽選時計は未完。大分類の47残件を維持し、次はGuard時計。全履歴・両OS全体検証は大分類完了時。[詳細と限界](GUARD_LOOK_ADMISSION_C02_2D3.md)。
+
 ## C02-2d2 保持NoiseのHunt受付（2026-11-24）
 
 保持Noise中の静止処理を抽選後のLOW拒否へ、移動処理を抽選前の拒否へ合わせた。静止候補ゼロはNoiseもClear。Windows重点12/12、既存実機のactor1/full56ほか7更新で保持Noise中の間隔→候補→受付判定を採録。最終DLL `75257f8b0b96…`。実PID exit0・core原文復元・コピー追加0。実機moving/zero/Guard・Linux・全履歴は未検証。GuardのNoise/Native受付と他状態の再入停止等は残る。大分類完了時に全体検証する方針を維持。[詳細と範囲](RETAINED_NOISE_ADMISSION_C02_2D2.md)。
 
 ## C02-2d1 新規Noiseのhandled-returnとHide姿勢（2026-11-24）
 
-新規NoiseをHunt/Guardの選択前に処理し、拒否された音要求でも後続の低優先度抽選を止める。同full再入で旧処理を中止し、Hideのしゃがみを維持。重点14/14、Windows全体初回182/184後に台帳・厳密履歴補正を追加して関連3/3再検証、Linux183/183、PE/ELF各7export。固定履歴151933行の差は無武装Hideのしゃがみ6入力のみ、RNG510行不変。既存実機の公開銃声でactor slot2/full90のStartle→処理済み→Hunt打切り、LookAround抽選0を確認。実HLDS42184/CDB25376は終了0、core原文復元。大分類ごとの検証方針により今回のC4広範回帰は未実施。保持NoiseのHunt受付はC02-2d2で限定対応。GuardのNoise/Native受付、他状態の後段再入停止は未完。C02部分対応・47残件を維持。[詳細](LOOK_NOISE_ORDER_C02_2D1.md)。`438842e` でコミット・ローカルmaster FF済み。検証時原文と製品・保護ファイルの指紋を後確認済み。
+新規NoiseをHunt/Guardの選択前に処理し、拒否された音要求でも後続の低優先度抽選を止める。同full再入で旧処理を中止し、Hideのしゃがみを維持。重点14/14、Windows全体初回182/184後に台帳・厳密履歴補正を追加して関連3/3再検証、Linux183/183、PE/ELF各7export。固定履歴151933行の差は無武装Hideのしゃがみ6入力のみ、RNG510行不変。既存実機の公開銃声でactor slot2/full90のStartle→処理済み→Hunt打切り、LookAround抽選0を確認。実HLDS42184/CDB25376は終了0、core原文復元。大分類ごとの検証方針により今回のC4広範回帰は未実施。保持NoiseのHunt受付はC02-2d2で限定対応。GuardのNoise/Native受付・ゼロClear・AheadはC02-2d3で限定対応。Guard抽選時計と保持Noise/zero実機、他状態の後段再入停止は未完。C02部分対応・47残件を維持。[詳細](LOOK_NOISE_ORDER_C02_2D1.md)。`438842e` でコミット・ローカルmaster FF済み。検証時原文と製品・保護ファイルの指紋を後確認済み。
 
 ## C02-2c4 accepted-BEGINの旧Hunt LOW所有解除（2026-11-24）
 

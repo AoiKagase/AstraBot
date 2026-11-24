@@ -5,6 +5,7 @@
 #include "astrabot/world/world_snapshot.hpp"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <vector>
 namespace astrabot
 {
@@ -48,12 +49,16 @@ inline nav::NavVector guardApproachPoint(const nav::NavArea &previous, const nav
 }
 
 // Private behavior state: geometry is supplied by the adapter, input by its owner.
+enum class GuardLookSelection { Unchanged, Track, Clear, Aborted };
+
 class GuardLookPlanner
 {
 public:
 	void reset()
 	{
+		const auto next = mutationSequence_ + 1;
 		*this = GuardLookPlanner{};
+		mutationSequence_ = next;
 	}
 
 	bool current(world::ActorKey actor, world::FrameIdentity frame, world::EntityKey bomb, const nav::NavVector &spot,
@@ -79,14 +84,87 @@ public:
 		lastTime_ = now;
 		nextTime_ = now;
 		desiredYaw_ = openYaw;
+		aheadYaw_ = openYaw;
 		approaches_ = approaches;
 	}
 
 	float desiredYaw() const { return desiredYaw_; }
+	float desiredPitch() const { return desiredPitch_; }
+	float aheadYaw() const { return aheadYaw_; }
+	void retireGoal() { goalValid_ = false; }
+
+	GuardLookSelection selectGoal(float now, bool sniper, const nav::NavVector &eye,
+		ICompatibilityRandomSource &random, RandomTimingContext timing,
+		const std::function<bool()> &accept = {}, const std::function<bool()> &current = {})
+	{
+		if (!active_ || !std::isfinite(now) || now < lastTime_)
+			return GuardLookSelection::Unchanged;
+		const auto sequence = mutationSequence_;
+		const auto valid = [&] {
+			return mutationSequence_ == sequence && (!current || current()) && mutationSequence_ == sequence;
+		};
+		if (!valid())
+			return GuardLookSelection::Aborted;
+		if (now >= nextTime_)
+		{
+			const float minimum = sniper ? 5.0f : 1.0f, maximum = sniper ? 10.0f : 2.0f;
+			const auto interval = random.nextFloat(RandomRequest::floatRequest(
+				"LookAround.StateInterval", {actor_.slot, actor_.generation}, timing, minimum, maximum));
+			if (!valid())
+				return GuardLookSelection::Aborted;
+			if (interval.status != RandomStatus::Ok || !std::isfinite(interval.value) ||
+				interval.value < minimum || interval.value > maximum)
+				return GuardLookSelection::Unchanged;
+			if (approaches_.empty())
+			{
+				nextTime_ = now + interval.value;
+				lastTime_ = now;
+				goalValid_ = false;
+				return GuardLookSelection::Clear;
+			}
+			const auto which = random.nextLong(RandomRequest::longRequest("LookAround.ApproachPoint",
+				{actor_.slot, actor_.generation}, timing, 0, static_cast<std::int32_t>(approaches_.size() - 1)));
+			if (!valid())
+				return GuardLookSelection::Aborted;
+			if (which.status != RandomStatus::Ok || which.value < 0 ||
+				static_cast<std::size_t>(which.value) >= approaches_.size())
+				return GuardLookSelection::Unchanged;
+			const auto point = approaches_[which.value];
+			const bool admitted = !accept || accept();
+			if (!valid())
+				return GuardLookSelection::Aborted;
+			nextTime_ = now + interval.value;
+			lastTime_ = now;
+			goalValid_ = admitted;
+			if (!admitted)
+				return GuardLookSelection::Unchanged;
+			const float dx = point.x - eye.x, dy = point.y - eye.y;
+			desiredYaw_ = std::atan2(dy, dx) * 57.295779513f;
+			desiredPitch_ = -std::atan2(point.z + 36.0f - eye.z, std::hypot(dx, dy)) * 57.295779513f;
+		}
+		else
+		{
+			const bool admitted = !accept || accept();
+			if (!valid())
+				return GuardLookSelection::Aborted;
+			if (!admitted)
+				goalValid_ = false;
+			lastTime_ = now;
+		}
+		return goalValid_ ? GuardLookSelection::Track : GuardLookSelection::Unchanged;
+	}
 
 	bool update(float now, bool sniper, const nav::NavVector &eye, float currentPitch, float currentYaw,
 		ICompatibilityRandomSource &random, RandomTimingContext timing, float *pitch, float *yaw, bool goalOnly = false)
 	{
+		if (goalOnly)
+		{
+			if (!pitch || !yaw || selectGoal(now, sniper, eye, random, timing) != GuardLookSelection::Track)
+				return false;
+			*pitch = desiredPitch_;
+			*yaw = desiredYaw_;
+			return true;
+		}
 		constexpr float kSniperMinimumIntervalSeconds = 5.0f;
 		constexpr float kSniperMaximumIntervalSeconds = 10.0f;
 		constexpr float kMinimumIntervalSeconds = 1.0f;
@@ -128,13 +206,6 @@ public:
 				}
 			}
 		}
-		if (goalOnly)
-		{
-			lastTime_ = now;
-			*pitch = desiredPitch_;
-			*yaw = desiredYaw_;
-			return true;
-		}
 		const float dt = std::max(0.0f, std::min(ASTRABOT_GUARD_LOOK_MAXIMUM_UPDATE_SECONDS, now - lastTime_));
 		lastTime_ = now;
 		const float step = kTurnDegreesPerSecond * dt;
@@ -153,12 +224,15 @@ private:
 	}
 
 	bool active_ = false;
+	bool goalValid_ = false;
+	std::uint64_t mutationSequence_ = 0;
 	world::ActorKey actor_{};
 	world::FrameIdentity frame_{};
 	world::EntityKey bomb_{};
 	nav::NavVector spot_{};
 	std::uint64_t revision_ = 0;
 	float nextTime_ = 0, lastTime_ = 0, desiredYaw_ = 0, desiredPitch_ = 0;
+	float aheadYaw_ = 0;
 	std::vector<nav::NavVector> approaches_;
 };
 }
