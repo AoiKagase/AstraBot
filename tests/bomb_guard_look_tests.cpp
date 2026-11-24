@@ -8,6 +8,7 @@ bool testBombGuardLook(astrabot::metamod::PluginRuntime &, enginefuncs_t &, glob
 #include "compat_actor_command_tests.cpp"
 namespace
 {
+bool guardMinimumLookInterval = false;
 bool testGuardPolicy()
 {
 	using namespace astrabot;
@@ -68,6 +69,21 @@ bool testGuardPolicy()
 			planner.selectGoal(10.1f, false, {0, 0, 36}, denied, {}) == compat::GuardLookSelection::Unchanged && denied.verifyComplete(),
 			"Guard LOW is denied after both draws and cannot reappear before a new selection"))
 		return false;
+	float sharedDeadline = 0;
+	compat::ScriptedRandomSource clockTape({
+		compat::RandomTapeEntry::floatEntry("LookAround.StateInterval", {1, 1}, {}, 1, 2, 1.5f),
+		compat::RandomTapeEntry::longEntry("LookAround.ApproachPoint", {1, 1}, {}, 0, 0, 0),
+		compat::RandomTapeEntry::floatEntry("LookAround.StateInterval", {1, 1}, {}, 1, 2, 1.5f)});
+	planner.begin({1, 1}, {1, 1, 1}, {9, 1}, {}, 1, 10, 90, {{100, 0, 0}});
+	if (!check(planner.selectGoal(10, false, {0, 0, 36}, clockTape, {}, {}, {}, &sharedDeadline) ==
+			compat::GuardLookSelection::Track && sharedDeadline == 11.5f,
+			"Guard publishes its deadline to the Bot-owned stationary clock")) return false;
+	planner.begin({1, 1}, {1, 1, 2}, {9, 1}, {100, 0, 0}, 2, 10.1f, 45, {});
+	if (!check(planner.selectGoal(10.2f, false, {100, 0, 36}, clockTape, {}, {}, {}, &sharedDeadline) ==
+			compat::GuardLookSelection::Unchanged && sharedDeadline == 11.5f &&
+			planner.selectGoal(11.5f, false, {100, 0, 36}, clockTape, {}, {}, {}, &sharedDeadline) ==
+			compat::GuardLookSelection::Clear && clockTape.verifyComplete(),
+			"Rebuilt geometry cannot reset the stationary deadline; zero candidates Clear only when due")) return false;
 	for (bool atPoint : {false, true})
 	{
 		std::vector<compat::RandomTapeEntry> tape{
@@ -87,13 +103,15 @@ bool testGuardPolicy()
 		restart.atPoint = atPoint;
 		planner.begin({1, 1}, {1, 1, 1}, {9, 1}, {}, 1, 10, 0, {{100, 0, 0}});
 		interrupted.setTraceSink(&restart);
-		const auto aborted = planner.selectGoal(10, false, {0, 0, 36}, interrupted, {});
+		float callbackDeadline = 9.0f;
+		const auto aborted = planner.selectGoal(10, false, {0, 0, 36}, interrupted, {}, {}, {}, &callbackDeadline);
 		compat::ScriptedRandomSource replacement({
 			compat::RandomTapeEntry::floatEntry("LookAround.StateInterval", {2, 1}, {}, 1, 2, 1.5f),
 			compat::RandomTapeEntry::longEntry("LookAround.ApproachPoint", {2, 1}, {}, 0, 0, 0)});
 		if (!check(restart.fired && interrupted.verifyComplete() && aborted == compat::GuardLookSelection::Aborted &&
-				planner.aheadYaw() == 45 && planner.selectGoal(10, false, {0, 0, 36}, replacement, {}) == compat::GuardLookSelection::Track &&
-				replacement.verifyComplete() && std::fabs(planner.desiredYaw() - 90) < .01f,
+				callbackDeadline == 9.0f && planner.aheadYaw() == 45 &&
+				planner.selectGoal(10, false, {0, 0, 36}, replacement, {}, {}, {}, &callbackDeadline) == compat::GuardLookSelection::Track &&
+				callbackDeadline == 11.5f && replacement.verifyComplete() && std::fabs(planner.desiredYaw() - 90) < .01f,
 				"reentrant interval/point callbacks preserve the replacement Guard goal and due deadline")) return false;
 	}
 	planner.reset();
@@ -139,7 +157,12 @@ bool testBombGuardLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	gCaptureMovementLogs = true;
 	gProfileEnabled = true;
 	engine.pfnTraceLine = &traceGuardWall;
-	engine.pfnRandomFloat = &siteFixtureRandomFloat;
+	guardMinimumLookInterval = false;
+	engine.pfnRandomFloat = +[](float low, float high) {
+		if (guardMinimumLookInterval && low == 1.0f && high == 2.0f)
+			return astrabot_test::recordRandomFloat(low, high, low);
+		return siteFixtureRandomFloat(low, high);
+	};
 	engine.pfnRandomLong = &siteFixtureRandomLong;
 	runtime.giveEnginePointers(&engine, &globals);
 	globals.mapname = 6;
@@ -245,6 +268,8 @@ bool testBombGuardLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 		check(gLastRunPlayerMoveForward == 0 && gLastRunPlayerMoveSide == 0, "guard watches without leaving cover");
 	struct NoiseOrderDraws final : astrabot::compat::IRandomTraceSink
 	{
+		globalvars_t *clock = nullptr;
+		float nextIntervalAt = 0;
 		unsigned startles = 0, intervals = 0, points = 0, durations = 0;
 		bool interruptInterval = false;
 		std::function<void()> interrupt;
@@ -258,11 +283,13 @@ bool testBombGuardLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 			}
 			if (std::strcmp(draw.request.semanticId, "LookAround.StateInterval") == 0) {
 				++intervals;
+				if (clock) nextIntervalAt = clock->time + draw.floatResult;
 				if (interruptInterval && interrupt) { auto callback = std::move(interrupt); interrupt = {}; callback(); }
 			}
 			if (std::strcmp(draw.request.semanticId, "LookAround.ApproachPoint") == 0) ++points;
 		}
 	} noiseDraws;
+	noiseDraws.clock = &globals;
 	enginefuncs_t soundHooks{};
 	int soundVersion = ENGINE_INTERFACE_VERSION;
 	if (!check(runtime.provideEngineFunctions(&soundHooks, &soundVersion) && soundHooks.pfnEmitSound,
@@ -402,6 +429,10 @@ bool testBombGuardLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	}
 	if (!check(attacked, "a visible human enemy interrupts post-plant guard and receives attack input") || !passed)
 		return false;
+	// Two consecutive legal one-second intervals fit inside the independent
+	// three-second pin window, including the zero-geometry control below.
+	guardMinimumLookInterval = true;
+	guardPorts.service_compatibilityRandomSource().setTraceSink(&noiseDraws);
 	activeWeapon = 4;
 	self.v.weapons = 1 << 4;
 	gEntities[1].v.origin = self.v.origin + Vector(300, 0, 128);
@@ -409,8 +440,9 @@ bool testBombGuardLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 		self.v.angles = self.v.v_angle = Vector(0, 0, 0);
 		tick();
 	}
-	gEntities[1].v.health = 0;
-	gEntities[1].v.deadflag = DEAD_DEAD;
+	// Keep the recognized enemy alive but unavailable to new visibility,
+	// matching the retained threat in the real Guard/Native fixture.
+	gEntities[1].v.flags |= FL_NOTARGET;
 	for (unsigned i = 0; i < 4; ++i) {
 		self.v.angles = self.v.v_angle = Vector(0, 0, 0);
 		tick();
@@ -438,7 +470,18 @@ bool testBombGuardLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	if (!check(nativeGuardState.state() == astrabot::compat::CompatibilityStateId::Hide &&
 			!nativeGuardState.attackOverlayActive() && (gLastRunPlayerMoveButtons & IN_ATTACK) != 0 && self.v.v_angle.x < -1,
 			"Guard Native control: grenade pin and elevated copied aim persist after hostile death outside Attack")) return false;
-	globals.time += 2.0f;
+	const auto beforeDeadlineIntervals = noiseDraws.intervals, beforeDeadlinePoints = noiseDraws.points;
+	guardPorts.service_compatibilityRandomSource().setTraceSink(&noiseDraws);
+	self.v.angles = self.v.v_angle = Vector(0, 0, 0);
+	tick();
+	guardPorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+	std::fprintf(stderr, "Guard retained threat before deadline intervals=%u points=%u\n",
+		noiseDraws.intervals - beforeDeadlineIntervals, noiseDraws.points - beforeDeadlinePoints);
+	if (!check(noiseDraws.intervals == beforeDeadlineIntervals && noiseDraws.points == beforeDeadlinePoints,
+			"Remembered hidden enemy does not reset the Guard look deadline on the next full update")) return false;
+	gEntities[1].v.health = 0;
+	gEntities[1].v.deadflag = DEAD_DEAD;
+	globals.time = std::max(globals.time, noiseDraws.nextIntervalAt + .001f - .1f);
 	self.v.angles = self.v.v_angle = Vector(0, 0, 0);
 	const auto nativeIntervals = noiseDraws.intervals, nativePoints = noiseDraws.points;
 	gMovementLogs.clear();
@@ -486,6 +529,7 @@ bool testBombGuardLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	self.v.origin = Vector(zeroScenario.target.position.x, zeroScenario.target.position.y, 36);
 	const auto zeroIntervals = noiseDraws.intervals, zeroPoints = noiseDraws.points;
 	self.v.angles = self.v.v_angle = Vector(0, 0, 0);
+	globals.time = std::max(globals.time, noiseDraws.nextIntervalAt + .001f - .1f);
 	guardPorts.service_compatibilityRandomSource().setTraceSink(&noiseDraws);
 	tick();
 	guardPorts.service_compatibilityRandomSource().setTraceSink(nullptr);
@@ -509,6 +553,7 @@ bool testBombGuardLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 			std::fabs(self.v.v_angle.y - clearAhead.yaw) < .0001f && (gLastRunPlayerMoveButtons & IN_ATTACK) != 0,
 			"Guard zero Clear resumes Ahead on light upkeep without resurrecting Native/LOW or dropping the pin")) return false;
 	activeWeapon = 22;
+	guardMinimumLookInterval = false;
 
 	using namespace astrabot;
 	gEntities[1].v.health = 0.0f;

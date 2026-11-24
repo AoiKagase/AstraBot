@@ -1,6 +1,6 @@
 # AstraBot CSBot準拠タスク一覧
 
-更新：2026-11-24。完了基点：`438842ef6eb0151cd3a31874e953a3ba2e7b4ac4`（ローカルmaster）。
+更新：2026-11-24。直前の統合基点：`acb87da`（ローカルmaster）。
 
 **大項目49件：限定完了2件、未完47件。部分対応は未完に含む。** チェック済みの修正単位があっても、大項目の未完数は減らない。S14は現対戦milestone外の差分として残し、対応済みには数えない。
 
@@ -24,7 +24,7 @@
 
 ## 現在の作業
 
-C02-2d3：[Guard受付・独立Ahead](docs/parity/GUARD_LOOK_ADMISSION_C02_2D3.md)を重点16/16＋追加1/1、同一実機のNative受付31更新で限定検証。統合履歴はGit履歴を参照。次は記憶敵候補・geometry再構築によりGuard抽選時計がresetされる差。保持Noise/zeroの実機、他状態の後段再入も残す。大項目47件は維持する。
+C02-2d4：[Guard/Hunt共有視線時計](docs/parity/GUARD_LOOK_CLOCK_C02_2D4.md)を重点16/16＋再入補強1/1、同一実機のNative保持63更新で限定検証。次はGuard保持Noise・ゼロ候補の実機対照と共有時計の状態間継続。大項目47件は維持する。
 
 ## 完了した修正単位（大項目の完了とは別）
 
@@ -40,6 +40,7 @@ C02-2d3：[Guard受付・独立Ahead](docs/parity/GUARD_LOOK_ADMISSION_C02_2D3.m
 | ☑ C02-2d1 | [新規Noise順序・再入停止・Hide姿勢](docs/parity/LOOK_NOISE_ORDER_C02_2D1.md)。重点14/14、Windows初回182/184＋修正後3/3、Linux183/183、各7exports、実機同full順序を限定受入れ。`438842e` コミット・master FF済み |
 | ☑ C02-2d2 | [保持NoiseのHunt受付](docs/parity/RETAINED_NOISE_ADMISSION_C02_2D2.md)。Windows重点12/12、同じ実機の静止保持条件を限定受入れ。moving/zero実機・Guardは未完 |
 | ☑ C02-2d3 | [Guard受付・独立Ahead](docs/parity/GUARD_LOOK_ADMISSION_C02_2D3.md)。重点16/16＋追加1/1、実機Native受付31更新。抽選時計・Noise/zero実機は未完 |
+| ☑ C02-2d4 | [Guard/Hunt共有視線時計](docs/parity/GUARD_LOOK_CLOCK_C02_2D4.md)。重点16/16＋再入補強1/1、実機Native保持63更新で期限を確認。状態間・Noise/zero実機は未完 |
 
 既存Plantの早期判断・MoveTo開始順・末尾入力/退出・Plant前Idle経路抑止・cold Idle/Buy視線供給も限定完了。残る自然拾得・実水没・標準GameDLL受入れはS13/C14等へ分離している。過去の完了範囲は[STATUS](docs/parity/STATUS.md)を参照。
 
@@ -53,7 +54,8 @@ C02-2d3：[Guard受付・独立Ahead](docs/parity/GUARD_LOOK_ADMISSION_C02_2D3.m
 - [x] 新規Noiseのhandled-return・限定的な再入停止・Hide姿勢を合わせる（C02-2d1、`438842e`、検証・master FF済み）
 - [x] 保持NoiseのHunt静止/移動受付を合わせる（C02-2d2、重点12/12、実機静止条件のみ限定受入れ）
 - [x] GuardのNoise/Native受付・ゼロ候補Clear・独立Aheadを実装する（C02-2d3、重点16/16＋追加1/1、実機Native受付のみ限定受入れ）
-- [ ] 記憶敵候補・geometry再構築等によるGuard抽選時計のresetを参照と照合して修正する
+- [x] 記憶敵候補・geometry再構築等によるGuard抽選時計のresetを修正する（C02-2d4、共有時計、重点16/16＋1/1、実機Native保持63更新）
+- [ ] Hunt↔Guardをまたぐ共有静止時計の継続を実機対照で確認する
 - [ ] Guard保持Noise・ゼロ候補の実機受入れを確認する
 - [ ] 他状態の後段Noise再入停止を合わせる
 - [ ] FetchBomb実機と直接同時刻full再入を検証する

@@ -1,5 +1,9 @@
 # 23　CSBot参照実装との差分監査
 
+## C02-2d4 Guard/Hunt共有視線時計（2026-11-24）
+
+記憶敵候補・geometry再構築によるGuard時計resetを修正し、HuntとBot所有の静止時計を共有。Windows重点16/16＋再入補強1/1、同一実機Native保持63更新のうち期限前57更新は抽選なし、期限到達6更新は1〜2秒の次回期限設定を確認。HLDS22024/CDB35852はexit0、core復元・コピー追加0。Hunt↔Guardをまたぐ実機対照と保持Noise/zero実機は未完。大項目47件を維持。[詳細](GUARD_LOOK_CLOCK_C02_2D4.md)。
+
 ## C02-2d3 Guard受付・独立Ahead（2026-11-24）
 
 Guard静止の抽選後Noise/Native受付、ゼロ候補Clear、独立Ahead、geometry/RNG再入停止、銃所持による視線省略を修正。Windows重点16/16＋テスト補強後1/1、同一実機のNative保持→interval→point→LOW拒否をactor1の31更新で限定確認。DLL `e1df4a813555…`、全実PID終了0・core復元・コピー追加0。保持Noise/ゼロ候補の実機と、記憶敵候補等でresetされるGuard抽選時計は未完。大分類の47残件を維持し、次はGuard時計。全履歴・両OS全体検証は大分類完了時。[詳細と限界](GUARD_LOOK_ADMISSION_C02_2D3.md)。

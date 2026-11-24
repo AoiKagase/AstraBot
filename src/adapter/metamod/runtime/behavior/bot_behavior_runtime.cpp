@@ -188,6 +188,7 @@ void BotBehaviorRuntime::invalidateHelpExecution(std::size_t index)
 
 void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 {
+	actors_[index].lookAroundStateTimestamp = 0.0f;
 	actors_[index].nativeGrenade.reset();
 	actors_[index].grenadeCommand = {};
 	actors_[index].morale = {};
@@ -250,6 +251,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 
 void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHandle &handle)
 {
+	actors_[index].lookAroundStateTimestamp = 0.0f;
 	actors_[index].nativeGrenade.reset();
 	actors_[index].grenadeCommand = {};
 	resetEncouragement();
@@ -306,6 +308,7 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 	resetEncouragement();
 	for (auto &actor : actors_)
 	{
+		actor.lookAroundStateTimestamp = 0.0f;
 		actor.nativeGrenade.reset();
 		actor.grenadeCommand = {};
 		if (++actor.executionRevision == 0)
@@ -343,6 +346,7 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 
 void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 {
+	actors_[index].lookAroundStateTimestamp = 0.0f;
 	actors_[index].nativeGrenade.reset();
 	actors_[index].grenadeCommand = {};
 	invalidateHelpExecution(index);

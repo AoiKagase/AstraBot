@@ -165,12 +165,14 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 		actors_[index].managedBotStateRounds != services_->service_lifecycle().roundGeneration() &&
 		machine.isInitialized())
 	{
+		actors_[index].lookAroundStateTimestamp = 0.0f;
 		actors_[index].scenarioPlanners.reset();
 		(void)machine.onRoundReset(context);
 	}
 	actors_[index].managedBotStateRounds = services_->service_lifecycle().roundGeneration();
 	if (!machine.isInitialized())
 	{
+		actors_[index].lookAroundStateTimestamp = 0.0f;
 		actors_[index].scenarioPlanners.reset();
 		(void)machine.initialize(context);
 		if (native && !actors_[index].buyingComplete)
@@ -186,6 +188,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 	}
 	if (before.dead)
 	{
+		actors_[index].lookAroundStateTimestamp = 0.0f;
 		actors_[index].noiseInvestigation.reset();
 		actors_[index].investigationWalking = false;
 		actors_[index].knifeRun.reset();

@@ -785,6 +785,7 @@ private:
 		NoiseLookDecision noiseLookDecision{};
 		compat::BombGuardPlanner bombGuardPlanners{};
 		compat::GuardLookPlanner guardLook{};
+		float lookAroundStateTimestamp = 0.0f;
 		compat::HuntEncounterPlanner huntEncounter{};
 		struct HuntApproaches
 		{
@@ -792,7 +793,6 @@ private:
 			std::array<nav::NavVector, 16> points{};
 			std::int32_t count = 0;
 			std::uint64_t navRevision = 0;
-			float nextLookAt = 0.0f;
 			float inhibitUntil = 0.0f;
 		};
 		HuntApproaches huntApproaches{};

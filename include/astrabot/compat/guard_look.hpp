@@ -95,7 +95,8 @@ public:
 
 	GuardLookSelection selectGoal(float now, bool sniper, const nav::NavVector &eye,
 		ICompatibilityRandomSource &random, RandomTimingContext timing,
-		const std::function<bool()> &accept = {}, const std::function<bool()> &current = {})
+		const std::function<bool()> &accept = {}, const std::function<bool()> &current = {},
+		float *sharedDeadline = nullptr)
 	{
 		if (!active_ || !std::isfinite(now) || now < lastTime_)
 			return GuardLookSelection::Unchanged;
@@ -105,7 +106,10 @@ public:
 		};
 		if (!valid())
 			return GuardLookSelection::Aborted;
-		if (now >= nextTime_)
+		// Compatibility owns this clock at Bot scope, independently of the
+		// approach geometry and the state currently supplying it.
+		auto &deadline = sharedDeadline ? *sharedDeadline : nextTime_;
+		if (now >= deadline)
 		{
 			const float minimum = sniper ? 5.0f : 1.0f, maximum = sniper ? 10.0f : 2.0f;
 			const auto interval = random.nextFloat(RandomRequest::floatRequest(
@@ -117,7 +121,7 @@ public:
 				return GuardLookSelection::Unchanged;
 			if (approaches_.empty())
 			{
-				nextTime_ = now + interval.value;
+				deadline = now + interval.value;
 				lastTime_ = now;
 				goalValid_ = false;
 				return GuardLookSelection::Clear;
@@ -133,7 +137,7 @@ public:
 			const bool admitted = !accept || accept();
 			if (!valid())
 				return GuardLookSelection::Aborted;
-			nextTime_ = now + interval.value;
+			deadline = now + interval.value;
 			lastTime_ = now;
 			goalValid_ = admitted;
 			if (!admitted)

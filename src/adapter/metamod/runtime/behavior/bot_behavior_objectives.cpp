@@ -1621,7 +1621,9 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 		}
 		return BehaviorPhaseResult::Complete;
 	}
-	if (targetActor.isValid())
+	// Remembered enemies do not invalidate native approach geometry or its
+	// retained goal. Visibility/attack and higher-priority owners gate use.
+	if (!compatibility && targetActor.isValid())
 		actors_[index].guardLook.reset();
 	ctx.team = services_->observation_resolvePlayerTeam(handle.entity);
 	if (compatibility && machine.attackOverlayActive() &&

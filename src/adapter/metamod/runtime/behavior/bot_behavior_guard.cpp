@@ -324,7 +324,7 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 				eligible.count, spot->id, look.spot.x, look.spot.y, look.spot.z);
 		return current();
 	}
-	if (now < actor.huntApproaches.nextLookAt)
+	if (now < actor.lookAroundStateTimestamp)
 		return true;
 	const auto areaId = services_->navigation_knownArea(index, receipt.actor, receipt.frame, navigation.revision());
 	if (areaId == 0)
@@ -345,7 +345,7 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 	const auto count = actor.huntApproaches.count;
 	if (count == 0)
 	{
-		actor.huntApproaches.nextLookAt = now + wait.value;
+		actor.lookAroundStateTimestamp = now + wait.value;
 		// Native ClearLookAt is unconditional, including a grenade-owned spot.
 		actor.nativeGrenade.clearLook();
 		actor.noiseLook.clearLook();
@@ -358,14 +358,14 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 		return false;
 	if (which.status != compat::RandomStatus::Ok || which.value < 0 || which.value >= count)
 	{
-		actor.huntApproaches.nextLookAt = now + wait.value;
+		actor.lookAroundStateTimestamp = now + wait.value;
 		return true;
 	}
 	// Native LOW SetLookAt rejects this candidate after both draws, without
 	// changing the uninterruptible grenade-owned spot or its lifetime.
 	if (actor.nativeGrenade.looking() || actor.noiseLook.active())
 	{
-		actor.huntApproaches.nextLookAt = now + wait.value;
+		actor.lookAroundStateTimestamp = now + wait.value;
 		return true;
 	}
 	look.spot = actor.huntApproaches.points[which.value];
@@ -377,7 +377,7 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 			timing.fullUpdateSequence, now, areaId, look.spot.x, look.spot.y, look.spot.z);
 	if (!current())
 		return false;
-	actor.huntApproaches.nextLookAt = now + wait.value;
+	actor.lookAroundStateTimestamp = now + wait.value;
 	return true;
 }
 
@@ -523,7 +523,8 @@ void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 			{self->v.origin.x + self->v.view_ofs.x, self->v.origin.y + self->v.view_ofs.y,
 				self->v.origin.z + self->v.view_ofs.z}, services_->service_compatibilityRandomSource(),
 			{services_->command_managedBotCommandSequences(ctx.index), 0, full},
-			[&] { return !state.noiseLook.active() && !state.nativeGrenade.looking(); }, geometryCurrent);
+			[&] { return !state.noiseLook.active() && !state.nativeGrenade.looking(); }, geometryCurrent,
+			&state.lookAroundStateTimestamp);
 		if (selected == compat::GuardLookSelection::Aborted)
 		{
 			ctx.proposal.executionAborted = true;
