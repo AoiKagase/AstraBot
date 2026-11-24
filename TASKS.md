@@ -1,6 +1,6 @@
 # AstraBot CSBot準拠タスク一覧
 
-更新：2026-11-24。今回の統合前基点：`6558a0f`（ローカルmaster）。
+更新：2026-11-25。今回の統合前基点：`5cae5dd`（ローカルmaster）。
 
 **大項目49件：限定完了2件、未完47件。部分対応は未完に含む。** チェック済みの修正単位があっても、大項目の未完数は減らない。S14は現対戦milestone外の差分として残し、対応済みには数えない。
 
@@ -23,6 +23,8 @@
 各修正単位のローカルmasterマージと指紋確認が完了したら、masterへ切り替えて当該作業ブランチを安全削除する。未マージ、別作業用、他worktreeで使用中のブランチは削除しない。次の修正はmasterを基点に新しい`codex/`ブランチで始める。
 
 ## 現在の作業
+C02-2d12：公開足音と専用NAVでFetchBomb保持Noiseを限定受入れ。移動gate16更新、静止ゼロClear1更新、候補1の抽選後LOW拒否2更新、各両exit0・復元一致。通常NAV自然発生・blind独立採録/全境界とV02旧原因を残す。[範囲と証拠](docs/parity/FETCH_NOISE_LIVE_C02_2D12.md)。
+
 C02-2d11：専用encounter候補0/1の最終DLL対照を限定受入れ。候補0のintervalのみ2更新・同fullの静止ゼロClear読点なし、候補1のspot抽選正例、各両exit0・復元一致。保持Noise/自然発生と過去Steam待機原因は残す。[範囲と証拠](docs/parity/FETCH_ZERO_LIVE_C02_2D11.md)。
 
 C02-2d10：最新製品・専用NAVのFetchBombで、他条件が開いたNative保持13更新（後の正例と同じencounterは6更新）の抽選前拒否、静止ゼロClear、解除後の候補1件抽選を機能採録。静止ゼロの先行2試行は両exit0。最終移動対照を含むlive6/7/8はquit後Steam待機で正常終了不合格、各PIDのユーザー許可後に終了・通常NAV/core復元・保護一致。製品変更なし。[範囲と証拠](docs/parity/FETCH_ADMISSION_LIVE_C02_2D10.md)。当該単位時点では保持Noise/移動候補ゼロ/通常NAV自然発生とV02が未完。移動候補ゼロは後続C02-2d11で限定受入れ済み。
@@ -36,6 +38,7 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 
 | 単位 | 完了範囲・証拠 |
 |---|---|
+| ☑ C02-2d12（限定実機） | [FetchBomb保持Noise](docs/parity/FETCH_NOISE_LIVE_C02_2D12.md)。移動gate16更新・静止ゼロ1更新・候補1 LOW拒否2更新、各両exit0。製品変更なし |
 | ☑ C02-2d11（限定実機） | [FetchBomb移動候補ゼロ](docs/parity/FETCH_ZERO_LIVE_C02_2D11.md)。候補0/1の因果対照、各両exit0。V02旧原因は未確定 |
 | ☑ C02-2d10（限定機能） | [FetchBomb移動Native受付・静止ゼロ](docs/parity/FETCH_ADMISSION_LIVE_C02_2D10.md)。抽選前拒否→Clear→再開を採録。製品変更なし、最終移動試行の正常終了はV02不合格 |
 | ☑ C02-5b（限定実機） | [全可視・自明経路tail](docs/parity/GRENADE_VISIBLE_LIVE_C02_5B.md)。専用NAVで長短/reset履歴・25刻み・bufferを採録、固定再生4/4。製品変更なし |
@@ -81,7 +84,8 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 - [x] FetchBomb移動Nativeの抽選前受付拒否と解除後の再開を限定機能採録する（C02-2d10、最終13更新・同一encounter厳密6更新→静止Clear→候補1件。最終試行の正常終了はV02不合格）
 - [x] FetchBomb静止候補ゼロでNative視線Clearを限定確認する（C02-2d10、同full前後の1→0と期限更新。先行2試行は各両exit0、通常NAV自然発生やpin保持は含まない）
 - [x] FetchBomb移動候補ゼロを専用NAVで限定受入れする（C02-2d11、intervalのみ2更新・spot抽選/同fullの静止ゼロClear読点なし・期限継続、候補1正例1更新、各両exit0）
-- [ ] FetchBomb保持Noise・通常NAV自然発生等の未採録実機範囲を検証する（C02-2d10/2d11は専用NAVのNative受付/候補0と再開のみ。保持Noise・全境界と過去の終了原因は残す）
+- [x] FetchBomb保持Noiseを公開足音/専用NAVで限定受入れする（C02-2d12、移動gate16更新・静止ゼロClear1更新・候補1の抽選後LOW拒否2更新。静止期限前13/22更新、各両exit0）
+- [ ] FetchBomb保持Noise/候補ゼロの通常NAV自然発生・blind内部の独立採録・全境界等の未採録実機範囲を検証する（C02-2d10/2d11/2d12は専用NAVの限定対照。全safe/blind/skill/期限境界と過去の終了原因は残す）
 - [x] 安全時間終了時の定義済みcorner投擲を実装・限定検証する（C02-3、最終Windows重点29/29＋追加契約/武器/float9/9、通常NAVの自然flash境界で開始→22full保持→実attack解放）
 - [x] 全可視/自明経路で固定参照が読む未使用tailの挙動を監査する（C02-4、固定実関数11対照。初期zero・履歴保持・RemovePath消去・最大長slot256境界を確定。製品変更なし）
 - [x] 成功経路の全可視tail履歴を限定実装する（C02-5、初期zero・長短経路再利用・ResetValues/DestroyPath/round保持・新bot消去、容量/旧map拒否。重点32/32、当該時点では全可視実機未受入れ。後続C02-5bの限定受入れを参照）

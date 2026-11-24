@@ -1,5 +1,9 @@
 ## C02-2d3 Guard受付・独立Ahead（2026-11-24）
 
+## C02-2d12 FetchBomb保持Noiseの限定実機（2026-11-25）
+
+製品変更なし。公開RunPlayerMove足音・専用NAVのFetchBombで、保持Noiseの移動gate16更新（encounter/LOW/Native/期限/safeを照合）に抽選開始読点なし、静止候補ゼロ1更新のClear経路と次full Noise0、静止候補1の2更新で抽選後LOW拒否・Noise/更新期限保持を限定受入れ。静止期限前は候補0で13更新、候補1で22更新。最終2試行は各実HLDS/CDB exit0、通常NAV/core復元・保護一致。blind内部の独立採録・通常NAV自然発生・全境界・V02旧原因は未完。大項目未完47を維持。[詳細と証拠](FETCH_NOISE_LIVE_C02_2D12.md)。
+
 ## C02-2d11 FetchBomb移動候補ゼロの限定実機（2026-11-24）
 
 製品変更なし。同一公開fixture・専用6area NAVのencounter spot listだけを0/1へ変え、FetchBomb移動時の候補0でintervalのみ2更新（spot抽選/同fullの静止ゼロClear読点なし・期限継続）、候補1の抽選正例1更新を最終DLLで採録。両実HLDS/CDBは各exit0、通常NAV/core復元・保護一致。現在のDebug CRT欠落は子PATHで対処し、過去のSteam待機原因とV02全体は未完。保持Noise・通常NAV自然発生等を残し、大項目未完47を維持。[詳細と証拠](FETCH_ZERO_LIVE_C02_2D11.md)。
