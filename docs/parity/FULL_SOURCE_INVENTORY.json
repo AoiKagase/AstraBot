@@ -8001,7 +8001,8 @@
             "record": "LOOK_NOISE_ORDER_C02_2D1.md",
             "source_manifest": "artifacts/local/debug/csbot-look-noise-order-20261124/final/freeze.json",
             "dll_sha256": "28be73725165d2015156ab8608ce21ab4b831ca39ac6e5c058558b1ed4181e3f",
-            "still_open": true
+            "still_open": true,
+            "implementation_commit": "438842ef6eb0151cd3a31874e953a3ba2e7b4ac4"
           }
         ]
       }
@@ -8888,8 +8889,9 @@
         "C16"
       ],
       "new_findings": [],
-      "integration_status": "pending",
-      "historical_inventory_scope": "Original audit fingerprints retained. Current source200/verification12/protected12, document and test-metadata amendments bound in final freeze. Fresh Noise Windows live only; broader admission and major-group regression remain open."
+      "integration_status": "committed_local_master_ff_verified",
+      "historical_inventory_scope": "Original audit fingerprints retained. Current source200/verification12/protected12, document and test-metadata amendments bound in final freeze. Fresh Noise Windows live only; broader admission and major-group regression remain open.",
+      "implementation_commit": "438842ef6eb0151cd3a31874e953a3ba2e7b4ac4"
     }
   ]
 }

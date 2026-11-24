@@ -1,6 +1,6 @@
 # AstraBot CSBot準拠タスク一覧
 
-更新：2026-11-24。完了基点：`889c35cb22cb3b91ef620eb65ef30bf683e97ddc`（ローカルmaster）。
+更新：2026-11-24。完了基点：`438842ef6eb0151cd3a31874e953a3ba2e7b4ac4`（ローカルmaster）。
 
 **大項目49件：限定完了2件、未完47件。部分対応は未完に含む。** チェック済みの修正単位があっても、大項目の未完数は減らない。S14は現対戦milestone外の差分として残し、対応済みには数えない。
 
@@ -24,7 +24,7 @@
 
 ## 現在の作業
 
-C02-2d1：[新規Noiseのhandled-returnとHide姿勢](docs/parity/LOOK_NOISE_ORDER_C02_2D1.md)は実装・検証済み、コミット・master FF待ち。重点14/14、Windows初回182/184＋台帳/厳密履歴補正後3/3、Linux183/183、PE/ELF各7export。既存実機でactor slot2/full90の処理順と不要抽選0、実PID終了0・core復元を確認。固定履歴はしゃがみ6入力だけ変更、RNG510行不変。次は古いNoise activeの静止/移動受付、Guard Native受付、他状態の後段Noise再入停止。以後の個別修正は重点検証に絞り、広範な回帰は大分類完了時に実施する。
+C02-2d1：[新規Noiseのhandled-returnとHide姿勢](docs/parity/LOOK_NOISE_ORDER_C02_2D1.md)は `438842e` でコミット・ローカルmaster FF済み。後指紋も確認済み。重点14/14、Windows初回182/184＋台帳/厳密履歴補正後3/3、Linux183/183、PE/ELF各7export。既存実機でactor slot2/full90の処理順と不要抽選0、実PID終了0・core復元を確認。固定履歴はしゃがみ6入力だけ変更、RNG510行不変。次は古いNoise activeの静止/移動受付、Guard Native受付、他状態の後段Noise再入停止。以後の個別修正は重点検証に絞り、広範な回帰は大分類完了時に実施する。
 
 ## 完了した修正単位（大項目の完了とは別）
 
@@ -37,6 +37,7 @@ C02-2d1：[新規Noiseのhandled-returnとHide姿勢](docs/parity/LOOK_NOISE_ORD
 | ☑ C02-2c2 | [静止候補ありで抽選後にLOW拒否](docs/parity/GRENADE_HUNT_ADMISSION_C02_2C2.md)。各記録の限定範囲で検証・コミット・masterマージ済み |
 | ☑ C02-2c3 | [moving Huntで遭遇抽選前にNative視線受付を確認](docs/parity/GRENADE_MOVING_ADMISSION_C02_2C3.md)。各記録の限定範囲で検証・コミット・masterマージ済み |
 | ☑ C02-2c4 | [accepted-BEGINでの旧Hunt LOW所有解除](docs/parity/GRENADE_OWNER_RETIREMENT_C02_2C4.md)。Win182/Linux181＋各7exports、同full実機採録、C4 0/7/8合格。`889c35c` コミット・master FF済み |
+| ☑ C02-2d1 | [新規Noise順序・再入停止・Hide姿勢](docs/parity/LOOK_NOISE_ORDER_C02_2D1.md)。重点14/14、Windows初回182/184＋修正後3/3、Linux183/183、各7exports、実機同full順序を限定受入れ。`438842e` コミット・master FF済み |
 
 既存Plantの早期判断・MoveTo開始順・末尾入力/退出・Plant前Idle経路抑止・cold Idle/Buy視線供給も限定完了。残る自然拾得・実水没・標準GameDLL受入れはS13/C14等へ分離している。過去の完了範囲は[STATUS](docs/parity/STATUS.md)を参照。
 
@@ -47,7 +48,8 @@ C02-2d1：[新規Noiseのhandled-returnとHide姿勢](docs/parity/LOOK_NOISE_ORD
 状態：部分対応。
 
 - [x] accepted-BEGIN時の旧Hunt LOW所有を退役する（C02-2c4、`889c35c`、検証・master FF済み）
-- [ ] 古いNoise activeの静止/移動受付、Guard Native受付、他状態の後段Noise再入停止を合わせる（新規Noise順序はC02-2d1で検証済み・統合待ち）
+- [x] 新規Noiseのhandled-return・限定的な再入停止・Hide姿勢を合わせる（C02-2d1、`438842e`、検証・master FF済み）
+- [ ] 古いNoise activeの静止/移動受付、Guard Native受付、他状態の後段Noise再入停止を合わせる
 - [ ] FetchBomb実機と直接同時刻full再入を検証する
 - [ ] 安全時間終了後の経路corner投擲を実装・検証する
 
