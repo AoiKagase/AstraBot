@@ -48,6 +48,13 @@ public:
 	}
 	void resetSharedLook(std::size_t index) { actors_[index].sharedLook = {}; }
 	bool hasHuntApproachLook(std::size_t index) const { return actors_[index].huntApproachLookActive; }
+	void retireHuntApproachLook(std::size_t index)
+	{
+		auto &actor = actors_[index];
+		actor.huntApproachLookActive = false;
+		actor.huntEncounterLook = false;
+		actor.huntEncounterAlignedAt = -1.0f;
+	}
 	const std::uint32_t &managedBotCommandSequences(std::size_t index) const
 	{
 		return actors_[index].managedBotCommandSequences;

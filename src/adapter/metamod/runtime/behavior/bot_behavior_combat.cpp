@@ -553,6 +553,10 @@ bool BotBehaviorRuntime::updateNativeGrenade(std::size_t index, const runtime::M
 	actor.nativeGrenade = pending;
 	if (beganLook)
 	{
+		// Native SetLookAt replaces the previous LOW owner; it is not stacked
+		// for resumption when the grenade spot expires. Publish before this
+		// full update's subsequent Hunt/FetchBomb look admission.
+		services_->command_retireHuntApproachLook(index);
 		actor.obstacleLook.admitted = false;
 		actor.noiseLook.clearLook();
 	}

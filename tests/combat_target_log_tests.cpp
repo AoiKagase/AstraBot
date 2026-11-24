@@ -335,9 +335,10 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool huntApproachControl = scenario && std::strcmp(scenario, "hunt-approach-control") == 0;
 	const bool grenadeHuntFixture = huntApproachControl || (scenario && std::strcmp(scenario, "native-grenade-hunt-admission") == 0);
 	const bool grenadeMovingFixture = scenario && std::strcmp(scenario, "native-grenade-moving-admission") == 0;
+	const bool grenadeOwnerFixture = scenario && std::strcmp(scenario, "native-grenade-owner-retirement") == 0;
 	const bool grenadeZeroReentryFixture = scenario && std::strcmp(scenario, "native-grenade-zero-reentry") == 0;
 	const bool grenadeZeroApproachFixture = grenadeZeroReentryFixture || (scenario && std::strcmp(scenario, "native-grenade-zero-approach") == 0);
-	const bool nativeGrenadeFixture = grenadeAdmissionFixture || grenadeNoiseFixture || grenadeZeroApproachFixture || grenadeHuntFixture || grenadeMovingFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
+	const bool nativeGrenadeFixture = grenadeAdmissionFixture || grenadeNoiseFixture || grenadeZeroApproachFixture || grenadeHuntFixture || grenadeMovingFixture || grenadeOwnerFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
@@ -427,6 +428,18 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			movingBefore.origin = {gEntities[0].v.origin.x, gEntities[0].v.origin.y, gEntities[0].v.origin.z};
 			movingBefore.velocity = {20, 0, 0};
 		}
+		if (grenadeOwnerFixture)
+		{
+			if (!check(loadInvestigationNav(runtime, true), "owner control: connected approach NAV loads")) return false;
+			gMovementLogs.clear();
+			gProfileEnabled = true;
+			for (unsigned warmup = 0; warmup < 8; ++warmup) stepRifle(30, 0, 4);
+			gProfileEnabled = false;
+			const bool adopted = std::any_of(gMovementLogs.begin(), gMovementLogs.end(), [](const std::string &line) {
+				return line.find("hunt approach look slot=") != std::string::npos;
+			});
+			if (!check(adopted, "owner control: Root adopts ordinary LOW before public enemy exposure")) return false;
+		}
 		auto &grenadeEnemy = gEntities[1];
 		const auto grenadeAimDrawsBefore = attackAimRefreshDraws;
 		runtime.onClientPutInServer(&grenadeEnemy);
@@ -455,6 +468,9 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				grenadeEnemy.v.origin = gEntities[0].v.origin + Vector(-1000, 0, -256);
 			}
 			stepRifle(30, 0.0f, 22); // Deliberately stale rifle message; API still reports grenade.
+			if (grenadeOwnerFixture && grenadeFrameIndex == 11)
+				return check((gLastRunPlayerMoveButtons & IN_ATTACK) && combatCommandPitch < -1,
+					"owner control: public enemy recognition starts native grenade view and retains pin after contact loss");
 			if (grenadeMovingFixture)
 			{
 				movingBehavior->updateManagedBotCompatibilityState(0, movingBefore, false);

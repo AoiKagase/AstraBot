@@ -392,6 +392,10 @@ private:
 	{
 		return command_.lookSpring(index);
 	}
+	void command_retireHuntApproachLook(std::size_t index) override
+	{
+		command_.retireHuntApproachLook(index);
+	}
 	compat::AimStep command_stepLook(std::size_t index, float now, float yaw, float pitch, float goalYaw,
 		float goalPitch, bool attacking, unsigned priority) override
 	{

@@ -512,6 +512,44 @@ int main()
 	if (!check(services.lastYaw == 166.0f && handle.entity->v.v_angle.x == 4.0f &&
 			services.lastSide < 0, "an ordinary Hunt corridor preserves the current view for its first movement command"))
 		return 1;
+	{
+		// A newly accepted higher-priority spot replaces the old LOW owner;
+		// it must not leave a dormant Hunt goal to resume after the spot expires.
+		NavigationUpdate oldLook = endpoint;
+		oldLook.huntApproachLook.update = HuntApproachLookUpdate::Track;
+		oldLook.huntApproachLook.spot = {200.0f, 100.0f, 36.0f};
+		const auto draft = command.beginMovementCommand(0U, handle, token, before, oldLook);
+		command.finishMovementCommand(0U, handle, token, before, oldLook, draft,
+			{ActionKind::None, draft.command.viewAngles, 0U});
+		if (!check(command.hasHuntApproachLook(0U), "owner control: normal Hunt input admits a LOW spot"))
+			return 1;
+		CombatUpkeepUpdate absent{};
+		command.applyGrenadeUpkeep(0U, handle, absent);
+		if (!check(command.hasHuntApproachLook(0U), "owner control: absent grenade aim preserves the LOW spot"))
+			return 1;
+		command.retireHuntApproachLook(0U);
+		if (!check(!command.hasHuntApproachLook(0U), "accepted-BEGIN command boundary retires LOW before any Upkeep"))
+			return 1;
+		const auto nextDraft = command.beginMovementCommand(0U, handle, token, before, oldLook);
+		command.finishMovementCommand(0U, handle, token, before, oldLook, nextDraft,
+			{ActionKind::None, nextDraft.command.viewAngles, 0U});
+		if (!check(command.hasHuntApproachLook(0U), "owner control: a later legitimate LOW request can be admitted"))
+			return 1;
+		CombatUpkeepUpdate grenade{};
+		grenade.hasAim = true;
+		grenade.angles = {-20.0f, 60.0f, 0.0f};
+		const auto retainedSpring = command.lookSpring(0U);
+		command.applyGrenadeUpkeep(0U, handle, grenade);
+		if (!check(!command.hasHuntApproachLook(0U), "accepted grenade view retires the previous Hunt LOW owner"))
+			return 1;
+		command.applyGrenadeUpkeep(0U, handle, absent);
+		const auto afterRetirement = command.lookSpring(0U);
+		if (!check(!command.hasHuntApproachLook(0U) &&
+				afterRetirement.yawVelocity == retainedSpring.yawVelocity &&
+				afterRetirement.pitchVelocity == retainedSpring.pitchVelocity,
+				"ending grenade view does not resurrect LOW or reset the shared angular velocity"))
+			return 1;
+	}
 	context.frame.tick++;
 	context.fullUpdateSequence++;
 	context.timestamp = services.globals.time;

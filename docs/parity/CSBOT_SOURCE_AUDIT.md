@@ -1,5 +1,9 @@
 # 23　CSBot参照実装との差分監査
 
+## C02-2c4 accepted-BEGINの旧Hunt LOW所有解除（2026-11-24）
+
+Windows182/182＋PE7、Linux181/181＋ELF7合格。両OS履歴151933行・RNG510行差0。既存実機・元NAVでactor2/full191の旧LOW1→0を最初のgrenade Upkeepより前に採録。C4 0/7/8も合格、全実PID終了0・core原文復元。旧LOW残留の限定修正で、実失効後の長期再開・全owner・Linux実機の合格ではない。C02は部分対応、47残件を維持。[詳細](GRENADE_OWNER_RETIREMENT_C02_2C4.md)。コミット・master FFは最終レビュー後。
+
 ## C02-2c3 moving Huntの遭遇視線抽選を限定対応（2026-11-24）
 
 Windows181/181＋PE7、Linux180/180＋ELF7合格。最終DLL `9f1815da0af2…` を既存実機へ再配備し、元NAV上のmoving HuntでNative手榴弾視線がある間、遭遇視線の抽選前に戻ることを74組で確認した。旧LOW所有なし・有効encounter・unsafe・抽選期限到達と、同frameの実入力を結び、うち2組はpin保持中。公開Frozen準備後に通常NAV移動する専用fixtureであり、自然起動や全経路一致の受入れではない。C4 0/7/8も合格、全実PID終了0・設定原文復元、サーバーコピー追加0。C02部分対応・49歴史項目／47残件を維持。Native開始時に旧Hunt LOW保持を退役させない所有残件をC02内へ明記した。詳細は [GRENADE_MOVING_ADMISSION_C02_2C3.md](GRENADE_MOVING_ADMISSION_C02_2C3.md)。以下は各時点の履歴を保持する。

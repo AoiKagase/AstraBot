@@ -126,6 +126,7 @@ void BotCommandRuntime::applyGrenadeUpkeep(
 {
 	if (index >= actors_.size() || !handle.entity || !update.hasAim)
 		return;
+	retireHuntApproachLook(index);
 	handle.entity->v.v_angle = Vector(update.angles.pitch, update.angles.yaw, update.angles.roll);
 	if (actors_[index].managedBotCommandTemplateValid)
 	{

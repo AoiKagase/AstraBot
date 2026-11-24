@@ -47,8 +47,10 @@ moving-1はCDB固定indexと公開observerの不一致、moving-2は旧LOW所有
 
 ## 残件
 
-Nativeのaccepted BEGINは旧command側のHunt LOW保持を退役させない（bot_behavior_combat.cpp:554–558、bot_command_runtime.cpp:1405–1411、plugin_runtime.cpp:2018–2019のhelper引数）。moving-2で旧所有1が今回のguardより先に拒否した事実と整合する。Native失効後の旧LOW再開の可能性は残るが、その再開自体は未再現。この所有残件をC02内で明示し、今回のlegacy0受入れと混同しない。
+本記録の製品時点ではNativeのaccepted BEGINは旧command側のHunt LOW保持を退役させなかった（bot_behavior_combat.cpp:554–558、bot_command_runtime.cpp:1405–1411、plugin_runtime.cpp:2018–2019のhelper引数）。moving-2で旧所有1が今回のguardより先に拒否した事実と整合する。Native失効後の旧LOW再開の可能性は残るが、その再開自体は未再現。この所有残件をC02内で明示し、今回のlegacy0受入れと混同しない。
 
 Guard/Noiseのhandled-returnと後続順、FetchBomb実機、直接同時刻full再入対照、安全時間終了後の経路投擲、自然起動・全経路/全角度一致、Linux実機・継続性能は未完。49歴史項目／47残件を維持する。
 
 証拠：`artifacts/local/debug/csbot-grenade-moving-admission-c02-2c3-20261124/`。`final/freeze.json` が200製品ソース・12保護ファイル・7検証入力と最終製品を固定する。受入れは `moving-7-long-window/acceptance.json`、各C4 acceptance、除外・原文復元・通知diagnosis・rawログ・検証スクリプトを保持する。commit/local master FF後の指紋は `final/post-merge.json`。
+
+更新：旧所有の同期解除は[C02-2c4](GRENADE_OWNER_RETIREMENT_C02_2C4.md)で限定受入れ済み。実失効後の長期再開そのものを新たに実測した意味ではない。

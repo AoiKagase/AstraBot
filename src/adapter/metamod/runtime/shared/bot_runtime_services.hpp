@@ -103,6 +103,7 @@ public:
 	virtual bool service_excellentMorale() = 0;
 	virtual bool command_dispatchClientCommand(edict_t *entity, const char *name, const char *argument) = 0;
 	virtual compat::AimSpringState command_lookSpring(std::size_t index) const = 0;
+	virtual void command_retireHuntApproachLook(std::size_t index) = 0;
 	virtual compat::AimStep command_stepLook(std::size_t index, float now, float yaw, float pitch, float goalYaw,
 		float goalPitch, bool attacking, unsigned priority) = 0;
 	virtual const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const = 0;
