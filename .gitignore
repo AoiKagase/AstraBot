@@ -4,3 +4,18 @@ build-*/
 cmake-build-*/
 compile_commands.json
 __pycache__/
+/.agent-state
+/artifacts
+/.planning
+
+# Private local configuration (public guidance stays tracked).
+/config/local/
+
+# Internal plans, audit inputs, work logs, and verification evidence.
+/plans/
+/docs/superpowers/
+/docs/AstraBot_RealNAV_Audit/
+/docs/AstraBot_Source_Audit_6ec3f063/
+/docs/nav-bsp-feasibility/
+/docs/evidence/
+/docs/verification/

@@ -1,8 +1,0 @@
-Internal ctest changing into directory: /mnt/h/sourcecode/003.Game/amxmodx/AstraBot/build-parity-linux-x86
-Test project /mnt/h/sourcecode/003.Game/amxmodx/AstraBot/build-parity-linux-x86
-    Start 7: astrabot_literal_precision
-1/1 Test #7: astrabot_literal_precision .......   Passed    0.01 sec
-
-100% tests passed, 0 tests failed out of 1
-
-Total Test time (real) =   0.03 sec

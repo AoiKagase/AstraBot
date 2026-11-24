@@ -39,13 +39,13 @@ ctest --test-dir build/linux-x86-debug --output-on-failure
 
 ## 設定とローカル成果物
 
-[config/](config/README.md)にローカル設定、[artifacts/](artifacts/README.md)に手元の配布物・生成物を分類しています。
-元の6ファイルは内容を変更せず、[移動記録](artifacts/local/source-root-moves.json)に旧パス・新パス・SHA256を保存しています。
-検証後に再生成されたプロフィールは`artifacts/local/test-fixtures/`に保存しています。
+[config/](config/README.md)に設定の扱いを記載しています。
+個人の設定は`config/local/`、手元の配布物・生成物は`artifacts/`に保存し、Gitの追跡対象から除外します。
 サーバーへの配置は別途行います。
 
 ## 設計・作業記録
 
-現行の責任表・互換性資料は`docs/`、作業状態は`.planning/`にあります。
-`README_FIRST.md`・`ROADMAP.md`・`CODEX_START_PROMPT.md`・`plans/`・`MANIFEST.sha256`は既存のParity Roadmap Packです。
-取り込み時の資料と監査証跡を保つため配置を維持します。C/C++の編集規約は[C_CPP_REFACTOR_RULES.md](C_CPP_REFACTOR_RULES.md)を参照してください。
+公開する責任表・互換性資料は`docs/RESPONSIBILITIES.md`と`docs/parity/`、検証ツールは`tools/`にあります。
+内部の作業状態・計画は`.planning/`・`plans/`・`docs/superpowers/`に保存し、Gitの追跡対象から除外します。
+監査・調査記録（`docs/AstraBot_*_Audit*/`・`docs/nav-bsp-feasibility/`）と検証証跡（`docs/evidence/`・`docs/verification/`）もローカルに保持します。
+C/C++の編集規約は[C_CPP_REFACTOR_RULES.md](C_CPP_REFACTOR_RULES.md)を参照してください。
