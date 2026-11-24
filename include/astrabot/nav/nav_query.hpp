@@ -138,6 +138,9 @@ struct NavGrenadePath
 {
 	std::vector<NavVector> points;
 	std::size_t next = 0U;
+	// Fixed native path slot immediately after the active nodes, if defined.
+	NavVector tail{};
+	bool tailAvailable = false;
 };
 
 // The encounter and its middle area are owned by the queried snapshot.

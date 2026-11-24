@@ -507,11 +507,11 @@ bool BotBehaviorRuntime::findGrenadeTossPathTarget(
 		if (!visible(point))
 			break;
 	}
-	// A corner requires a visible predecessor and an occluded successor.
-	// Do not read the native fixed array's unused tail when the entire path is visible.
-	if (!valid() || i == path.next || i >= path.points.size())
+	// All-visible native paths use the retained fixed-array tail. Slot 256 is undefined.
+	if (!valid() || i == path.next || (i == path.points.size() && !path.tailAvailable))
 		return false;
-	const auto &from = path.points[i - 1U], &to = path.points[i];
+	const auto &from = path.points[i - 1U];
+	const auto &to = i < path.points.size() ? path.points[i] : path.tail;
 	const float x = to.x - from.x, y = to.y - from.y, z = to.z - from.z;
 	const float length = std::sqrt(x * x + y * y + z * z);
 	const nav::NavVector pathDirection = length > 0.0f

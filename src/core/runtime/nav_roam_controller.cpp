@@ -1069,6 +1069,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::validateNavigationUp
 		initialized_ = true;
 	}
 
+
 	if (lastFrame_.isValid())
 	{
 		if (sameFrame(observation.frame, lastFrame_))
@@ -1099,6 +1100,15 @@ NavRoamController::NavigationPhaseResult NavRoamController::validateNavigationUp
 			resetRoute();
 		}
 	}
+	if (!sameActor(grenadePathActor_, observation.actor) ||
+		grenadePathMapGeneration_ != observation.frame.mapGeneration)
+	{
+		grenadePathSlots_ = {};
+		grenadePathHistoryDefined_ = true;
+		grenadePathActor_ = observation.actor;
+		grenadePathMapGeneration_ = observation.frame.mapGeneration;
+	}
+
 	timedCompatibility_ =
 		modePolicy_.mode() == compat::RuntimeMode::Compatibility && observation.locomotion.timingAvailable;
 	observedAt_ = observation.locomotion.observedAt;
@@ -2451,6 +2461,8 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateNativeTraversa
 			resetRoute();
 			return {true, NavRoamResult::ReplanRequired};
 		}
+		// A locomotion suffix is not native RemovePath. Its slot history is not established.
+		grenadePathTailAvailable_ = false;
 		routeState().activeCorridor = std::move(suffix);
 		routeState().activeLink = link;
 		routeState().activeCorridorIndex = 0;
@@ -2916,6 +2928,27 @@ void NavRoamController::reset()
 	initialized_ = false;
 }
 
+void NavRoamController::resetForNewActor()
+{
+	reset();
+	grenadePathSlots_ = {};
+	grenadePathHistoryDefined_ = true;
+	grenadePathActor_ = {};
+	grenadePathMapGeneration_ = 0U;
+	grenadePathTailAvailable_ = false;
+}
+
+void NavRoamController::rememberGrenadePath(const nav::NavSnapshot &snapshot)
+{
+	const auto path = grenadePath(snapshot);
+	// Astra can retain more nodes than the native fixed array. Do not invent its truncated history.
+	if (path.points.size() > grenadePathSlots_.size())
+		grenadePathHistoryDefined_ = false;
+	grenadePathTailAvailable_ = grenadePathHistoryDefined_ && !path.points.empty();
+	if (grenadePathTailAvailable_)
+		std::copy(path.points.begin(), path.points.end(), grenadePathSlots_.begin());
+}
+
 bool NavRoamController::hasPath() const
 {
 	return routeState().hasActiveRoute;
@@ -2928,6 +2961,13 @@ nav::NavGrenadePath NavRoamController::grenadePath(const nav::NavSnapshot &snaps
 		return result;
 	const auto &route = routeState();
 	const auto &corridor = route.activeCorridor;
+	const auto appendTail = [&] {
+		if (grenadePathTailAvailable_ && result.points.size() < grenadePathSlots_.size())
+		{
+			result.tail = grenadePathSlots_[result.points.size()];
+			result.tailAvailable = true;
+		}
+	};
 	if (snapshot.revision() != corridor.navRevision || snapshot.mapGeneration() != corridor.mapGeneration ||
 		corridor.areas.empty())
 		return result;
@@ -2936,6 +2976,7 @@ nav::NavGrenadePath NavRoamController::grenadePath(const nav::NavSnapshot &snaps
 		for (const auto &waypoint : corridor.huntWaypoints)
 			result.points.push_back(waypoint.position);
 		result.next = locomotion_.currentHuntWaypointIndex();
+		appendTail();
 		return result;
 	}
 	const auto &document = *snapshot.document();
@@ -2983,6 +3024,7 @@ nav::NavGrenadePath NavRoamController::grenadePath(const nav::NavSnapshot &snaps
 		if (locomotion_.targetingEndpoint())
 			result.next = result.points.size() - 1U;
 	}
+	appendTail();
 	return result;
 }
 
@@ -4218,6 +4260,7 @@ void NavRoamController::rememberRoute(
 	routeState().activeLink = link;
 	routeState().activeCorridorIndex = 0U;
 	routeState().hasActiveRoute = true;
+	rememberGrenadePath(snapshot);
 	corridorProgressAt_ = observedAt_;
 	if (routeState().pathSequence == (std::numeric_limits<std::uint32_t>::max)())
 	{

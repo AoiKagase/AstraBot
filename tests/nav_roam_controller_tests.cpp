@@ -4237,8 +4237,116 @@ bool testGrenadePathTracksCommittedEndpointPhase()
 		"C02-3 destroyed path cannot expose retained grenade geometry or consume new RNG");
 }
 
+bool testGrenadeTailFollowsBotLifetime(unsigned lifecycle)
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto first = area(1U, 0, 100), middle = area(2U, 100, 300), last = area(3U, 300, 600);
+	first.connections[1] = {2U}; middle.connections[3] = {1U};
+	middle.connections[1] = {3U}; last.connections[3] = {2U};
+	document.addArea(first); document.addArea(middle); document.addArea(last);
+	nav::NavSnapshotPublisher publisher;
+	if (publisher.publish(&document, 2U) != nav::NavSnapshotResult::Published) return false;
+	const unsigned generation = lifecycle == 4U ? 2U : 1U;
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .6f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, generation}, {0U, 0U, 10U}, .4f, .6f, .6f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1U, 1U}; observation.frame = {2U, 1U, 1U}; observation.team = 1U;
+	observation.locomotion.position = {50, 32, 0};
+	observation.locomotion.standingClearance = 72; observation.locomotion.crouchingClearance = 36;
+	observation.locomotion.grounded = observation.locomotion.timingAvailable = true;
+	observation.locomotion.observedAt = 1.0f;
+	observation.hasObjectiveTarget = observation.nativeSameAreaEndpoint = observation.followPath = true;
+	observation.followGoalArea = 3U; observation.objectiveTarget = {450, 32, 0};
+	nav::LocomotionIntent intent{};
+	const auto snapshot = publisher.snapshot();
+	controller.update(snapshot, observation, &intent);
+	const auto initial = controller.grenadePath(snapshot);
+	if (!check(initial.points.size() == 4U && initial.tailAvailable && initial.tail.x == 0 &&
+		initial.tail.y == 0 && initial.tail.z == 0, "C02-5 fresh long route has a zero unused tail")) return false;
+	if (lifecycle == 1U) controller.destroyPath();
+	if (lifecycle == 2U || lifecycle == 5U) controller.reset();
+	if (lifecycle == 3U) controller.resetForNewActor();
+	observation.frame.tick = 10U; observation.locomotion.observedAt = 2.0f;
+	observation.followGoalArea = 1U; observation.objectiveTarget = {80, 32, 0};
+	observation.actor.actorGeneration = generation;
+	if (lifecycle == 5U) observation.frame.roundGeneration = 2U;
+	if (lifecycle < 2U)
+	{
+		if (!check(controller.tryFollowCoverPath(snapshot, observation.actor, observation.frame, 2.0f,
+			1U, 1U, observation.objectiveTarget, {snapshot.revision(), snapshot.mapGeneration(), {}}, [] { return true; }), "C02-5 real short route replaces long route")) return false;
+	}
+	else controller.update(snapshot, observation, &intent);
+	if (lifecycle == 0U)
+	{
+		nav::NavSnapshotPublisher oldPublisher;
+		if (oldPublisher.publish(&document, 1U) != nav::NavSnapshotResult::Published) return false;
+		auto stale = observation;
+		stale.frame.mapGeneration = 1U;
+		if (!check(controller.update(oldPublisher.snapshot(), stale, &intent) == runtime::NavRoamResult::StaleFrame,
+			"C02-5 old map observation is rejected before changing native history")) return false;
+	}
+	const auto shortPath = controller.grenadePath(snapshot);
+	const float expected = lifecycle == 3U || lifecycle == 4U ? 0.0f : 305.0f;
+	return check(shortPath.points.size() == 2U && shortPath.next == 1U && shortPath.tailAvailable &&
+		shortPath.tail.x == expected && shortPath.tail.y == (expected == 0.0f ? 0.0f : 32.0f) && shortPath.tail.z == 0.0f &&
+		random.verifyComplete(), "C02-5 short route retains native slots across destroy/reset/round, clears for new bot");
+}
+
+bool testGrenadeTailCapacity(unsigned areas)
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	for (unsigned id = 1U; id <= areas; ++id)
+	{
+		auto node = area(id, static_cast<float>((id - 1U) * 100U), static_cast<float>(id * 100U));
+		if (id > 1U) node.connections[3] = {id - 1U};
+		if (id < areas) node.connections[1] = {id + 1U};
+		document.addArea(node);
+	}
+	nav::NavSnapshotPublisher publisher;
+	if (publisher.publish(&document, 1U) != nav::NavSnapshotResult::Published) return false;
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .6f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 10U}, .4f, .6f, .6f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1U, 1U}; observation.frame = {1U, 1U, 1U}; observation.team = 1U;
+	observation.locomotion.position = {50, 32, 0};
+	observation.locomotion.standingClearance = 72; observation.locomotion.crouchingClearance = 36;
+	observation.locomotion.grounded = observation.locomotion.timingAvailable = true;
+	observation.locomotion.observedAt = 1.0f;
+	observation.hasObjectiveTarget = observation.nativeSameAreaEndpoint = observation.followPath = true;
+	observation.followGoalArea = areas;
+	observation.objectiveTarget = {static_cast<float>(areas * 100U - 50U), 32, 0};
+	nav::LocomotionIntent intent{};
+	const auto snapshot = publisher.snapshot();
+	controller.update(snapshot, observation, &intent);
+	const auto path = controller.grenadePath(snapshot);
+	if (!check(path.points.size() == areas + 1U && path.tailAvailable == (areas < 255U),
+		"C02-5 255 nodes expose slot255; 256 or more never expose slot256")) return false;
+	observation.frame.tick = 10U;
+	if (!check(controller.tryFollowCoverPath(snapshot, observation.actor, observation.frame, 2.0f, 1U, 1U,
+		{80, 32, 0}, {snapshot.revision(), snapshot.mapGeneration(), {}}, [] { return true; }),
+		"C02-5 short route after capacity boundary is built")) return false;
+	const auto shorter = controller.grenadePath(snapshot);
+	return check(shorter.points.size() == 2U && shorter.tailAvailable == (areas <= 255U) &&
+		(!shorter.tailAvailable || shorter.tail.x == 205.0f) && random.verifyComplete(),
+		"C02-5 oversized non-native history stays unavailable even after shortening");
+}
+
 int main()
 {
+	for (unsigned areas = 254U; areas <= 256U; ++areas)
+		if (!testGrenadeTailCapacity(areas)) return 1;
+	for (unsigned lifecycle = 0; lifecycle < 6U; ++lifecycle)
+		if (!testGrenadeTailFollowsBotLifetime(lifecycle)) return 1;
 	if (!testGrenadePathTracksCommittedEndpointPhase()) return 1;
 	if (!testRemainingPathDistance() || !testDefuseMoveToPreparesPathBeforeMoving() || !testFetchBombPositionPath() ||
 		!testDefuseMoveToRetainsFirstPointAfterDrift(true) || !testDefuseMoveToRetainsFirstPointAfterDrift(false))

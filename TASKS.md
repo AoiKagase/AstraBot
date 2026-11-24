@@ -1,6 +1,6 @@
 # AstraBot CSBot準拠タスク一覧
 
-更新：2026-11-24。今回の統合前基点：`b6c8864`（ローカルmaster）。
+更新：2026-11-24。今回の統合前基点：`ed4d36b`（ローカルmaster）。
 
 **大項目49件：限定完了2件、未完47件。部分対応は未完に含む。** チェック済みの修正単位があっても、大項目の未完数は減らない。S14は現対戦milestone外の差分として残し、対応済みには数えない。
 
@@ -23,13 +23,12 @@
 各修正単位のローカルmasterマージと指紋確認が完了したら、masterへ切り替えて当該作業ブランチを安全削除する。未マージ、別作業用、他worktreeで使用中のブランチは削除しない。次の修正はmasterを基点に新しい`codex/`ブランチで始める。
 
 ## 現在の作業
-
-C02-4：全可視/自明経路の未使用tail監査を完了。固定参照の実関数11対照で、Vector初期zero・長経路→短経路の履歴保持・DestroyPath保持・RemovePath消去・最大長slot256の配列外境界を確認した。最終MSVC x86監査11/11、Windows corner重点7/7。製品ソース変更・実機受入れ追加なし。全可視時の製品安全拒否は残し、tail履歴の実装を次単位へ分離する。大項目47件を維持。[詳細と証拠](docs/parity/GRENADE_VISIBLE_TAIL_C02_4.md)。次はtail履歴の実装対応を行い、FetchBomb未採録・HE/drop/梯子実機等も継続する。
-
+C02-5：成功経路の全可視tail履歴を限定実装。長短経路・DestroyPath/reset/round保持と新bot消去、容量255/256/257・旧map拒否を対照化し、最終Windows重点32/32。実機は不可視cornerの25full保持→attack解放のみ限定受入れ、両exit0・復元/指紋一致。全可視実機、失敗生成の書込み済みslot、NAV削除RemovePath、はしごsuffix等は未完。大項目47件を維持。[詳細と証拠](docs/parity/GRENADE_VISIBLE_TAIL_C02_5.md)。次は失敗生成の履歴を固定参照でRED化し、全可視実機も継続する。
 ## 完了した修正単位（大項目の完了とは別）
 
 | 単位 | 完了範囲・証拠 |
 |---|---|
+| ☑ C02-5 | [成功経路の全可視tail履歴](docs/parity/GRENADE_VISIBLE_TAIL_C02_5.md)。正規RED→GREEN、Windows重点32/32。実機は不可視corner限定、全可視/失敗生成等は残す |
 | ☑ C02-4 | [全可視/自明経路tail監査](docs/parity/GRENADE_VISIBLE_TAIL_C02_4.md)。固定実関数11対照、Windows corner重点7/7。製品変更なし、tail履歴の実装は未完 |
 | ☑ C02-1 | [保持・認識敵への投擲・独立look/投擲時計](docs/parity/GRENADE_LIFECYCLE_C02_1.md)。各記録の限定範囲で検証・コミット・masterマージ済み |
 | ☑ C02-2a | [手榴弾視線中の破壊物LOW受付拒否](docs/parity/GRENADE_OBSTACLE_ADMISSION_C02_2A.md)。各記録の限定範囲で検証・コミット・masterマージ済み |
@@ -70,7 +69,9 @@ C02-4：全可視/自明経路の未使用tail監査を完了。固定参照の�
 - [ ] FetchBombの移動encounter受付条件・候補ゼロ等の未採録実機範囲を検証する（C02-2d9は移動中Native保持のみで、移動抽選抑止の因果対照は未実施）
 - [x] 安全時間終了時の定義済みcorner投擲を実装・限定検証する（C02-3、最終Windows重点29/29＋追加契約/武器/float9/9、通常NAVの自然flash境界で開始→22full保持→実attack解放）
 - [x] 全可視/自明経路で固定参照が読む未使用tailの挙動を監査する（C02-4、固定実関数11対照。初期zero・履歴保持・RemovePath消去・最大長slot256境界を確定。製品変更なし）
-- [ ] 全可視/自明経路のtail履歴を実装に対応付ける（現行は安全拒否。length256未満の初期化・長短経路再利用・ResetValues/DestroyPath/RemovePathを再現し、配列外slot256は有効な参照target未確定として区別する）
+- [x] 成功経路の全可視tail履歴を限定実装する（C02-5、初期zero・長短経路再利用・ResetValues/DestroyPath/round保持・新bot消去、容量/旧map拒否。重点32/32、全可視実機は未受入れ）
+- [ ] 失敗生成の書込み済みslot履歴、NAV area削除通知のRemovePath/新tail消去、はしごsuffix/容量超過のnative対応を実装・検証する（C02-5は成功経路限定、配列外slot256は推定しない）
+- [ ] 全可視/自明経路と長短経路・reset履歴を最終DLLの実機で因果対照する（C02-5実機はi10/length31の不可視cornerで代替しない）
 - [ ] 進行後drop上下段・梯子index、HE corner実機、着弾/跳ね返り等の未受入れ範囲を確認する
 
 根拠：`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:469`、`include/astrabot/compat/weapon_actions.hpp:43`、`src/core/compat/state_machine.cpp:900`。参照：`regamedll/dlls/bot/cs_bot_update.cpp:347`、`regamedll/dlls/bot/cs_bot_update.cpp:490`、`regamedll/dlls/bot/cs_bot_weapon.cpp:576`。

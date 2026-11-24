@@ -728,7 +728,7 @@ void BotNavigationRuntime::onActorRemoved(std::size_t index)
 	actors_[index].knownNavArea.reset();
 	actors_[index].managedNavigationFailures = {};
 	actors_[index].managedNavigationSteps = {};
-	actors_[index].managedBotMovement.reset();
+	actors_[index].managedBotMovement.resetForNewActor();
 	actors_[index].movementFallLandingTrackers.reset();
 	actors_[index].movementDiagnosticSamples = 0U;
 	actors_[index].movementDiagnosticAttempts = false;
@@ -1557,7 +1557,7 @@ void BotNavigationRuntime::restartLoggingDiagnostics()
 void BotNavigationRuntime::resetCreatedActorRoute(std::size_t slotIndex)
 {
 	actors_[slotIndex].knownNavArea.reset();
-	actors_[slotIndex].managedBotMovement.reset();
+	actors_[slotIndex].managedBotMovement.resetForNewActor();
 }
 
 void BotNavigationRuntime::resetCreatedActorSampling(std::size_t slotIndex)

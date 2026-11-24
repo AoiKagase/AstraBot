@@ -113,7 +113,7 @@ void traceCombatVisibility(const float *start, const float *end, int ignoreMonst
 	{
 		if (ignoreMonsters == 0x101 && std::fabs(end[2] - 36.0f) < .01f)
 		{
-			result->flFraction = grenadeCornerCase == 3 ? .5f : grenadeCornerCase == 4 ? 1.0f :
+			result->flFraction = grenadeCornerCase == 3 ? .5f : (grenadeCornerCase == 4 || grenadeCornerCase == 7) ? 1.0f :
 				end[0] >= (grenadeCornerCase == 6 ? 420.0f : 200.0f) ? .5f : 1.0f;
 			if (grenadeCornerResetRuntime)
 			{
@@ -373,7 +373,8 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		scenario && std::strstr(scenario, "-first-hidden") ? 3U :
 		scenario && std::strstr(scenario, "-all-visible") ? 4U :
 		scenario && std::strstr(scenario, "-reentry") ? 5U :
-		scenario && std::strstr(scenario, "-diagonal") ? 6U : 0U;
+		scenario && std::strstr(scenario, "-diagonal") ? 6U :
+		scenario && std::strstr(scenario, "-reused-tail") ? 7U : 0U;
 	const bool grenadeAdmissionFixture = scenario && std::strcmp(scenario, "native-grenade-admission") == 0;
 	const bool grenadeNoiseReentryFixture = scenario && std::strcmp(scenario, "native-grenade-noise-reentry") == 0;
 	const bool grenadeNoiseOrderFixture = grenadeNoiseReentryFixture || (scenario && std::strcmp(scenario, "native-grenade-noise-order") == 0);
@@ -464,6 +465,12 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			if (!check(path.next == 1U && path.points.size() == 4U && path.points[1].x == 105.0f &&
 				path.points[2].x == 305.0f && path.points[3].x == 450.0f,
 				"corner control: native portal geometry and current next index are published without advancing the route")) return false;
+			if (grenadeCornerCase == 7)
+			{
+				globals.time += 1.0f;
+				if (!check(grenadePorts.navigation_tryFollowCoverPath(0, nav, frame, 1, 1, {80, 32, 0}, [] { return true; }),
+					"C02-5 real long-to-trivial route reuses native slots")) return false;
+			}
 			const float roundStart = grenadePorts.service_roundFreezeGeneration() == frame.roundGeneration
 				? grenadePorts.service_roundFreezeStartTime() : 0.0f;
 			const float aggression = static_cast<float>(static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0).aggression) / 100.0f;
@@ -507,10 +514,20 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 						"C02-3 round reentry aborts stale corner work and sends only the new generation neutral input");
 				}
 			}
-			if (grenadeCornerCase == 3 || grenadeCornerCase == 4)
+			if (grenadeCornerCase == 3)
 				return check(grenadeCornerWallTraces == 0 && (gLastRunPlayerMoveButtons & IN_ATTACK) != 0,
-					grenadeCornerCase == 3 ? "C02-3 invisible first path node cannot begin a toss" :
-					"C02-3 entirely visible path has no occluded successor and never reads past its end");
+					"C02-3 invisible first path node cannot begin a toss");
+			if (grenadeCornerCase == 7)
+				return check(grenadeCornerWallTraces == 4 && !grenadeCornerWallStarts.empty() &&
+					grenadeCornerWallStarts[0].x == 280.0f && grenadeCornerWallStarts[0].y == 32.0f &&
+					grenadeCornerWallStarts[0].z == 46.0f,
+					"C02-5 reused trivial path toss samples toward old slot2, not zero or endpoint");
+			if (grenadeCornerCase == 4)
+				return check(grenadeCornerWallTraces == 4 && !grenadeCornerWallStarts.empty() &&
+					std::fabs(grenadeCornerWallStarts[0].x - 1.133453369140625f) < .001f &&
+					std::fabs(grenadeCornerWallStarts[0].y - .080600738525390625f) < .001f &&
+					grenadeCornerWallStarts[0].z == 46.0f,
+					"C02-5 all-visible route samples toward the initially zero native tail");
 			if (!check(grenadeCornerWallTraces == 4, "C02-3 safe edge selects the path corner and applies four wall buffers")) return false;
 			// Fixed-reference Vector::NormalizeInPlace divides each component before t*dir.
 			const float expectedX = grenadeCornerCase == 6 ? 404.23828125f : 180.0f;

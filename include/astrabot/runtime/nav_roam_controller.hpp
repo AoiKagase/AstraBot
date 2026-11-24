@@ -293,6 +293,7 @@ public:
 		nav::AreaId start, nav::AreaId goal, const nav::NavVector &point, const nav::NavLadderTopology &ladders,
 		const std::function<bool()> &current);
 	void reset();
+	void resetForNewActor();
 	void destroyPath();
 	bool usingNativeLadder() const
 	{
@@ -318,6 +319,13 @@ private:
 	nav::NativeLadderController nativeLadder_{};
 	std::size_t nativeLadderStep_ = 0;
 	std::uint64_t routeRevision_ = 1;
+	// CCSBot owns these slots for its lifetime; ResetValues/DestroyPath retain them.
+	std::array<nav::NavVector, 256U> grenadePathSlots_{};
+	ActorId grenadePathActor_{};
+	std::uint32_t grenadePathMapGeneration_ = 0U;
+	bool grenadePathTailAvailable_ = false;
+	bool grenadePathHistoryDefined_ = true;
+	void rememberGrenadePath(const nav::NavSnapshot &snapshot);
 	ActorId motionActor_{};
 	world::FrameIdentity motionFrame_{};
 	NavRoamResult updateInternal(const nav::NavSnapshot &snapshot, const NavRoamObservation &observation,

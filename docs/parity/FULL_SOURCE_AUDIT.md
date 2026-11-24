@@ -1,5 +1,10 @@
 # 全製品ソースと残件の監査（2026-11-22）
 
+## C02-5 成功経路の全可視tail履歴（2026-11-24）
+
+C02-5：成功経路の全可視tail履歴を限定実装。長短経路・DestroyPath/reset/round保持と新bot消去、容量255/256/257・旧map拒否を対照化し、最終Windows重点32/32。実機は不可視cornerの25full保持→attack解放のみ限定受入れ、両exit0・復元/指紋一致。全可視実機、失敗生成の書込み済みslot、NAV削除RemovePath、はしごsuffix等は未完。大項目47件を維持。[詳細と証拠](GRENADE_VISIBLE_TAIL_C02_5.md)。次は失敗生成の履歴を固定参照でRED化し、全可視実機も継続する。
+
+
 ## C02-4 全可視/自明経路tail監査（2026-11-24）
 
 固定参照の実関数11対照で初期zero・長短経路の履歴保持・DestroyPath保持・RemovePath消去・最大長slot256境界を確認。最終監査11/11、Windows corner重点7/7。製品変更なし。監査は完了し、全可視時の安全拒否とtail履歴の実装は未完として分離。実機受入れ追加なし、大項目47件を維持。[詳細と証拠](GRENADE_VISIBLE_TAIL_C02_4.md)。
