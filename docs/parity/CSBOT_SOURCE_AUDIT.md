@@ -1,8 +1,12 @@
 # 23　CSBot参照実装との差分監査
 
+## C02-2d11 FetchBomb移動候補ゼロの限定実機（2026-11-24）
+
+製品変更なし。同一公開fixture・専用6area NAVのencounter spot listだけを0/1へ変え、FetchBomb移動時の候補0でintervalのみ2更新（spot抽選/同fullの静止ゼロClear読点なし・期限継続）、候補1の抽選正例1更新を最終DLLで採録。両実HLDS/CDBは各exit0、通常NAV/core復元・保護一致。現在のDebug CRT欠落は子PATHで対処し、過去のSteam待機原因とV02全体は未完。保持Noise・通常NAV自然発生等を残し、大項目未完47を維持。[詳細と証拠](FETCH_ZERO_LIVE_C02_2D11.md)。
+
 ## C02-2d10 FetchBomb移動Native受付・静止候補ゼロ（2026-11-24）
 
-製品変更なし。最新DLL/PDBと専用6area NAV・公開originの連続移動で、他条件が開いたNative保持13更新（同じencounterの厳密対照6更新）の抽選前拒否→静止候補ゼロの同full Clear→解除後interval/候補1/spot0を機能採録。静止ゼロ先行2試行は各両exit0。最終移動試行を含むlive6/7/8はquit後Steam待機で正常終了不合格、個別PID許可後に終了し通常NAV/core復元・保護一致。保持Noise/移動ゼロ/通常NAV自然発生/V02等は未完。機能合格と終了失敗を分離し、大項目未完47を維持。[詳細と証拠](FETCH_ADMISSION_LIVE_C02_2D10.md)。
+製品変更なし。最新DLL/PDBと専用6area NAV・公開originの連続移動で、他条件が開いたNative保持13更新（同じencounterの厳密対照6更新）の抽選前拒否→静止候補ゼロの同full Clear→解除後interval/候補1/spot0を機能採録。静止ゼロ先行2試行は各両exit0。最終移動試行を含むlive6/7/8はquit後Steam待機で正常終了不合格、個別PID許可後に終了し通常NAV/core復元・保護一致。当該単位時点では保持Noise/移動ゼロ/通常NAV自然発生/V02等が未完。移動候補ゼロは後続C02-2d11で限定受入れし、保持Noise/自然発生とV02の旧原因は残す。機能合格と終了失敗を分離し、大項目未完47を維持。[詳細と証拠](FETCH_ADMISSION_LIVE_C02_2D10.md)。
 
 ## C02-5b 全可視・自明経路tailの限定実機対照（2026-11-24）
 

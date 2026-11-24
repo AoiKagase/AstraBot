@@ -23,7 +23,9 @@
 各修正単位のローカルmasterマージと指紋確認が完了したら、masterへ切り替えて当該作業ブランチを安全削除する。未マージ、別作業用、他worktreeで使用中のブランチは削除しない。次の修正はmasterを基点に新しい`codex/`ブランチで始める。
 
 ## 現在の作業
-C02-2d10：最新製品・専用NAVのFetchBombで、他条件が開いたNative保持13更新（後の正例と同じencounterは6更新）の抽選前拒否、静止ゼロClear、解除後の候補1件抽選を機能採録。静止ゼロの先行2試行は両exit0。最終移動対照を含むlive6/7/8はquit後Steam待機で正常終了不合格、各PIDのユーザー許可後に終了・通常NAV/core復元・保護一致。製品変更なし。[範囲と証拠](docs/parity/FETCH_ADMISSION_LIVE_C02_2D10.md)。保持Noise/移動候補ゼロ/通常NAV自然発生とV02は残す。
+C02-2d11：専用encounter候補0/1の最終DLL対照を限定受入れ。候補0のintervalのみ2更新・同fullの静止ゼロClear読点なし、候補1のspot抽選正例、各両exit0・復元一致。保持Noise/自然発生と過去Steam待機原因は残す。[範囲と証拠](docs/parity/FETCH_ZERO_LIVE_C02_2D11.md)。
+
+C02-2d10：最新製品・専用NAVのFetchBombで、他条件が開いたNative保持13更新（後の正例と同じencounterは6更新）の抽選前拒否、静止ゼロClear、解除後の候補1件抽選を機能採録。静止ゼロの先行2試行は両exit0。最終移動対照を含むlive6/7/8はquit後Steam待機で正常終了不合格、各PIDのユーザー許可後に終了・通常NAV/core復元・保護一致。製品変更なし。[範囲と証拠](docs/parity/FETCH_ADMISSION_LIVE_C02_2D10.md)。当該単位時点では保持Noise/移動候補ゼロ/通常NAV自然発生とV02が未完。移動候補ゼロは後続C02-2d11で限定受入れ済み。
 
 C02-5b：専用NAVで全可視5点/4点・同一area自明2点経路を最終DLLで採録し、長短/reset履歴と25刻み・36+10・4方向bufferを因果対照。固定関数再生4/4、endpoint-only mutationはexit1。全3試行の両プロセスexit0、通常NAV/core復元、製品変更なし。[限定実機の証拠](docs/parity/GRENADE_VISIBLE_LIVE_C02_5B.md)。通常NAV自然発生や失敗履歴/RemovePath/梯子suffix等を完了には数えない。
 
@@ -34,6 +36,7 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 
 | 単位 | 完了範囲・証拠 |
 |---|---|
+| ☑ C02-2d11（限定実機） | [FetchBomb移動候補ゼロ](docs/parity/FETCH_ZERO_LIVE_C02_2D11.md)。候補0/1の因果対照、各両exit0。V02旧原因は未確定 |
 | ☑ C02-2d10（限定機能） | [FetchBomb移動Native受付・静止ゼロ](docs/parity/FETCH_ADMISSION_LIVE_C02_2D10.md)。抽選前拒否→Clear→再開を採録。製品変更なし、最終移動試行の正常終了はV02不合格 |
 | ☑ C02-5b（限定実機） | [全可視・自明経路tail](docs/parity/GRENADE_VISIBLE_LIVE_C02_5B.md)。専用NAVで長短/reset履歴・25刻み・bufferを採録、固定再生4/4。製品変更なし |
 | ☑ C02-5a（監査のみ） | [失敗経路tail監査](docs/parity/GRENADE_FAILED_TAIL_C02_5A.md)。固定19対照と誤モデルmutation。製品変更なし、失敗履歴の実装/通常入力到達性は未完 |
@@ -77,7 +80,8 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 - [x] FetchBomb静止Native受付と直接同時刻Root再帰を限定検証する（C02-2d9、重点20/20。nested fullはschedulerで受付抑止。実機45静止/4拒否/8移動Native保持、正常終了はV02不合格）
 - [x] FetchBomb移動Nativeの抽選前受付拒否と解除後の再開を限定機能採録する（C02-2d10、最終13更新・同一encounter厳密6更新→静止Clear→候補1件。最終試行の正常終了はV02不合格）
 - [x] FetchBomb静止候補ゼロでNative視線Clearを限定確認する（C02-2d10、同full前後の1→0と期限更新。先行2試行は各両exit0、通常NAV自然発生やpin保持は含まない）
-- [ ] FetchBomb保持Noise・移動候補ゼロ・通常NAV自然発生等の未採録実機範囲を検証する（C02-2d10は専用NAVのNative移動拒否/静止ゼロ/再開のみ、正常終了問題はV02へ保持）
+- [x] FetchBomb移動候補ゼロを専用NAVで限定受入れする（C02-2d11、intervalのみ2更新・spot抽選/同fullの静止ゼロClear読点なし・期限継続、候補1正例1更新、各両exit0）
+- [ ] FetchBomb保持Noise・通常NAV自然発生等の未採録実機範囲を検証する（C02-2d10/2d11は専用NAVのNative受付/候補0と再開のみ。保持Noise・全境界と過去の終了原因は残す）
 - [x] 安全時間終了時の定義済みcorner投擲を実装・限定検証する（C02-3、最終Windows重点29/29＋追加契約/武器/float9/9、通常NAVの自然flash境界で開始→22full保持→実attack解放）
 - [x] 全可視/自明経路で固定参照が読む未使用tailの挙動を監査する（C02-4、固定実関数11対照。初期zero・履歴保持・RemovePath消去・最大長slot256境界を確定。製品変更なし）
 - [x] 成功経路の全可視tail履歴を限定実装する（C02-5、初期zero・長短経路再利用・ResetValues/DestroyPath/round保持・新bot消去、容量/旧map拒否。重点32/32、当該時点では全可視実機未受入れ。後続C02-5bの限定受入れを参照）
@@ -647,7 +651,7 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 - [ ] 人間クライアントでAimせず通過・旋回カクつきを確認する
 - [ ] 多数Bot・長時間・map切替・FPS/lagの継続性能を測定する
 - [ ] C02-2d6 Noise試行のquit後Steam stalled cross-thread pipeを切り分け、正常終了を再確認する（手動終了0xC000013A、元NAV/core復元済み）
-- [ ] C02-2d9/2d10 FetchBomb試行のquit後Steam待機を切り分け、正常終了を再確認する（2d9のHLDS11228/CDB30732に加え、2d10 live6/7/8も機能採録のみ。各回の明示許可で終了、各両0xFFFFFFFF、実PID0・通常NAV/core復元・保護一致。[最新証拠](docs/parity/FETCH_ADMISSION_LIVE_C02_2D10.md)）
+- [ ] C02-2d9/2d10 FetchBomb試行のquit後Steam待機原因を確定する（C02-2d11は子PATHの既存Debug CRT・BPなし/8読点で正常終了を限定確認。旧環境CRT同一性と待機原因は未確定、通常起動時のDebug CRT欠落も残す。[対照](docs/parity/FETCH_ZERO_LIVE_C02_2D11.md)）。過去の終了不合格を保持する（2d9のHLDS11228/CDB30732に加え、2d10 live6/7/8も機能採録のみ。各回の明示許可で終了、各両0xFFFFFFFF、実PID0・通常NAV/core復元・保護一致。[最新証拠](docs/parity/FETCH_ADMISSION_LIVE_C02_2D10.md)）
 - [ ] Windowsの限定受入れを全体合格と扱わない
 
 根拠：`src/adapter/metamod/diagnostics/runtime_profiler.cpp:314`、`src/adapter/metamod/plugin/plugin_runtime.cpp:854`。参照：`regamedll/dlls/bot/cs_bot_vision.cpp:57`、`regamedll/dlls/bot/cs_bot_update.cpp:186`。
