@@ -1,5 +1,9 @@
 # P11 differential trace comparison
 
+## C02-4 全可視/自明経路tail監査（2026-11-24）
+
+固定参照の実関数11対照で初期zero・長短経路の履歴保持・DestroyPath保持・RemovePath消去・最大長slot256境界を確認。最終監査11/11、Windows corner重点7/7。製品変更なし。監査は完了し、全可視時の安全拒否とtail履歴の実装は未完として分離。実機受入れ追加なし、大項目47件を維持。[詳細と証拠](GRENADE_VISIBLE_TAIL_C02_4.md)。
+
 ## C02-3 定義済みcorner投擲の限定対応（2026-11-24）
 
 安全時間のsafe→unsafe更新だけで経路corner投擲を開始し、HEのwellPastSafe、認識敵優先、待機重複抑止を接続。現行経路/index、可視36・25刻み・追加10・4方向50bufferを固定参照へ合わせ、終点phaseと斜め1ULPを正規RED→GREENで修正した。最終Windows関連29/29（2.86秒）＋構造/武器/float重点9/9（2.73秒）。最終DLLで通常NAV・moving Hunt・公開flash・自然safe16秒の境界を確認し、actor1/full136のcorner開始→22full保持→full158の実attack解放を限定受入れ。HLDS11112/CDB40156はexit0・実PID0・core原文復元・保護指紋一致。全可視/自明経路の未使用tailは安全拒否しており完全parityではない。進行後drop/梯子index、HE実機、着弾、FetchBomb未採録範囲、V02過去の正常終了不合格を残す。大項目47件を維持。[詳細と証拠](GRENADE_CORNER_C02_3.md)。

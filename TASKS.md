@@ -24,12 +24,13 @@
 
 ## 現在の作業
 
-C02-3：安全時間のsafe→unsafe更新だけで経路corner投擲を開始し、HEのwellPastSafe、認識敵優先、待機重複抑止を接続。現行経路/index、可視36・25刻み・追加10・4方向50bufferを固定参照へ合わせ、終点phaseと斜め1ULPを正規RED→GREENで修正した。最終Windows関連29/29（2.86秒）＋構造/武器/float重点9/9（2.73秒）。最終DLLで通常NAV・moving Hunt・公開flash・自然safe16秒の境界を確認し、actor1/full136のcorner開始→22full保持→full158の実attack解放を限定受入れ。HLDS11112/CDB40156はexit0・実PID0・core原文復元・保護指紋一致。全可視/自明経路の未使用tailは安全拒否しており完全parityではない。進行後drop/梯子index、HE実機、着弾、FetchBomb未採録範囲、V02過去の正常終了不合格を残す。大項目47件を維持。[詳細と証拠](docs/parity/GRENADE_CORNER_C02_3.md)。 次はC02の全可視/自明経路の参照監査を行い、未採録のFetchBomb受付・HE/drop/梯子実機も継続する。
+C02-4：全可視/自明経路の未使用tail監査を完了。固定参照の実関数11対照で、Vector初期zero・長経路→短経路の履歴保持・DestroyPath保持・RemovePath消去・最大長slot256の配列外境界を確認した。最終MSVC x86監査11/11、Windows corner重点7/7。製品ソース変更・実機受入れ追加なし。全可視時の製品安全拒否は残し、tail履歴の実装を次単位へ分離する。大項目47件を維持。[詳細と証拠](docs/parity/GRENADE_VISIBLE_TAIL_C02_4.md)。次はtail履歴の実装対応を行い、FetchBomb未採録・HE/drop/梯子実機等も継続する。
 
 ## 完了した修正単位（大項目の完了とは別）
 
 | 単位 | 完了範囲・証拠 |
 |---|---|
+| ☑ C02-4 | [全可視/自明経路tail監査](docs/parity/GRENADE_VISIBLE_TAIL_C02_4.md)。固定実関数11対照、Windows corner重点7/7。製品変更なし、tail履歴の実装は未完 |
 | ☑ C02-1 | [保持・認識敵への投擲・独立look/投擲時計](docs/parity/GRENADE_LIFECYCLE_C02_1.md)。各記録の限定範囲で検証・コミット・masterマージ済み |
 | ☑ C02-2a | [手榴弾視線中の破壊物LOW受付拒否](docs/parity/GRENADE_OBSTACLE_ADMISSION_C02_2A.md)。各記録の限定範囲で検証・コミット・masterマージ済み |
 | ☑ C02-2b | [音要求拒否時のRNG・抑制時計](docs/parity/GRENADE_NOISE_ADMISSION_C02_2B.md)。各記録の限定範囲で検証・コミット・masterマージ済み |
@@ -68,7 +69,8 @@ C02-3：安全時間のsafe→unsafe更新だけで経路corner投擲を開始�
 - [x] FetchBomb静止Native受付と直接同時刻Root再帰を限定検証する（C02-2d9、重点20/20。nested fullはschedulerで受付抑止。実機45静止/4拒否/8移動Native保持、正常終了はV02不合格）
 - [ ] FetchBombの移動encounter受付条件・候補ゼロ等の未採録実機範囲を検証する（C02-2d9は移動中Native保持のみで、移動抽選抑止の因果対照は未実施）
 - [x] 安全時間終了時の定義済みcorner投擲を実装・限定検証する（C02-3、最終Windows重点29/29＋追加契約/武器/float9/9、通常NAVの自然flash境界で開始→22full保持→実attack解放）
-- [ ] 全可視/自明経路で固定参照が読む未使用tailの挙動を監査する（C02-3は全可視を安全拒否し、完全parityではない）
+- [x] 全可視/自明経路で固定参照が読む未使用tailの挙動を監査する（C02-4、固定実関数11対照。初期zero・履歴保持・RemovePath消去・最大長slot256境界を確定。製品変更なし）
+- [ ] 全可視/自明経路のtail履歴を実装に対応付ける（現行は安全拒否。length256未満の初期化・長短経路再利用・ResetValues/DestroyPath/RemovePathを再現し、配列外slot256は有効な参照target未確定として区別する）
 - [ ] 進行後drop上下段・梯子index、HE corner実機、着弾/跳ね返り等の未受入れ範囲を確認する
 
 根拠：`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:469`、`include/astrabot/compat/weapon_actions.hpp:43`、`src/core/compat/state_machine.cpp:900`。参照：`regamedll/dlls/bot/cs_bot_update.cpp:347`、`regamedll/dlls/bot/cs_bot_update.cpp:490`、`regamedll/dlls/bot/cs_bot_weapon.cpp:576`。
