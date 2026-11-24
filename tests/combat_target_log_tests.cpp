@@ -74,6 +74,7 @@ struct EquipmentFixture
 	bool unknownActiveAmmo = false, changeActiveDuringAllowance = false;
 	bool refuseSwitch = false, replaceEntity = false;
 	bool primaryUnknown = false;
+	bool reloading = false, specialReload = false;
 	bool plantTail = false, dropOnC4 = false;
 	bool predictionUnavailable = false, replaceOnActiveRead = false;
 	Vector predictionView{};
@@ -369,6 +370,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool bestEquipmentFixture = scenario && std::strcmp(scenario, "equip-best") == 0;
 	const bool underwaterEquipmentFixture = scenario && std::strcmp(scenario, "equip-underwater") == 0;
 	const bool unsafeEquipmentFixture = scenario && std::strcmp(scenario, "equip-unsafe") == 0;
+	const bool rearmEquipmentFixture = scenario && std::strcmp(scenario, "equip-rearm") == 0;
 	const bool plantTailFixture = scenario && std::strcmp(scenario, "plant-tail") == 0;
 	const bool clearLookFixture = scenario && std::strcmp(scenario, "clear-look") == 0;
 	const bool sharedLookFixture = scenario && std::strcmp(scenario, "shared-look") == 0;
@@ -2312,7 +2314,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		equipmentFixture = nullptr;
 		return result;
 	}
-	if (bestEquipmentFixture || underwaterEquipmentFixture || unsafeEquipmentFixture)
+	if (bestEquipmentFixture || underwaterEquipmentFixture || unsafeEquipmentFixture || rearmEquipmentFixture)
 	{
 		using namespace astrabot;
 		using namespace astrabot::compat;
@@ -2337,9 +2339,183 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			data[6].m_iId = 6; data[6].m_iClip = 1;
 			data[28].m_iId = equipmentFixture->primaryUnknown ? 0 : 28; data[28].m_iClip = equipmentFixture->primaryClip;
 			data[17].m_iId = equipmentFixture->unknownActiveAmmo ? 0 : 17; data[17].m_iClip = equipmentFixture->pistolClip;
+			data[17].m_fInReload = equipmentFixture->reloading;
+			data[17].m_fInSpecialReload = equipmentFixture->specialReload;
 			if (equipmentFixture->replaceEntity) ++entity->serialnumber;
 			return 1;
 		};
+		if (rearmEquipmentFixture)
+		{
+			runtime.onMessageBegin(1, 105, nullptr, &gEntities[0]);
+			runtime.onWriteString("weapon_glock18");
+			for (int value : {10, 120, 255, 255, 1, 0, 17, 0}) runtime.onWriteByte(value);
+			runtime.onMessageEnd();
+			equipmentOriginalPointer = engine.pfnCVarGetPointer;
+			int allowanceMutation = 0;
+			// These callbacks model the public service boundary, not private bot state.
+			static int *mutation = nullptr;
+			mutation = &allowanceMutation;
+			engine.pfnCVarGetPointer = [](const char *name) {
+				if (std::strcmp(name, "bot_allow_rifles") == 0)
+				{
+					if (*mutation == 3) equipmentFixture->active = 4;
+					if (*mutation == 8) equipmentFixture->reloading = true;
+					if (*mutation == 9) equipmentFixture->primaryClip = equipmentFixture->primaryReserve = 0;
+					if (*mutation == 10) (void)equipmentFixture->machine->beginAttack(equipmentFixture->context);
+				}
+				return equipmentOriginalPointer ? equipmentOriginalPointer(name) : nullptr;
+			};
+			struct Sample { const char *name; float now; int active, clip, reserve, mutation; bool primary; unsigned expected; };
+			// Literal outcomes from pinned Update:547-551, IsPrimaryWeaponEmpty and HasAnyAmmo.
+			const Sample samples[] = {
+				{"below five seconds", 4.999f, 17, 30, 0, 0, true, 0},
+				{"exactly five seconds", 5.0f, 17, 30, 0, 0, true, 0},
+				{"safe round loaded pistol", 5.001f, 17, 30, 0, 0, true, 28},
+				{"unsafe round loaded pistol", 20, 17, 30, 0, 0, true, 28},
+				{"primary reserve only", 5.25f, 17, 0, 1, 0, true, 28},
+				{"primary exhausted", 5.25f, 17, 0, 0, 0, true, 0},
+				{"primary absent", 5.25f, 17, 30, 0, 0, false, 0},
+				{"primary ammo unknown", 5.25f, 17, 0, 0, 4, true, 0},
+				{"normal reload", 5.25f, 17, 30, 0, 6, true, 0},
+				{"special reload", 5.25f, 17, 30, 0, 7, true, 0},
+				{"prediction primary overrides stale public pistol", 5.25f, 28, 30, 0, 0, true, 0},
+				{"prediction no active overrides stale public pistol", 5.25f, 0, 30, 0, 0, true, 0},
+				{"grenade is not pistol", 5.25f, 4, 30, 0, 0, true, 0},
+				{"public fallback reserve only", 5.25f, 17, 0, 1, 5, true, 28},
+				{"public fallback exhausted", 5.25f, 17, 0, 0, 5, true, 0},
+				{"entity replaced in active read", 5.25f, 17, 30, 0, 1, true, 0},
+				{"entity replaced in ammo read", 5.25f, 17, 30, 0, 2, true, 0},
+				{"allowance changes active to grenade", 5.25f, 17, 30, 0, 3, true, 0},
+				{"allowance starts reload", 5.25f, 17, 30, 0, 8, true, 0},
+				{"allowance exhausts primary", 5.25f, 17, 30, 0, 9, true, 0},
+				{"allowance enters Attack", 5.25f, 17, 30, 0, 10, true, 0},
+				{"retained sight age below five", 4.999f, 17, 30, 0, 11, true, 0},
+				{"retained sight age exactly five", 5.0f, 17, 30, 0, 11, true, 0},
+				{"retained sight age over five", 5.125f, 17, 30, 0, 11, true, 28},
+			};
+			for (const auto &sample : samples)
+			{
+				fixture = {};
+				fixture.active = 6;
+				fixture.primaryClip = sample.clip;
+				fixture.primaryReserve = sample.reserve;
+				runtime.beginRoundGeneration();
+				auto &self = gEntities[0];
+				self.v.waterlevel = 0;
+				self.v.weapons = (sample.primary ? (1 << 28) : 0) | (1 << 17) | (1 << 29);
+				globals.time = sample.now - .125f;
+				stepRifle(20, 0, 17);
+				auto behavior = std::make_unique<metamod::BotBehaviorRuntime>();
+				behavior->bindServices(ports);
+				const auto &handle = ports.service_managedBotHandles()[0];
+				behavior->onActorRemembered(0, handle);
+				auto profile = static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0);
+				profile.aggression = 100;
+				profile.skill = 25;
+				behavior->assignProfile(0, profile);
+				auto &state = const_cast<CompatibilityStateMachine &>(behavior->managedBotStateMachines(0));
+				StateUpdateContext context{};
+				const auto &life = ports.service_lifecycle();
+				context.actor = {handle.actor.slot, handle.actor.actorGeneration};
+				context.frame = {life.mapGeneration(), life.roundGeneration(), ports.service_adapterFrameCount()};
+				context.timestamp = globals.time;
+				context.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0];
+				context.fullUpdate = context.alive = context.roundActive = true;
+				context.lifeAvailability = context.roundAvailability = context.attackObservation = ObservationAvailability::Available;
+				state.initialize(context);
+				(void)state.transition(CompatibilityStateId::Hunt, StateTransitionReason::ExplicitRequest, StateTransitionId::ExplicitStateChange, context);
+				fixture.machine = &state;
+				fixture.context = context;
+				runtime::MovementPhysicsState before{};
+				before.grounded = true;
+				before.origin = {self.v.origin.x, self.v.origin.y, self.v.origin.z};
+				if (sample.mutation == 11)
+				{
+					// Seed last sight through real perception/reaction, then occlude the same live enemy.
+					auto &enemy = gEntities[1];
+					runtime.onClientPutInServer(&enemy);
+					enemy.free = false;
+					enemy.v.flags = FL_CLIENT | FL_ONGROUND;
+					enemy.v.deadflag = DEAD_NO;
+					enemy.v.health = 100;
+					enemy.v.team = 2;
+					enemy.v.view_ofs = Vector(0, 0, 19);
+					enemy.v.velocity = Vector(250, 0, 0);
+					enemy.v.origin = self.v.origin + Vector(200, 0, 0);
+					runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+					runtime.onWriteByte(2); runtime.onWriteString("CT"); runtime.onMessageEnd();
+					profile.csbotReactionSeconds = .1f;
+					behavior->assignProfile(0, profile);
+					enemyBehindCover = false;
+					forcedNoticeFixtureRoll = 0.0f;
+					globals.time = 24.75f;
+					stepRifle(20, 0, 17);
+					++const_cast<std::uint32_t &>(ports.service_managedBotFullUpdateSequences()[0]);
+					(void)behavior->decideManagedBotAction(0, before, {}, 0);
+					stepRifle(20, 0, 17); // Recognized sight at exactly 25 seconds.
+					++const_cast<std::uint32_t &>(ports.service_managedBotFullUpdateSequences()[0]);
+					(void)behavior->decideManagedBotAction(0, before, {}, 0);
+					if (!check(behavior->currentEnemySource(0).id == 2, "rearm sight fixture acquired the actual enemy")) return false;
+					forcedNoticeFixtureRoll = -1.0f;
+					enemyBehindCover = true;
+					globals.time = 25.0f + sample.now - .125f;
+					stepRifle(20, 0, 17);
+					++const_cast<std::uint32_t &>(ports.service_managedBotFullUpdateSequences()[0]);
+				}
+				fixture.active = sample.active;
+				fixture.replaceOnActiveRead = sample.mutation == 1;
+				fixture.replaceEntity = sample.mutation == 2;
+				fixture.primaryUnknown = sample.mutation == 4;
+				fixture.reloading = sample.mutation == 6;
+				fixture.specialReload = sample.mutation == 7;
+				allowanceMutation = sample.mutation;
+				const auto updateClient = combatGameDll->pfnUpdateClientData;
+				if (sample.mutation == 5)
+				{
+					runtime.onMessageBegin(1, 94, nullptr, &self);
+					for (int value : {0, 28, sample.clip}) runtime.onWriteByte(value);
+					runtime.onMessageEnd();
+					runtime.onMessageBegin(1, 106, nullptr, &self);
+					runtime.onWriteByte(2); runtime.onWriteByte(sample.reserve);
+					runtime.onMessageEnd();
+					combatGameDll->pfnUpdateClientData = nullptr;
+				}
+				const auto serial = self.serialnumber;
+				fixture.commands.clear();
+				behavior->updateManagedBotCompatibilityState(0, before, false);
+				combatGameDll->pfnUpdateClientData = updateClient;
+				fixture.replaceOnActiveRead = fixture.replaceEntity = false;
+				self.serialnumber = serial;
+				const std::vector<unsigned> wanted = sample.expected ? std::vector<unsigned>{sample.expected} : std::vector<unsigned>{};
+				std::fprintf(stderr, "rearm sample=%s now=%.6f selected=%u count=%u expected=%u\n", sample.name, globals.time,
+					fixture.commands.empty() ? 0 : fixture.commands[0], static_cast<unsigned>(fixture.commands.size()), sample.expected);
+				if (!check(fixture.commands == wanted, sample.name)) return false;
+				if (sample.mutation == 11)
+				{
+					enemyBehindCover = false;
+					gEntities[1].v.health = 0;
+					gEntities[1].v.deadflag = DEAD_DEAD;
+				}
+				if (std::strcmp(sample.name, "unsafe round loaded pistol") == 0)
+				{
+					const float first = globals.time;
+					for (float elapsed : {4.999f, 5.0f})
+					{
+						fixture.active = 6;
+						globals.time = first + elapsed - .125f;
+						stepRifle(20, 0, 17);
+						fixture.active = 17;
+						fixture.commands.clear();
+						behavior->updateManagedBotCompatibilityState(0, before, false);
+						const std::vector<unsigned> timed = elapsed < 5 ? std::vector<unsigned>{} : std::vector<unsigned>{28};
+						if (!check(fixture.commands == timed, "rearm success publishes the shared five-second equipment clock")) return false;
+					}
+				}
+			}
+			engine.pfnCVarGetPointer = equipmentOriginalPointer;
+			equipmentFixture = nullptr;
+			return true;
+		}
 		if (unsafeEquipmentFixture)
 		{
 			runtime.onMessageBegin(1, 105, nullptr, &gEntities[0]);
@@ -2364,16 +2540,16 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				unsigned expected;
 			};
 			const Sample samples[] = {
-				{"safe exhausted pistol", 17, 30, 0, 0, 19.875f, false, 0, 0},
+				{"safe exhausted pistol", 17, 30, 0, 0, 19.875f, false, 0,28},
 				{"safe knife", 29, 30, 20, 0, 19.875f, false, 0, 0},
-				{"empty clip with reserve", 17, 30, 0, 1, 20, false, 0, 0},
-				{"loaded pistol", 17, 30, 1, 0, 20, false, 0, 0},
+				{"empty clip with reserve", 17, 30, 0, 1, 20, false, 0,28},
+				{"loaded pistol", 17, 30, 1, 0, 20, false, 0,28},
 				{"knife during bomb escape", 29, 30, 20, 0, 20, true, 0, 0},
 				{"grenade excluded", 4, 30, 0, 0, 20, false, 0, 0},
 				{"replaced active read", 17, 30, 0, 0, 20, false, 1, 0},
 				{"replaced ammo read", 17, 30, 0, 0, 20, false, 2, 0},
-				{"unknown active ammo", 17, 30, 0, 0, 20, false, 4, 0},
-				{"public fallback with reserve", 17, 30, 0, 1, 20, false, 6, 0},
+				{"unknown active ammo", 17, 30, 0, 0, 20, false, 4,28},
+				{"public fallback with reserve", 17, 30, 0, 1, 20, false, 6,28},
 				{"public fallback exhausted", 17, 30, 0, 0, 20, false, 5, 28},
 				{"I1 grenade selected in allowance callback", 17, 30, 0, 0, 20, false, 3, 0},
 				{"unsafe exhausted pistol", 17, 30, 0, 0, 20, false, 0, 28},

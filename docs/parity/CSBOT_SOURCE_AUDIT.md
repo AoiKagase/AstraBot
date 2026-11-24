@@ -1,5 +1,9 @@
 # 23　CSBot参照実装との差分監査
 
+## C03-3 通常Updateの敵未視認5秒超pistol再装備（2026-11-25）
+
+round IsSafeと独立に、非reload・pistol・primary総弾薬あり・lastSawから厳密>5秒を通常Updateへ接続。Unknown非捏造、実active優先、共通5秒装備時計、callback後の再確認/失効中断を保持。成立RED→最終Windows重点29/29、実視認後の4.999/5.0/5.125秒を含む24入力合格。最終DLLの既存一台as_oilrigでloaded pistol→AK47を2回限定機能採録。quit後Steam待機で正常終了不合格、特定PID14156のユーザー許可後に終了0xFFFFFFFF、実PID[]・core/fixture復元/保護11一致。early-safe/自然戦闘/全境界とV02旧終了原因は未完、大項目未完47を維持。[範囲と証拠](UPDATE_PISTOL_REARM_C03_3.md)。
+
 ## C03-2 通常Updateのunsafe再装備（2026-11-25）
 
 unsafe・非grenadeの総弾薬枯渇/既知activeなし、退避外knifeへ通常EquipBestWeaponを接続。clip0＋予備あり/Unknownは枯渇としない。helper callback後のfresh activeとcaller条件を送信直前に再検証し、失効を旧更新中断へ伝播。正規RED2種→最終28重点シナリオ合格、既存as_oilrigの制御入力で弾切れpistol/knife→AK47を限定機能採録。quit後Steam待機で正常終了不合格、ユーザー閉鎖後実PID[]・core/fixture復元と保護11一致。終了コード未取得/null、エージェント強制終了0。C03のsafe5秒/early-safe・未採録境界とV02は未完、大項目未完47を維持。[範囲と証拠](UPDATE_UNSAFE_C03_2.md)。

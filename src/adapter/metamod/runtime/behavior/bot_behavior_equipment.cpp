@@ -130,15 +130,107 @@ bool BotBehaviorRuntime::updateUnsafeEquipment(std::size_t index)
 	}
 	bool admitted = true;
 	if (rearm)
-		(void)equipBestWeapon(index, false, [&](int active) {
+		(void)equipBestWeapon(index, false, [&](int active, bool) {
 			admitted = admitted && current() && active == weapon;
 			return admitted;
 		});
 	return current() && admitted;
 }
 
+bool BotBehaviorRuntime::updatePistolRearm(std::size_t index)
+{
+	const auto &config = services_->service_compatibilitySurface().configuration();
+	auto &actor = actors_[index];
+	const auto &handle = services_->service_managedBotHandles()[index];
+	if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0 || config.botStop != 0 ||
+		!handle.entity)
+		return true;
+	const auto receipt = reactionContext(index);
+	// CSBot initializes its last-sight timestamp to zero. This is independent of IsSafe().
+	const float lastSaw = (std::max)(0.0f, actor.enemyReaction.lastSaw(receipt));
+	if (!(receipt.now - lastSaw > 5.0f))
+		return true;
+	const auto revision = actor.executionRevision;
+	const auto full = services_->service_managedBotFullUpdateSequences()[index];
+	const auto normal = actor.managedBotStateMachines.normalStateEpoch();
+	const auto attack = actor.managedBotStateMachines.attackEntryEpoch();
+	const bool attacking = actor.managedBotStateMachines.attackOverlayActive();
+	const auto *entity = handle.entity;
+	const auto serial = entity->serialnumber;
+	const auto inventory = entity->v.weapons;
+	const auto water = entity->v.waterlevel;
+	const auto current = [&] {
+		return executionCurrent(index, receipt, revision) && handle.entity == entity && !entity->free &&
+			entity->serialnumber == serial && entity->v.weapons == inventory && entity->v.waterlevel == water &&
+			services_->service_managedBotFullUpdateSequences()[index] == full &&
+			actor.managedBotStateMachines.normalStateEpoch() == normal &&
+			actor.managedBotStateMachines.attackEntryEpoch() == attack &&
+			actor.managedBotStateMachines.attackOverlayActive() == attacking &&
+			(std::max)(0.0f, actor.enemyReaction.lastSaw(receipt)) == lastSaw;
+	};
+	const auto &store = services_->observation_publicObservations();
+	const auto activeWeapon = [&](int &weapon) {
+		const bool predicted = services_->observation_activeWeaponIdentity(handle.entity, weapon);
+		if (!current())
+			return false;
+		if (predicted)
+			return true;
+		compat::PublicActorState observed{};
+		if (!store.read(receipt.actor, receipt.frame, &observed) || !observed.weaponKnown)
+			return false;
+		weapon = observed.weaponId;
+		return true;
+	};
+	int weapon = 0;
+	if (!activeWeapon(weapon))
+		return current();
+	if (weapon != 1 && weapon != 10 && weapon != 11 && weapon != 16 && weapon != 17 && weapon != 26)
+		return true;
+	const auto *primary = compat::carriedPrimaryWeapon(static_cast<std::uint32_t>(inventory));
+	if (!primary)
+		return true; // No primary, or the public mask cannot identify its linked-list head.
+	const auto eligible = [&](int active) {
+		if (!current() || active != weapon)
+			return false;
+		const auto reload = services_->observation_activeWeaponReloadState(handle.entity);
+		if (!current() || reload == combat::ReloadState::Reloading ||
+			(reload == combat::ReloadState::Unknown && store.pendingReloadRequest(receipt.actor, receipt.frame, receipt.now)))
+			return false;
+		std::array<compat::EquipmentAmmo, compat::PublicActorState::kWeaponStateCapacity> ammo{};
+		const bool predicted = services_->observation_equipmentAmmo(handle.entity, ammo);
+		if (!current())
+			return false;
+		auto available = predicted ? ammo[primary->id] : compat::EquipmentAmmo::Unknown;
+		if (available == compat::EquipmentAmmo::Unknown)
+		{
+			compat::PublicActorState observed{};
+			if (store.read(receipt.actor, receipt.frame, &observed))
+			{
+				const auto definition = store.definition(primary->id);
+				const bool reserveKnown = definition.known && definition.ammoIndex >= 0 &&
+					static_cast<std::size_t>(definition.ammoIndex) < observed.ammoKnown.size() &&
+					observed.ammoKnown[static_cast<std::size_t>(definition.ammoIndex)];
+				available = compat::nativeEquipmentAmmo(observed.weaponClipKnown[primary->id], observed.weaponClips[primary->id],
+					reserveKnown, reserveKnown && observed.ammo[static_cast<std::size_t>(definition.ammoIndex)] > 0 ? 1U : 0U);
+			}
+		}
+		int fresh = 0;
+		return available == compat::EquipmentAmmo::Usable && activeWeapon(fresh) && fresh == weapon && current();
+	};
+	if (!eligible(weapon))
+		return current();
+	bool admitted = true;
+	(void)equipBestWeapon(index, false, [&](int active, bool dispatched) {
+		// A successful SelectItem intentionally changes active identity. After dispatch,
+		// retain the caller receipt without treating that expected selection as invalidation.
+		admitted = admitted && (dispatched ? current() : eligible(active));
+		return admitted;
+	});
+	return current() && admitted;
+}
+
 bool BotBehaviorRuntime::equipBestWeapon(std::size_t index, bool mustEquip,
-	const std::function<bool(int)> &admission)
+	const std::function<bool(int, bool)> &admission)
 {
 	if (index >= actors_.size() || !services_->service_globals() ||
 		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
@@ -210,7 +302,7 @@ bool BotBehaviorRuntime::equipBestWeapon(std::size_t index, bool mustEquip,
 	input.skill = static_cast<float>(actor.managedProfiles.skill) / 100.0f;
 	input.fullySubmerged = handle.entity->v.waterlevel == 3;
 	input.currentWeapon = static_cast<std::uint16_t>(activeKnown ? activeWeapon : known.weaponKnown ? known.weaponId : 0);
-	if (admission && !admission(input.currentWeapon))
+	if (admission && !admission(input.currentWeapon, false))
 		return false;
 	input.hasKnife = (inventory & (1U << 29)) != 0;
 	const auto *primary = compat::carriedPrimaryWeapon(inventory);
@@ -259,7 +351,7 @@ bool BotBehaviorRuntime::equipBestWeapon(std::size_t index, bool mustEquip,
 				return false;
 			active = observed.weaponId;
 		}
-		if (!admission(active))
+		if (!admission(active, false))
 			return false;
 	}
 	const auto decision = actor.equipment.best(input);
@@ -270,7 +362,7 @@ bool BotBehaviorRuntime::equipBestWeapon(std::size_t index, bool mustEquip,
 	if (!command)
 		return false;
 	const bool sent = services_->command_dispatchClientCommand(handle.entity, command, "");
-	if (!current() || (admission && !admission(input.currentWeapon)))
+	if (!current() || (admission && !admission(input.currentWeapon, true)))
 		return false;
 	actor.equipment.equipped(receipt.actor, receipt.frame, receipt.now, decision.selectWeapon, sent);
 	if (services_->service_runtimeProfiler().enabled())

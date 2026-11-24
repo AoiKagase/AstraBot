@@ -8038,11 +8038,12 @@
     },
     {
       "id": "C03",
-      "title": "Underwater and unsafe ordinary Update rearming wired; safe5s and early-safe selection remain",
+      "title": "Ordinary Update underwater, unsafe and no-sight pistol rearming wired; early-safe selection remains",
       "status": "partial_implementation",
       "astra": [
         "src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:8",
         "src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:56",
+        "src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:140",
         "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp:159"
       ],
       "reference": [
@@ -8052,36 +8053,50 @@
         "regamedll/dlls/bot/cs_bot_update.cpp:547",
         "regamedll/dlls/bot/states/cs_bot_idle.cpp:66"
       ],
-      "evidence": "C03-1 underwater MUST_EQUIP retained. C03-2 wires unsafe non-grenade total-ammo exhaustion/known no-active and knife outside bomb escape to ordinary EquipBestWeapon. Prediction/public fallback and Unknown preserved; callback admission guarded through dispatch and aborts stale Update. Safe5s pistol-to-primary, early-safe selection and unaccepted live boundaries remain.",
-      "tests": "C03-2 regular product RED and review-I1 RED; final28 sequential dedicated-cwd scenarios exit0 including17 unsafe inputs and4.999/5.0 clock. Controlled Windows real-server pistol/knife-to-AK functional samples; quit Steam wait failed normal exit, user-closed actual PIDs absent, exit codes unobserved, core/fixture/protected11 restored. See UPDATE_UNSAFE_C03_2.md; earlier C03-1 evidence retained.",
+      "evidence": "Pinned Update547-551 independently gates !active reload, pistol, primary HasAnyAmmo and lastSaw age strictly>5; no round IsSafe gate. Added normal Update connection, prediction/public fallback, Unknown policy, shared5s equipment timer and fresh callback admission/abort. Early-safe grenade/knife and unaccepted live boundaries remain.",
+      "tests": "C03-3 established initialized product RED; final Windows29 sequential dedicated-cwd scenarios exit0,24 rearm inputs including actual sight at25 age4.999/5/5.125 and shared clock4.999/5. Final DLL controlled as_oilrig loaded pistol-to-primary twice; quit Steam wait failed normal exit; user-authorized PID14156 termination0xFFFFFFFF, PID[], core/fixture/protected11 restored. Earlier C03-1/2 and V02 failure evidence retained. See UPDATE_PISTOL_REARM_C03_3.md.",
       "backlog_mapping": "23/new explicit weapon lifecycle unit",
       "confidence": "high",
       "title_ja": "通常Updateの装備再選択・安全時間中の装備",
-      "status_ja": "部分対応（C03-1水没/C03-2 unsafe接続）",
+      "status_ja": "部分対応（C03-1水没/C03-2 unsafe/C03-3未視認5秒超接続）",
       "group": 1,
       "partial_resolution": {
         "date": "2026-11-25",
-        "record": "UPDATE_UNSAFE_C03_2.md",
-        "source_manifest": "artifacts/local/debug/csbot-update-unsafe-20261125/candidate.json",
-        "functional_manifest": "artifacts/local/debug/csbot-update-unsafe-20261125/functional-final.json",
+        "record": "UPDATE_PISTOL_REARM_C03_3.md",
+        "source_manifest": "artifacts/local/debug/csbot-update-rearm-20261125/candidate.json",
+        "functional_manifest": "artifacts/local/debug/csbot-update-rearm-20261125/functional-final.json",
         "still_open": true,
-        "offline_focused_scenarios": 28,
+        "offline_focused_scenarios": 29,
+        "rearm_inputs": 24,
         "full_ctest": false,
         "normal_exit_gate_current_trial": false,
         "restoration_verified": true,
-        "actual_exit_codes_observed": false,
+        "actual_exit_codes_observed": true,
         "historical_V02_closed": false,
         "prior_resolution": {
           "date": "2026-11-25",
-          "record": "UPDATE_UNDERWATER_C03_1.md",
-          "source_manifest": "artifacts/local/debug/csbot-update-equipment-20261125/candidate.json",
-          "functional_manifest": "artifacts/local/debug/csbot-update-equipment-20261125/acceptance-final.json",
+          "record": "UPDATE_UNSAFE_C03_2.md",
+          "source_manifest": "artifacts/local/debug/csbot-update-unsafe-20261125/candidate.json",
+          "functional_manifest": "artifacts/local/debug/csbot-update-unsafe-20261125/functional-final.json",
           "still_open": true,
-          "offline_focused_scenarios": 27,
+          "offline_focused_scenarios": 28,
           "full_ctest": false,
-          "normal_exit_gate_current_trial": true,
+          "normal_exit_gate_current_trial": false,
+          "restoration_verified": true,
+          "actual_exit_codes_observed": false,
           "historical_V02_closed": false,
-          "toolchain": "independent14.52 HostX86/x86 NMake Debug; old14.51 cache/products unchanged"
+          "prior_resolution": {
+            "date": "2026-11-25",
+            "record": "UPDATE_UNDERWATER_C03_1.md",
+            "source_manifest": "artifacts/local/debug/csbot-update-equipment-20261125/candidate.json",
+            "functional_manifest": "artifacts/local/debug/csbot-update-equipment-20261125/acceptance-final.json",
+            "still_open": true,
+            "offline_focused_scenarios": 27,
+            "full_ctest": false,
+            "normal_exit_gate_current_trial": true,
+            "historical_V02_closed": false,
+            "toolchain": "independent14.52 HostX86/x86 NMake Debug; old14.51 cache/products unchanged"
+          }
         }
       }
     },
@@ -8683,6 +8698,21 @@
         "actual_processes_after_user_close": [],
         "server_restored": true,
         "agent_termination": false,
+        "cause_unresolved": true
+      },
+      "c03_3_quit_evidence": {
+        "date": "2026-11-25",
+        "record": "UPDATE_PISTOL_REARM_C03_3.md",
+        "functional_only": true,
+        "normal_exit_gate": false,
+        "cdb_used": false,
+        "actual_exit_codes": {
+          "14156": 4294967295
+        },
+        "actual_processes_after_authorized_stop": [],
+        "server_restored": true,
+        "agent_termination": true,
+        "explicit_pid_authorization": 14156,
         "cause_unresolved": true
       }
     },

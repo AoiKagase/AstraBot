@@ -1,6 +1,6 @@
 # AstraBot CSBot準拠タスク一覧
 
-更新：2026-11-25。今回の統合前基点：`ec40019`（ローカルmaster）。
+更新：2026-11-25。今回の統合前基点：`59b4a99`（ローカルmaster）。
 
 **大項目49件：限定完了2件、未完47件。部分対応は未完に含む。** チェック済みの修正単位があっても、大項目の未完数は減らない。S14は現対戦milestone外の差分として残し、対応済みには数えない。
 
@@ -23,6 +23,8 @@
 各修正単位のローカルmasterマージと指紋確認が完了したら、masterへ切り替えて当該作業ブランチを安全削除する。未マージ、別作業用、他worktreeで使用中のブランチは削除しない。次の修正はmasterを基点に新しい`codex/`ブランチで始める。
 
 ## 現在の作業
+C03-3：round IsSafeとは独立した敵未視認>5秒のpistol→使用可能primaryを通常Updateへ接続。成立RED→最終29重点/24入力合格、実機loaded pistol→AK47を2回限定機能採録。quit後Steam待機で正常終了不合格、特定PID14156のユーザー許可後に終了0xFFFFFFFF・実PID[]・設定復元/保護11一致。early-safe・自然戦闘/全境界とV02旧原因は残す。[範囲と証拠](docs/parity/UPDATE_PISTOL_REARM_C03_3.md)。
+
 C03-2：unsafe総弾薬枯渇/既知activeなし・退避外knifeを通常Updateへ接続。正規RED2種→最終28重点合格、実機は両切替を限定機能採録。quit後Steam待機で正常終了不合格、ユーザー閉鎖後実PID[]・設定復元/保護11一致、終了コード未取得。safe5秒/early-safe・未採録範囲とV02は残す。[範囲と証拠](docs/parity/UPDATE_UNSAFE_C03_2.md)。
 
 C03-1：通常Updateの水没MUST_EQUIP接続を実装。正規RED→最終27重点シナリオ合格、実as_oilrigの高skill公開入力でwater3の132更新中131更新Glock保持、最終両実exit0・復元一致。その他C03装備分岐・自然遊泳/全境界・Linuxは残す。[範囲と証拠](docs/parity/UPDATE_UNDERWATER_C03_1.md)。
@@ -42,6 +44,7 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 
 | 単位 | 完了範囲・証拠 |
 |---|---|
+| ☑ C03-3（実装・限定機能） | [未視認5秒超のpistol再装備](docs/parity/UPDATE_PISTOL_REARM_C03_3.md)。Windows重点29/29・24入力、実loaded pistol→AK47を2回。正常終了はV02不合格、許可済み終了後復元一致 |
 | ☑ C03-2（実装・限定機能） | [unsafe再装備](docs/parity/UPDATE_UNSAFE_C03_2.md)。Windows重点28/28、実機両切替を採録。正常終了はV02不合格、閉鎖後実PID[]・復元一致 |
 | ☑ C02-2d12（限定実機） | [FetchBomb保持Noise](docs/parity/FETCH_NOISE_LIVE_C02_2D12.md)。移動gate16更新・静止ゼロ1更新・候補1 LOW拒否2更新、各両exit0。製品変更なし |
 | ☑ C02-2d11（限定実機） | [FetchBomb移動候補ゼロ](docs/parity/FETCH_ZERO_LIVE_C02_2D11.md)。候補0/1の因果対照、各両exit0。V02旧原因は未確定 |
@@ -106,18 +109,19 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 
 ### ☐ C03 — 通常Updateの装備再選択・安全時間中の装備
 
-状態：部分対応（C03-1 水没接続、C03-2 unsafe接続・限定機能）。
+状態：部分対応（C03-1 水没、C03-2 unsafe、C03-3 敵未視認5秒超pistol再装備を接続）。
 
 - [x] 水没禁止の装備中武器に一般MUST_EQUIPを接続する（C03-1、通常full Update正規RED→27重点合格、実water3/使用可能XM1014→Glock、最終両実exit0。実active0/古いknife観測の再装備もオフライン確認）
 - [ ] 水没切替の自然遊泳・全profile/閾値/blind・Linux実機を検証する（C03-1は公開位置保持、skill100のWindows限定正例）
 - [x] unsafe時の総弾薬枯渇/既知activeなし・退避外knife再装備を接続する（C03-2、正規RED→28重点合格、実機両切替は限定機能採録。正常終了不合格と復元を区別）
 - [ ] unsafe再装備の通常戦闘自然発生・全状態/profile/blind・Linux実機を検証する（C03-2は制御入力、正常終了もV02未受入れ）
-- [ ] safe5秒のpistol→使用可能primaryを接続する
+- [x] 敵未視認が厳密に5秒超のpistol→使用可能primaryを接続する（C03-3、round IsSafeと独立。正規成立RED→29重点/24入力、実loaded pistolの2切替を機能採録、正常終了不合格/許可済み終了後復元一致）
+- [ ] 敵未視認5秒超再装備の通常戦闘自然発生・全状態/profile/blind・全武器/Linux実機を検証する（C03-3は制御公開入力のWindows限定受入れ）
 - [ ] early-safeのgrenade/knife選択を接続する
 
 根拠：`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:8`、`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:74`、`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1374`。参照：`regamedll/dlls/bot/cs_bot_update.cpp:519`、`regamedll/dlls/bot/cs_bot_update.cpp:526`、`regamedll/dlls/bot/cs_bot_update.cpp:533`、`regamedll/dlls/bot/cs_bot_update.cpp:547`、`regamedll/dlls/bot/states/cs_bot_idle.cpp:66`。
 
-既存テスト／検証上の注意：C03-1の正規製品RED/最終27シナリオ/限定実機は[専用記録](docs/parity/UPDATE_UNDERWATER_C03_1.md)。C03-2の17入力・共通5秒境界と限定機能は[専用記録](docs/parity/UPDATE_UNSAFE_C03_2.md)。unsafeの固定参照は総弾薬枯渇であり、clip0＋reserveありのReloadCheckと区別する。weapon_equipment_tests.cpp:268-336はhelper/timer/water matrix、weapon_switch_runtime_tests.cpp:184はprimary-empty→pistolのみ。旧14.51 compiler実体なしのcacheを保持し、今回14.52専用buildを使用。全CTest/両OS/export/固定履歴は未実施。
+既存テスト／検証上の注意：C03-3の厳密lastSaw境界・共通装備時計/再入と限定実機は[専用記録](docs/parity/UPDATE_PISTOL_REARM_C03_3.md)。C03-1の正規製品RED/最終27シナリオ/限定実機は[専用記録](docs/parity/UPDATE_UNDERWATER_C03_1.md)。C03-2の17入力・共通5秒境界と限定機能は[専用記録](docs/parity/UPDATE_UNSAFE_C03_2.md)。unsafeの固定参照は総弾薬枯渇であり、clip0＋reserveありのReloadCheckと区別する。weapon_equipment_tests.cpp:268-336はhelper/timer/water matrix、weapon_switch_runtime_tests.cpp:184はprimary-empty→pistolのみ。旧14.51 compiler実体なしのcacheを保持し、今回14.52専用buildを使用。全CTest/両OS/export/固定履歴は未実施。
 
 ### ☐ C04 — SilencerCheck要求の実行時接続
 
@@ -664,6 +668,7 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 - [ ] C02-2d6 Noise試行のquit後Steam stalled cross-thread pipeを切り分け、正常終了を再確認する（手動終了0xC000013A、元NAV/core復元済み）
 - [ ] C02-2d9/2d10 FetchBomb試行のquit後Steam待機原因を確定する（C02-2d11は子PATHの既存Debug CRT・BPなし/8読点で正常終了を限定確認。旧環境CRT同一性と待機原因は未確定、通常起動時のDebug CRT欠落も残す。[対照](docs/parity/FETCH_ZERO_LIVE_C02_2D11.md)）。過去の終了不合格を保持する（2d9のHLDS11228/CDB30732に加え、2d10 live6/7/8も機能採録のみ。各回の明示許可で終了、各両0xFFFFFFFF、実PID0・通常NAV/core復元・保護一致。[最新証拠](docs/parity/FETCH_ADMISSION_LIVE_C02_2D10.md)）
 - [ ] C03-2のquit後Steam BMainLoop待機・pipes fatal assertを切り分け、正常終了を再確認する（ユーザー閉鎖後HLDS37588/CDB6520の実PID[]・core/fixture復元・保護11一致。終了コード未取得/null、過去試行と同一原因とは断定しない。[記録](docs/parity/UPDATE_UNSAFE_C03_2.md)）
+- [ ] C03-3のCDBなしquit後Steam BMainLoop待機を切り分け、正常終了を再確認する（機能採録後110秒でも実HLDS14156残存。特定PIDのユーザー許可後に終了0xFFFFFFFF、実PID[]/core/fixture復元/保護11一致。[記録](docs/parity/UPDATE_PISTOL_REARM_C03_3.md)）
 - [ ] Windowsの限定受入れを全体合格と扱わない
 
 根拠：`src/adapter/metamod/diagnostics/runtime_profiler.cpp:314`、`src/adapter/metamod/plugin/plugin_runtime.cpp:854`。参照：`regamedll/dlls/bot/cs_bot_vision.cpp:57`、`regamedll/dlls/bot/cs_bot_update.cpp:186`。
