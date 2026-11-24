@@ -1,5 +1,9 @@
 # 23　CSBot参照実装との差分監査
 
+## C02-2d9 FetchBombと直接Root再帰（2026-11-24）
+
+製品変更なし。正規Rootの同時刻再帰2対照を追加し、nested fullの受付抑止、同frameの外側1送信、新frameの旧送信/clock公開停止を確認。最終Windows重点20/20、初回fixture open失敗19/20は別保存。同一実機のFetchBomb Native保持静止45更新・抽選後LOW拒否4回を機能採録し、移動中Native保持8更新も確認。移動encounter受付の因果対照・候補ゼロ等は未実施。quit後Steam待機でユーザー許可後にHLDS11228/CDB30732を個別終了（両0xFFFFFFFF）。実PID0・core原文復元・保護指紋一致。正常終了は不合格としてV02へ残す。corner投擲と大項目47件を継続。[詳細と証拠](FETCH_ROOT_REENTRY_C02_2D9.md)。
+
 ## C02-2d8 後段Noise再入停止（2026-11-24）
 
 helperが破棄していたAbortedを内部service経由で伝え、旧コマンドの後続処理と送信を停止。MoveToの正規callback対照でRED→GREEN、Windows重点18/18。最終DLLの既存Windows実機は通常Noise継続3更新とfixture完走を限定確認し、callback失効の実機受入れとは区別する。HLDS13084/CDB40860はexit0、core原文復元・コピー追加0。FetchBomb実機・直接Root再帰full・corner投擲と大項目47件は継続。[詳細と証拠](LATE_NOISE_ABORT_C02_2D8.md)。

@@ -339,7 +339,10 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool grenadeMovingFixture = scenario && std::strcmp(scenario, "native-grenade-moving-admission") == 0;
 	const bool grenadeOwnerFixture = scenario && std::strcmp(scenario, "native-grenade-owner-retirement") == 0;
 	const bool grenadeZeroReentryFixture = scenario && std::strcmp(scenario, "native-grenade-zero-reentry") == 0;
-	const bool grenadeZeroApproachFixture = grenadeZeroReentryFixture || (scenario && std::strcmp(scenario, "native-grenade-zero-approach") == 0);
+	const bool grenadeRootReentryFixture = scenario && std::strcmp(scenario, "native-grenade-root-reentry") == 0;
+	const bool grenadeRootFrameReentryFixture = scenario && std::strcmp(scenario, "native-grenade-root-frame-reentry") == 0;
+	const bool grenadeZeroApproachFixture = grenadeZeroReentryFixture || grenadeRootReentryFixture ||
+		grenadeRootFrameReentryFixture || (scenario && std::strcmp(scenario, "native-grenade-zero-approach") == 0);
 	const bool nativeGrenadeFixture = grenadeAdmissionFixture || grenadeNoiseFixture || grenadeZeroApproachFixture || grenadeHuntFixture || grenadeMovingFixture || grenadeOwnerFixture || (scenario && std::strcmp(scenario, "native-grenade") == 0);
 #ifdef _MSC_VER
 	std::free(scenario);
@@ -643,6 +646,29 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				} draws;
 				bool restarted = false;
 				const auto attackEpoch = state.attackEntryEpoch();
+				unsigned recursiveCalls = 0;
+				std::uint32_t recursiveFullBefore = 0, recursiveFullAfter = 0;
+				unsigned recursiveMovesBefore = 0, recursiveMovesAfter = 0;
+				float recursiveTimeBefore = 0, recursiveTimeAfter = 0;
+				const auto movesBeforeRoot = gRunPlayerMoveCount;
+				if (grenadeRootReentryFixture || grenadeRootFrameReentryFixture)
+				{
+					draws.interrupt = [&]
+					{
+						++recursiveCalls;
+						recursiveTimeBefore = globals.time;
+						recursiveFullBefore = grenadePorts.service_managedBotFullUpdateSequences()[0];
+						recursiveMovesBefore = gRunPlayerMoveCount;
+						if (grenadeRootFrameReentryFixture)
+						{
+							runtime.onStartFrame();
+						}
+						runtime.onStartFramePost();
+						recursiveMovesAfter = gRunPlayerMoveCount;
+						recursiveFullAfter = grenadePorts.service_managedBotFullUpdateSequences()[0];
+						recursiveTimeAfter = globals.time;
+					};
+				}
 				if (grenadeZeroReentryFixture) draws.interrupt = [&] {
 					auto &machine = const_cast<compat::CompatibilityStateMachine &>(state);
 					compat::StateUpdateContext context{};
@@ -657,6 +683,33 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				};
 				grenadePorts.service_compatibilityRandomSource().setTraceSink(&draws);
 				stepRifle(30, 0, 4);
+				if (grenadeRootReentryFixture || grenadeRootFrameReentryFixture)
+				{
+					const auto movesAfterRoot = gRunPlayerMoveCount;
+					const bool sameState = state.state() == compat::CompatibilityStateId::Hunt &&
+						state.normalStateEpoch() == epoch && state.attackEntryEpoch() == attackEpoch &&
+						!state.attackOverlayActive();
+					const bool admittedOnce = recursiveCalls == 1 && recursiveTimeBefore == recursiveTimeAfter &&
+						recursiveFullBefore == recursiveFullAfter && recursiveMovesBefore == recursiveMovesAfter &&
+						draws.intervals == 1 && draws.points == 0;
+					stepRifle(30, 0, 4);
+					grenadePorts.service_compatibilityRandomSource().setTraceSink(nullptr);
+					std::fprintf(stderr, "Root reentry frame=%d calls=%u full=%u/%u time=%.9f/%.9f moves=%u/%u outer=%u/%u intervals=%u points=%u\n",
+						grenadeRootFrameReentryFixture, recursiveCalls, recursiveFullBefore, recursiveFullAfter,
+						recursiveTimeBefore, recursiveTimeAfter, recursiveMovesBefore, recursiveMovesAfter,
+						movesBeforeRoot, movesAfterRoot, draws.intervals, draws.points);
+					if (!check(sameState && admittedOnce,
+						"same-time direct Root recursion cannot admit a second full update or command"))
+					{
+						return false;
+					}
+					return check(grenadeRootFrameReentryFixture
+						? movesAfterRoot == movesBeforeRoot && draws.intervals == 2 && draws.points == 0
+						: movesAfterRoot == movesBeforeRoot + 1 && draws.intervals == 1 && draws.points == 0,
+						grenadeRootFrameReentryFixture
+							? "new-frame same-time Root recursion aborts the old command and leaves its look clock uncommitted"
+							: "same-frame same-time Root recursion preserves the single outer command and look clock");
+				}
 				if (grenadeZeroReentryFixture)
 				{
 					const bool control = restarted && state.attackEntryEpoch() == attackEpoch + 1 &&
