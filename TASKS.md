@@ -1,6 +1,6 @@
 # AstraBot CSBot準拠タスク一覧
 
-更新：2026-11-24。完了基点：`8727c222efa940d802cf1e4821ca31e5d924306d`（ローカルmaster）。
+更新：2026-11-24。完了基点：`889c35cb22cb3b91ef620eb65ef30bf683e97ddc`（ローカルmaster）。
 
 **大項目49件：限定完了2件、未完47件。部分対応は未完に含む。** チェック済みの修正単位があっても、大項目の未完数は減らない。S14は現対戦milestone外の差分として残し、対応済みには数えない。
 
@@ -16,7 +16,7 @@
 
 ## 現在の作業
 
-C02：accepted-BEGIN時の旧Hunt LOW所有退役。ブランチ `codex/grenade-look-owner-retirement-v2`、資料整理後の基点 `21a15a8`。command境界RED→GREEN、関連10件、公開敵認識から同fullの旧LOW1→0が最初のgrenade Upkeepより前に起きるオフライン読取りを確認。追加assertも再ビルド済み。全build、Win182/Linux181、PE/ELF7、履歴差0、同full実機採録、C4 0/7/8まで合格。最終独立レビュー、コミット・master FFは未完。
+C02-2c4：旧Hunt LOW所有解除は `889c35c` でコミット・ローカルmaster FF済み。ソース・製品・保護ファイル・実機設定の指紋も一致。次はGuard/Noiseのhandled-returnと後続処理順を固定参照で確認する。
 
 ## 完了した修正単位（大項目の完了とは別）
 
@@ -28,6 +28,7 @@ C02：accepted-BEGIN時の旧Hunt LOW所有退役。ブランチ `codex/grenade-
 | ☑ C02-2c1 | [静止候補ゼロでのClearLook](docs/parity/GRENADE_ZERO_APPROACH_C02_2C1.md)。各記録の限定範囲で検証・コミット・masterマージ済み |
 | ☑ C02-2c2 | [静止候補ありで抽選後にLOW拒否](docs/parity/GRENADE_HUNT_ADMISSION_C02_2C2.md)。各記録の限定範囲で検証・コミット・masterマージ済み |
 | ☑ C02-2c3 | [moving Huntで遭遇抽選前にNative視線受付を確認](docs/parity/GRENADE_MOVING_ADMISSION_C02_2C3.md)。各記録の限定範囲で検証・コミット・masterマージ済み |
+| ☑ C02-2c4 | [accepted-BEGINでの旧Hunt LOW所有解除](docs/parity/GRENADE_OWNER_RETIREMENT_C02_2C4.md)。Win182/Linux181＋各7exports、同full実機採録、C4 0/7/8合格。`889c35c` コミット・master FF済み |
 
 既存Plantの早期判断・MoveTo開始順・末尾入力/退出・Plant前Idle経路抑止・cold Idle/Buy視線供給も限定完了。残る自然拾得・実水没・標準GameDLL受入れはS13/C14等へ分離している。過去の完了範囲は[STATUS](docs/parity/STATUS.md)を参照。
 
@@ -37,7 +38,7 @@ C02：accepted-BEGIN時の旧Hunt LOW所有退役。ブランチ `codex/grenade-
 
 状態：部分対応。
 
-- [ ] accepted-BEGIN時の旧Hunt LOW所有を退役する（検証合格、最終レビュー・コミット・master FF待ち）
+- [x] accepted-BEGIN時の旧Hunt LOW所有を退役する（C02-2c4、`889c35c`、検証・master FF済み）
 - [ ] Guard/Noiseのhandled-returnと後続処理順を合わせる
 - [ ] FetchBomb実機と直接同時刻full再入を検証する
 - [ ] 安全時間終了後の経路corner投擲を実装・検証する

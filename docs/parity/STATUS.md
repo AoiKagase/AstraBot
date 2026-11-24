@@ -1,6 +1,6 @@
 ## C02-2c4 accepted-BEGINの旧Hunt LOW所有解除（2026-11-24）
 
-Windows182/182＋PE7、Linux181/181＋ELF7合格。両OS履歴151933行・RNG510行差0。既存実機・元NAVでactor2/full191の旧LOW1→0を最初のgrenade Upkeepより前に採録。C4 0/7/8も合格、全実PID終了0・core原文復元。旧LOW残留の限定修正で、実失効後の長期再開・全owner・Linux実機の合格ではない。C02は部分対応、47残件を維持。[詳細](GRENADE_OWNER_RETIREMENT_C02_2C4.md)。コミット・master FFは最終レビュー後。
+Windows182/182＋PE7、Linux181/181＋ELF7合格。両OS履歴151933行・RNG510行差0。既存実機・元NAVでactor2/full191の旧LOW1→0を最初のgrenade Upkeepより前に採録。C4 0/7/8も合格、全実PID終了0・core原文復元。旧LOW残留の限定修正で、実失効後の長期再開・全owner・Linux実機の合格ではない。C02は部分対応、47残件を維持。[詳細](GRENADE_OWNER_RETIREMENT_C02_2C4.md)。`889c35c` でコミット・ローカルmaster FF済み。後指紋も一致。
 
 ## C02-2c3 moving Huntの遭遇視線抽選を限定対応（2026-11-24）
 

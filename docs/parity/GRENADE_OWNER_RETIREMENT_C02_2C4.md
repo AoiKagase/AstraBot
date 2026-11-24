@@ -1,6 +1,6 @@
 # C02-2c4 accepted-BEGINでの旧Hunt LOW所有解除
 
-状態：オフライン・Windows実機の限定受入れ合格。最終レビュー・コミット待ち。C02全体は部分対応。製品ソースの基点 `8727c222efa940d802cf1e4821ca31e5d924306d`、資料整理後の統合元 `21a15a817d9abe456c6eda254397de4b88558ad4`。固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。
+状態：オフライン・Windows実機の限定受入れ合格。独立レビュー済み、`889c35c` でコミット・ローカルmaster FF済み。C02全体は部分対応。製品ソースの基点 `8727c222efa940d802cf1e4821ca31e5d924306d`、資料整理後の統合元 `21a15a817d9abe456c6eda254397de4b88558ad4`。固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。
 
 ## 修正範囲
 
@@ -41,7 +41,7 @@ Native開始をcommitした更新内でcommand serviceを呼び、`huntApproachL
 
 C4-7初回（CDB23620/HLDS41340）は `plant-fixture missing t=4 ct=0` でfixture開始前に終了0。必要なCT役が不在で、parserもbegin markerを見つけられず失敗したため受入れから除外。既存の公開team変更/respawn fixtureで役割を確保した別試行 `c4-7-balanced` を受入れ、初回証拠を上書きしていない。
 
-最終レビュー・commit/master FFは未完。実Native失効後の長期非再開・全owner一致・Linux実機は本単位の合格範囲外。Guard/Noiseのhandled-return順、FetchBomb実機、直接同時刻full再入、安全時間終了後の経路投擲は引き続きC02残件。
+独立レビューで阻害指摘なし。`889c35c` でcommit/master FFを完了し、ソース200・検証8・保護12・製品・実機設定の後指紋一致を確認。実Native失効後の長期非再開・全owner一致・Linux実機は本単位の合格範囲外。Guard/Noiseのhandled-return順、FetchBomb実機、直接同時刻full再入、安全時間終了後の経路投擲は引き続きC02残件。
 
 ## 証拠と作業保存
 
