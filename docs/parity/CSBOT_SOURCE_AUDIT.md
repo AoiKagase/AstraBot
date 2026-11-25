@@ -1,5 +1,9 @@
 # 23　CSBot参照実装との差分監査
 
+## C03-4a Idle early-safeの一意grenade/knife選択（2026-11-25）
+
+IdleのNAV確保・zombie拒否後、safeなら一意grenadeを優先し、選べなければskill厳密>.33でknifeを選択。所持sniper拒否はactive grenade判定より先、smoke可、装備時計/cvar許可非依存。成立RED→Windows重点30/30・28入力と装備時計両方向、独立review指摘0。最終DLLの同一既存as_oilrigで非VIP Wolfを公開入力し、HEは184実command中184更新、knifeは178中178更新で選択を確認。各equipSafe old28→4/29 sent1を照合、両実exit0・PID[]・core/fixture復元/保護11一致。 複数grenadeの所持リスト先頭は公開maskだけでは確定できず、自然発生/全境界/LinuxとV02旧原因を残す。大項目未完47を維持。[範囲と証拠](IDLE_SAFE_EQUIPMENT_C03_4A.md)。
+
 ## C03-3 通常Updateの敵未視認5秒超pistol再装備（2026-11-25）
 
 round IsSafeと独立に、非reload・pistol・primary総弾薬あり・lastSawから厳密>5秒を通常Updateへ接続。Unknown非捏造、実active優先、共通5秒装備時計、callback後の再確認/失効中断を保持。成立RED→最終Windows重点29/29、実視認後の4.999/5.0/5.125秒を含む24入力合格。最終DLLの既存一台as_oilrigでloaded pistol→AK47を2回限定機能採録。quit後Steam待機で正常終了不合格、特定PID14156のユーザー許可後に終了0xFFFFFFFF、実PID[]・core/fixture復元/保護11一致。early-safe/自然戦闘/全境界とV02旧終了原因は未完、大項目未完47を維持。[範囲と証拠](UPDATE_PISTOL_REARM_C03_3.md)。

@@ -372,6 +372,7 @@ private:
 	bool updateUnderwaterEquipment(std::size_t index);
 	bool updateUnsafeEquipment(std::size_t index);
 	bool updatePistolRearm(std::size_t index);
+	bool updateIdleSafeEquipment(std::size_t index);
 	bool plantCommandCurrent(std::size_t index) const;
 	bool updateNativeGrenade(std::size_t index, const runtime::MovementPhysicsState &before);
 	void rememberNativeSafeTime(std::size_t index, const compat::ReactionContext &receipt);

@@ -77,6 +77,7 @@ struct EquipmentFixture
 	bool reloading = false, specialReload = false;
 	bool plantTail = false, dropOnC4 = false;
 	bool predictionUnavailable = false, replaceOnActiveRead = false;
+	unsigned safeMutation = 0;
 	Vector predictionView{};
 	int attackMutation = 0;
 	astrabot::compat::CompatibilityStateMachine *machine = nullptr;
@@ -179,6 +180,9 @@ void combatGameClientCommand(edict_t *entity)
 			: std::strcmp(name, "weapon_glock18") == 0 ? 17U
 			: equipmentFixture->plantTail && std::strcmp(name, "weapon_c4") == 0 ? 6U
 			: std::strcmp(name, "weapon_knife") == 0 ? 29U : 0U;
+		if (std::strcmp(name, "weapon_hegrenade") == 0) id = 4;
+		if (std::strcmp(name, "weapon_flashbang") == 0) id = 25;
+		if (std::strcmp(name, "weapon_smokegrenade") == 0) id = 9;
 		if (id)
 		{
 			equipmentFixture->commands.push_back(id);
@@ -371,6 +375,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool underwaterEquipmentFixture = scenario && std::strcmp(scenario, "equip-underwater") == 0;
 	const bool unsafeEquipmentFixture = scenario && std::strcmp(scenario, "equip-unsafe") == 0;
 	const bool rearmEquipmentFixture = scenario && std::strcmp(scenario, "equip-rearm") == 0;
+	const bool safeEquipmentFixture = scenario && std::strcmp(scenario, "equip-safe") == 0;
 	const bool plantTailFixture = scenario && std::strcmp(scenario, "plant-tail") == 0;
 	const bool clearLookFixture = scenario && std::strcmp(scenario, "clear-look") == 0;
 	const bool sharedLookFixture = scenario && std::strcmp(scenario, "shared-look") == 0;
@@ -2313,6 +2318,137 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		}
 		equipmentFixture = nullptr;
 		return result;
+	}
+	if (safeEquipmentFixture)
+	{
+		using namespace astrabot;
+		using namespace astrabot::compat;
+		auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+		EquipmentFixture fixture{};
+		equipmentFixture = &fixture;
+		combatGameDll->pfnUpdateClientData = [](const edict_t *entity, int, clientdata_t *data) {
+			data->m_iId = equipmentFixture->predictionUnavailable ? 0 : equipmentFixture->active;
+			if (equipmentFixture->replaceOnActiveRead) ++const_cast<edict_t *>(entity)->serialnumber;
+			if (equipmentFixture->safeMutation == 2) const_cast<edict_t *>(entity)->v.weapons &= ~(1 << 4);
+			if (equipmentFixture->safeMutation == 3) (void)equipmentFixture->machine->beginAttack(equipmentFixture->context);
+		};
+		combatGameDll->pfnGetWeaponData = [](edict_t *, weapon_data_t *data) {
+			data[28].m_iId = 28; data[28].m_iClip = 30;
+			data[17].m_iId = 17; data[17].m_iClip = 20;
+			return 1;
+		};
+		grenadeAdmissionOriginalFloat = engine.pfnCVarGetFloat;
+		engine.pfnCVarGetFloat = [](const char *name) {
+			if (std::strcmp(name, "bot_zombie") == 0)
+			{
+				if (equipmentFixture->safeMutation == 4) ++gEntities[0].serialnumber;
+				return equipmentFixture->safeMutation == 1 ? 1.0f : 0.0f;
+			}
+			return grenadeAdmissionOriginalFloat ? grenadeAdmissionOriginalFloat(name) : 0.0f;
+		};
+		struct Sample { const char *name; unsigned grenades, sniper, skill; int active; float now; unsigned mutation, expected; };
+		// Literal outcomes from pinned Idle:51-78 / EquipGrenade / EquipKnife.
+		// Multi-grenade head is intentionally unobservable through a public mask.
+		const Sample samples[] = {
+			{"no NAV does not select", 0, 0, 100, 28, 1, 0, 0},
+			{"early Idle HE before task", 1U << 4, 0, 25, 28, 1, 0, 4},
+			{"early Idle flash before task", 1U << 25, 0, 25, 28, 1, 0, 25},
+			{"early Idle smoke allowed", 1U << 9, 0, 25, 28, 1, 0, 9},
+			{"skill 33 retains rifle", 0, 0, 33, 28, 1, 0, 0},
+			{"skill 34 chooses knife", 0, 0, 34, 28, 1, 0, 29},
+			{"already knife sends nothing", 0, 0, 100, 29, 1, 0, 0},
+			{"active grenade retained", (1U << 4) | (1U << 25), 0, 100, 25, 1, 0, 0},
+			{"ambiguous grenade head retains weapon", (1U << 4) | (1U << 25), 0, 100, 28, 1, 0, 0},
+			{"AWP inventory rejects grenade", 1U << 4, 1U << 18, 34, 28, 1, 0, 29},
+			{"Scout inventory rejects grenade", 1U << 4, 1U << 3, 34, 28, 1, 0, 29},
+			{"SG550 inventory rejects grenade", 1U << 4, 1U << 13, 34, 28, 1, 0, 29},
+			{"G3SG1 inventory rejects grenade", 1U << 4, 1U << 24, 34, 28, 1, 0, 29},
+			{"sniper low skill retains rifle", 1U << 4, 1U << 18, 33, 28, 1, 0, 0},
+			{"sniper gate precedes active grenade", 1U << 4, 1U << 18, 34, 4, 1, 0, 29},
+			{"just before safe end", 1U << 4, 0, 25, 28, 19.999f, 0, 4},
+			{"exact safe end", 1U << 4, 0, 25, 28, 20, 0, 0},
+			{"Hunt is not Idle", 1U << 4, 0, 100, 28, 1, 5, 0},
+			{"Attack skips Idle", 1U << 4, 0, 100, 28, 1, 6, 0},
+			{"zombie skips selection", 1U << 4, 0, 100, 28, 1, 1, 0},
+			{"public active fallback", 0, 0, 34, 28, 1, 7, 29},
+			{"replaced entity at zombie query", 0, 0, 34, 28, 1, 4, 0},
+			{"replaced entity at active query", 0, 0, 34, 28, 1, 12, 0},
+			{"Attack starts at active query", 0, 0, 34, 28, 1, 3, 0},
+			{"knife absent", 0, 0, 34, 28, 1, 9, 0},
+			{"safe knife bypasses equipment clock", 0, 0, 100, 21, 1, 8, 29},
+			{"failed grenade deploy does not fall back to knife", 1U << 4, 0, 100, 28, 1, 11, 4},
+			{"command Attack reentry aborts old Idle task", 1U << 4, 0, 100, 28, 1, 10, 4},
+		};
+		for (const auto &sample : samples)
+		{
+			fixture = {};
+			fixture.active = 6; // Root scheduler warmup must not perform this tested selection.
+			runtime.beginRoundGeneration();
+			auto &self = gEntities[0];
+			self.v.waterlevel = 0;
+			self.v.weapons = (1 << 28) | (1 << 17) | (1 << 29) | sample.grenades | sample.sniper;
+			globals.time = sample.now - .125f;
+			stepRifle(30, 0, 28);
+			auto behavior = std::make_unique<metamod::BotBehaviorRuntime>();
+			behavior->bindServices(ports);
+			behavior->onActorRemembered(0, ports.service_managedBotHandles()[0]);
+			auto profile = static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0);
+			profile.aggression = 100; profile.skill = static_cast<int>(sample.skill);
+			behavior->assignProfile(0, profile);
+			auto &state = const_cast<CompatibilityStateMachine &>(behavior->managedBotStateMachines(0));
+			StateUpdateContext tick{};
+			const auto &handle = ports.service_managedBotHandles()[0];
+			tick.actor = {handle.actor.slot, handle.actor.actorGeneration};
+			const auto &life = ports.service_lifecycle();
+			tick.frame = {life.mapGeneration(), life.roundGeneration(), ports.service_adapterFrameCount()};
+			tick.timestamp = globals.time; tick.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0];
+			tick.fullUpdate = tick.alive = tick.roundActive = true;
+			tick.lifeAvailability = tick.roundAvailability = tick.attackObservation = ObservationAvailability::Available;
+			state.initialize(tick);
+			if (sample.mutation == 5) (void)state.transition(CompatibilityStateId::Hunt, StateTransitionReason::ExplicitRequest, StateTransitionId::ExplicitStateChange, tick);
+			if (sample.mutation == 6) (void)state.beginAttack(tick);
+			fixture.machine = &state; fixture.context = tick;
+			fixture.active = sample.active;
+			fixture.safeMutation = sample.mutation;
+			fixture.replaceOnActiveRead = sample.mutation == 12;
+			fixture.refuseSwitch = sample.mutation == 11;
+			fixture.attackMutation = sample.mutation == 10 ? 2 : 0;
+			if (sample.mutation == 9) self.v.weapons &= ~(1 << 29);
+			if (sample.mutation == 8)
+			{
+				self.v.weapons = (1 << 21) | (1 << 17) | (1 << 29);
+				self.v.waterlevel = 3;
+			}
+			const auto prediction = combatGameDll->pfnUpdateClientData;
+			if (sample.mutation == 7) combatGameDll->pfnUpdateClientData = nullptr;
+			runtime::MovementPhysicsState before{};
+			before.grounded = true; before.origin = {self.v.origin.x, self.v.origin.y, self.v.origin.z};
+			const auto serial = self.serialnumber;
+			fixture.commands.clear();
+			behavior->updateManagedBotCompatibilityState(0, before, false);
+			combatGameDll->pfnUpdateClientData = prediction;
+			self.serialnumber = serial;
+			const std::vector<unsigned> wanted = sample.mutation == 8 ? std::vector<unsigned>{17, 29}
+				: sample.expected ? std::vector<unsigned>{sample.expected} : std::vector<unsigned>{};
+			std::fprintf(stderr, "safe sample=%s now=%.6f selected=%u count=%u expected=%u\n", sample.name, globals.time,
+				fixture.commands.empty() ? 0 : fixture.commands[0], static_cast<unsigned>(fixture.commands.size()), sample.expected);
+			if (!check(fixture.commands == wanted, sample.name)) return false;
+			if (sample.mutation == 10 && !check(state.state() == CompatibilityStateId::Idle && state.attackOverlayActive(),
+				"command reentry leaves the old Idle task unexecuted")) return false;
+			if (std::strcmp(sample.name, "early Idle HE before task") == 0)
+			{
+				// An early-safe SelectItem must not start the ordinary equipment timer.
+				self.v.weapons &= ~(1 << 4);
+				fixture.active = 17; fixture.commands.clear();
+				globals.time = 5.125f;
+				behavior->updateManagedBotCompatibilityState(0, before, false);
+				if (!check(fixture.commands == std::vector<unsigned>{28}, "early-safe selection leaves equipment clock untouched")) return false;
+			}
+			if (std::strcmp(sample.name, "no NAV does not select") == 0 && !check(loadHearingNav(runtime), "safe equipment NAV loads")) return false;
+		}
+		engine.pfnCVarGetFloat = grenadeAdmissionOriginalFloat;
+		equipmentFixture = nullptr;
+		return true;
 	}
 	if (bestEquipmentFixture || underwaterEquipmentFixture || unsafeEquipmentFixture || rearmEquipmentFixture)
 	{

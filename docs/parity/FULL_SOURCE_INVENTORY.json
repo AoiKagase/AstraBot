@@ -8038,13 +8038,13 @@
     },
     {
       "id": "C03",
-      "title": "Ordinary Update underwater, unsafe and no-sight pistol rearming wired; early-safe selection remains",
+      "title": "Ordinary Update rearming and Idle early-safe unique grenade/knife wired; multi-grenade order remains",
       "status": "partial_implementation",
       "astra": [
         "src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:8",
         "src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:56",
         "src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:140",
-        "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp:159"
+        "src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:232"
       ],
       "reference": [
         "regamedll/dlls/bot/cs_bot_update.cpp:519",
@@ -8053,49 +8053,62 @@
         "regamedll/dlls/bot/cs_bot_update.cpp:547",
         "regamedll/dlls/bot/states/cs_bot_idle.cpp:66"
       ],
-      "evidence": "Pinned Update547-551 independently gates !active reload, pistol, primary HasAnyAmmo and lastSaw age strictly>5; no round IsSafe gate. Added normal Update connection, prediction/public fallback, Unknown policy, shared5s equipment timer and fresh callback admission/abort. Early-safe grenade/knife and unaccepted live boundaries remain.",
-      "tests": "C03-3 established initialized product RED; final Windows29 sequential dedicated-cwd scenarios exit0,24 rearm inputs including actual sight at25 age4.999/5/5.125 and shared clock4.999/5. Final DLL controlled as_oilrig loaded pistol-to-primary twice; quit Steam wait failed normal exit; user-authorized PID14156 termination0xFFFFFFFF, PID[], core/fixture/protected11 restored. Earlier C03-1/2 and V02 failure evidence retained. See UPDATE_PISTOL_REARM_C03_3.md.",
+      "evidence": "Pinned Idle51-78, weapon340/485/505: NAV/zombie guards, IsSafe, inventory sniper before held grenade, unique grenade including smoke, else skill>.33 knife; no shared equip timer or allowance cvar. Callback receipt aborts old Update. Public mask does not identify multiple-grenade linked-list head; ambiguous non-grenade active selection remains unresolved.",
+      "tests": "C03-4a initialized Idle product RED; final Windows30 sequential focused scenarios exit0,28 inputs plus both timer directions, active fallback and reentry. 最終DLLの同一既存as_oilrigで非VIP Wolfを公開入力し、HEは184実command中184更新、knifeは178中178更新で選択を確認。各equipSafe old28→4/29 sent1を照合、両実exit0・PID[]・core/fixture復元/保護11一致。 Prior C03-1/2/3 evidence preserved. See IDLE_SAFE_EQUIPMENT_C03_4A.md.",
       "backlog_mapping": "23/new explicit weapon lifecycle unit",
       "confidence": "high",
       "title_ja": "通常Updateの装備再選択・安全時間中の装備",
-      "status_ja": "部分対応（C03-1水没/C03-2 unsafe/C03-3未視認5秒超接続）",
+      "status_ja": "部分対応（C03-1/2/3通常再装備とC03-4a Idle一意grenade/knife接続）",
       "group": 1,
       "partial_resolution": {
         "date": "2026-11-25",
-        "record": "UPDATE_PISTOL_REARM_C03_3.md",
-        "source_manifest": "artifacts/local/debug/csbot-update-rearm-20261125/candidate.json",
-        "functional_manifest": "artifacts/local/debug/csbot-update-rearm-20261125/functional-final.json",
+        "record": "IDLE_SAFE_EQUIPMENT_C03_4A.md",
+        "source_manifest": "artifacts/local/debug/csbot-idle-safe-20261125/candidate.json",
+        "functional_manifest": "artifacts/local/debug/csbot-idle-safe-20261125/functional-final.json",
         "still_open": true,
-        "offline_focused_scenarios": 29,
-        "rearm_inputs": 24,
+        "offline_focused_scenarios": 30,
+        "early_safe_inputs": 28,
         "full_ctest": false,
-        "normal_exit_gate_current_trial": false,
+        "normal_exit_gate_current_trial": true,
         "restoration_verified": true,
-        "actual_exit_codes_observed": true,
         "historical_V02_closed": false,
         "prior_resolution": {
           "date": "2026-11-25",
-          "record": "UPDATE_UNSAFE_C03_2.md",
-          "source_manifest": "artifacts/local/debug/csbot-update-unsafe-20261125/candidate.json",
-          "functional_manifest": "artifacts/local/debug/csbot-update-unsafe-20261125/functional-final.json",
+          "record": "UPDATE_PISTOL_REARM_C03_3.md",
+          "source_manifest": "artifacts/local/debug/csbot-update-rearm-20261125/candidate.json",
+          "functional_manifest": "artifacts/local/debug/csbot-update-rearm-20261125/functional-final.json",
           "still_open": true,
-          "offline_focused_scenarios": 28,
+          "offline_focused_scenarios": 29,
+          "rearm_inputs": 24,
           "full_ctest": false,
           "normal_exit_gate_current_trial": false,
           "restoration_verified": true,
-          "actual_exit_codes_observed": false,
+          "actual_exit_codes_observed": true,
           "historical_V02_closed": false,
           "prior_resolution": {
             "date": "2026-11-25",
-            "record": "UPDATE_UNDERWATER_C03_1.md",
-            "source_manifest": "artifacts/local/debug/csbot-update-equipment-20261125/candidate.json",
-            "functional_manifest": "artifacts/local/debug/csbot-update-equipment-20261125/acceptance-final.json",
+            "record": "UPDATE_UNSAFE_C03_2.md",
+            "source_manifest": "artifacts/local/debug/csbot-update-unsafe-20261125/candidate.json",
+            "functional_manifest": "artifacts/local/debug/csbot-update-unsafe-20261125/functional-final.json",
             "still_open": true,
-            "offline_focused_scenarios": 27,
+            "offline_focused_scenarios": 28,
             "full_ctest": false,
-            "normal_exit_gate_current_trial": true,
+            "normal_exit_gate_current_trial": false,
+            "restoration_verified": true,
+            "actual_exit_codes_observed": false,
             "historical_V02_closed": false,
-            "toolchain": "independent14.52 HostX86/x86 NMake Debug; old14.51 cache/products unchanged"
+            "prior_resolution": {
+              "date": "2026-11-25",
+              "record": "UPDATE_UNDERWATER_C03_1.md",
+              "source_manifest": "artifacts/local/debug/csbot-update-equipment-20261125/candidate.json",
+              "functional_manifest": "artifacts/local/debug/csbot-update-equipment-20261125/acceptance-final.json",
+              "still_open": true,
+              "offline_focused_scenarios": 27,
+              "full_ctest": false,
+              "normal_exit_gate_current_trial": true,
+              "historical_V02_closed": false,
+              "toolchain": "independent14.52 HostX86/x86 NMake Debug; old14.51 cache/products unchanged"
+            }
           }
         }
       }
@@ -8714,6 +8727,23 @@
         "agent_termination": true,
         "explicit_pid_authorization": 14156,
         "cause_unresolved": true
+      },
+      "c03_4a_message79_evidence": {
+        "date": "2026-11-25",
+        "record": "IDLE_SAFE_EQUIPMENT_C03_4A.md",
+        "functional_manifest": "artifacts/local/debug/csbot-idle-safe-20261125/functional-final.json",
+        "failed_trial": "live-3",
+        "normal_exit_gate": false,
+        "cdb_used": false,
+        "actual_exit_codes": {
+          "28568": 4294967295
+        },
+        "agent_termination": false,
+        "actual_processes_after_exit": [],
+        "server_restored": true,
+        "cause_unresolved": true,
+        "final_two_trials_normal_exit": true,
+        "historical_V02_closed": false
       }
     },
     {

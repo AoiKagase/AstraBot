@@ -229,6 +229,105 @@ bool BotBehaviorRuntime::updatePistolRearm(std::size_t index)
 	return current() && admitted;
 }
 
+bool BotBehaviorRuntime::updateIdleSafeEquipment(std::size_t index)
+{
+	const auto &config = services_->service_compatibilitySurface().configuration();
+	auto &actor = actors_[index];
+	const auto &machine = actor.managedBotStateMachines;
+	const auto &handle = services_->service_managedBotHandles()[index];
+	if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0 || config.botStop != 0 ||
+		!handle.entity || machine.state() != compat::CompatibilityStateId::Idle || machine.attackOverlayActive())
+		return true;
+	const auto receipt = reactionContext(index);
+	const float start = services_->service_roundFreezeGeneration() == receipt.frame.roundGeneration
+		? services_->service_roundFreezeStartTime() : 0.0f;
+	const auto safe = [&] {
+		return actor.enemyReaction.isSafe(receipt.now - start,
+			static_cast<float>(actor.managedProfiles.aggression) / 100.0f);
+	};
+	if (!receipt.alive || !safe() || isBlinded(receipt.actor, receipt.frame, receipt.now))
+		return true;
+	// Idle's early-safe choice follows its NAV and zombie guards, before assigning tasks.
+	const auto navigation = services_->service_navPublisher().snapshot();
+	if (!navigation.isValid())
+		return true;
+	bool haveArea = services_->navigation_knownArea(index, receipt.actor, receipt.frame, navigation.revision()) != 0U;
+	if (!haveArea)
+	{
+		nav::NavAreaMatch area{};
+		const auto &v = handle.entity->v;
+		haveArea = nav::NavQuery(navigation).findContaining({v.origin.x, v.origin.y, v.origin.z + v.mins.z},
+			nav::LocomotionConfig::kMaximumStepHeight, &area) == nav::NavQueryResult::Found;
+	}
+	if (!haveArea)
+		return true;
+	const auto revision = actor.executionRevision;
+	const auto full = services_->service_managedBotFullUpdateSequences()[index];
+	const auto normal = machine.normalStateEpoch();
+	const auto attack = machine.attackEntryEpoch();
+	const auto *entity = handle.entity;
+	const auto serial = entity->serialnumber;
+	const auto inventory = static_cast<std::uint32_t>(entity->v.weapons);
+	const auto current = [&] {
+		return executionCurrent(index, receipt, revision) && handle.entity == entity && !entity->free &&
+			entity->serialnumber == serial && static_cast<std::uint32_t>(entity->v.weapons) == inventory &&
+			services_->service_managedBotFullUpdateSequences()[index] == full &&
+			machine.normalStateEpoch() == normal && machine.attackEntryEpoch() == attack &&
+			!machine.attackOverlayActive() && safe() &&
+			services_->service_navPublisher().snapshot().revision() == navigation.revision();
+	};
+	const auto *engine = services_->service_engineFunctions();
+	const bool zombie = engine && engine->pfnCVarGetFloat && engine->pfnCVarGetFloat("bot_zombie") > 0.0f;
+	if (!current())
+		return false;
+	if (zombie)
+		return true;
+	int active = 0;
+	const bool predicted = services_->observation_activeWeaponIdentity(handle.entity, active);
+	if (!current())
+		return false;
+	if (!predicted)
+	{
+		compat::PublicActorState observed{};
+		if (!services_->observation_publicObservations().read(receipt.actor, receipt.frame, &observed) || !observed.weaponKnown)
+			return true;
+		active = observed.weaponId;
+	}
+	unsigned selected = 0;
+	const char *command = nullptr;
+	constexpr std::uint32_t kSnipers = (1U << 3) | (1U << 13) | (1U << 18) | (1U << 24);
+	if ((inventory & kSnipers) == 0U)
+	{
+		// EquipGrenade's active test follows IsSniper, and accepts smoke here.
+		if (compat::WeaponActionPlanner::isGrenade(static_cast<std::uint16_t>(active)))
+			return true;
+		const auto grenades = inventory & ((1U << 4) | (1U << 9) | (1U << 25));
+		if (grenades && (grenades & (grenades - 1U)))
+			return true; // A mask cannot identify a multi-grenade linked-list head.
+		if (grenades)
+		{
+			selected = grenades & (1U << 4) ? 4U : grenades & (1U << 9) ? 9U : 25U;
+			command = selected == 4 ? "weapon_hegrenade" : selected == 9 ? "weapon_smokegrenade" : "weapon_flashbang";
+		}
+	}
+	if (!command && static_cast<float>(actor.managedProfiles.skill) / 100.0f > .33f &&
+		active != 29 && (inventory & (1U << 29)))
+	{
+		selected = 29;
+		command = "weapon_knife";
+	}
+	if (!command)
+		return true;
+	// These two native helpers neither read nor start EquipBestWeapon's five-second timer.
+	const bool sent = services_->command_dispatchClientCommand(handle.entity, command, "");
+	if (!current())
+		return false;
+	if (services_->service_runtimeProfiler().enabled())
+		runtime_detail::profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
+			"profile equipSafe slot=%u now=%.6f old=%d selected=%u sent=%d", receipt.actor.slot, receipt.now, active, selected, sent);
+	return true;
+}
+
 bool BotBehaviorRuntime::equipBestWeapon(std::size_t index, bool mustEquip,
 	const std::function<bool(int, bool)> &admission)
 {

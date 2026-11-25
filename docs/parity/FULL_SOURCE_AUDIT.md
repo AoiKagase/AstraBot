@@ -1,5 +1,9 @@
 # 全製品ソースと残件の監査（2026-11-22）
 
+## C03-4a Idle early-safeの一意grenade/knife選択（2026-11-25）
+
+IdleのNAV確保・zombie拒否後、safeなら一意grenadeを優先し、選べなければskill厳密>.33でknifeを選択。所持sniper拒否はactive grenade判定より先、smoke可、装備時計/cvar許可非依存。成立RED→Windows重点30/30・28入力と装備時計両方向、独立review指摘0。最終DLLの同一既存as_oilrigで非VIP Wolfを公開入力し、HEは184実command中184更新、knifeは178中178更新で選択を確認。各equipSafe old28→4/29 sent1を照合、両実exit0・PID[]・core/fixture復元/保護11一致。 複数grenadeの所持リスト先頭は公開maskだけでは確定できず、自然発生/全境界/LinuxとV02旧原因を残す。大項目未完47を維持。[範囲と証拠](IDLE_SAFE_EQUIPMENT_C03_4A.md)。
+
 ## C03-3 通常Updateの敵未視認5秒超pistol再装備（2026-11-25）
 
 round IsSafeと独立に、非reload・pistol・primary総弾薬あり・lastSawから厳密>5秒を通常Updateへ接続。Unknown非捏造、実active優先、共通5秒装備時計、callback後の再確認/失効中断を保持。成立RED→最終Windows重点29/29、実視認後の4.999/5.0/5.125秒を含む24入力合格。最終DLLの既存一台as_oilrigでloaded pistol→AK47を2回限定機能採録。quit後Steam待機で正常終了不合格、特定PID14156のユーザー許可後に終了0xFFFFFFFF、実PID[]・core/fixture復元/保護11一致。early-safe/自然戦闘/全境界とV02旧終了原因は未完、大項目未完47を維持。[範囲と証拠](UPDATE_PISTOL_REARM_C03_3.md)。
@@ -140,7 +144,7 @@ Windows173/173＋PE7、Linux172/172＋ELF7合格。最終DLL `456ccc43…95610` 
 | C01 | 限定完了 | [共有角速度・1回相当積分](SHARED_LOOK_C01.md)。live範囲0/3/5、全軌跡は未受入れ | `include/astrabot/compat/combat_behavior.hpp:401`<br>`src/adapter/metamod/runtime/command/bot_command_runtime.hpp` | `regamedll/dlls/bot/cs_bot_vision.cpp:57`<br>`regamedll/dlls/bot/cs_bot_update.cpp:179` |
 | C16 | 限定完了 | Compatibility full視線保持・MoveTo/Follow/Escapeの次Ahead・停止時有限Ahead保持。最終実機598/598一致。旧86件の全branch帰属は主張しない | `src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1273`<br>`src/adapter/metamod/runtime/command/bot_command_runtime.cpp:1489` | `regamedll/dlls/bot/cs_bot_vision.cpp:57`<br>`regamedll/dlls/bot/cs_bot_update.cpp:179` |
 | C02 | 部分対応 | 保持/認識敵・LOW/Noise受付・共有時計・限定再入・定義済みcornerと成功tail履歴は各記録の範囲で部分対応。C02-5bは全可視/自明経路の限定実機。C02-2d10はFetchBombの移動Native抽選前拒否→静止ゼロClear→再開を機能採録し、静止2試行は正常終了。最終移動試行はV02終了不合格。保持Noise/移動ゼロ/通常NAV自然発生・失敗tail/RemovePath/梯子suffix/容量/HE/drop/着弾等は未完。[現在の内訳](../../TASKS.md)・[新規証拠](FETCH_ADMISSION_LIVE_C02_2D10.md) | `src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1059`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1419` | `regamedll/dlls/bot/cs_bot_update.cpp:347`<br>`regamedll/dlls/bot/cs_bot_update.cpp:490` |
-| C03 | 部分対応（C03-1水没/C03-2 unsafe/C03-3未視認5秒超接続） | 通常Updateの装備再選択・安全時間中の装備 | `src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:8`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:74` | `regamedll/dlls/bot/cs_bot_update.cpp:519`<br>`regamedll/dlls/bot/cs_bot_update.cpp:526` |
+| C03 | 部分対応（C03-1水没/C03-2 unsafe/C03-3未視認5秒超/C03-4a Idle一意装備接続） | 通常Updateの装備再選択・安全時間中の装備 | `src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:8`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:74` | `regamedll/dlls/bot/cs_bot_update.cpp:519`<br>`regamedll/dlls/bot/cs_bot_update.cpp:526` |
 | C04 | 差確定 | SilencerCheck要求の実行時接続 | `include/astrabot/compat/weapon_actions.hpp:225`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1434` | `regamedll/dlls/bot/cs_bot_weapon.cpp:760`<br>`regamedll/dlls/bot/cs_bot_update.cpp:556` |
 | C05 | 差確定 | 遠距離ショットガンから拳銃への切替 | `include/astrabot/compat/weapon_actions.hpp:236`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1374` | `regamedll/dlls/bot/states/cs_bot_attack.cpp:319` |
 | C06 | 差確定 | 狙撃銃のscope解除/事前zoom/resumeZoom | `include/astrabot/compat/weapon_actions.hpp:250`<br>`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1428` | `regamedll/dlls/bot/states/cs_bot_attack.cpp:331`<br>`regamedll/dlls/bot/cs_bot_vision.cpp:453` |

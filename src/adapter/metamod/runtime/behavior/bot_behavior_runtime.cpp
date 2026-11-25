@@ -162,6 +162,8 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 		return;
 	if (!updatePistolRearm(index))
 		return;
+	if (!updateIdleSafeEquipment(index))
+		return;
 	const auto receipt = reactionContext(index);
 	const auto revision = actors_[index].executionRevision;
 	const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();
