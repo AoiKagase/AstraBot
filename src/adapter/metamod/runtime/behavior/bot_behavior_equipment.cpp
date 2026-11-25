@@ -53,6 +53,63 @@ bool BotBehaviorRuntime::updateUnderwaterEquipment(std::size_t index)
 	return current();
 }
 
+bool BotBehaviorRuntime::updateHuntEquipment(std::size_t index)
+{
+	const auto &config = services_->service_compatibilitySurface().configuration();
+	auto &actor = actors_[index];
+	const auto &handle = services_->service_managedBotHandles()[index];
+	if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0 || config.botStop != 0 ||
+		!handle.entity || actor.managedBotStateMachines.state() != compat::CompatibilityStateId::Hunt)
+		return true;
+	const auto receipt = reactionContext(index);
+	const float start = services_->service_roundFreezeGeneration() == receipt.frame.roundGeneration
+		? services_->service_roundFreezeStartTime() : 0.0f;
+	const auto pastSafe = [&] {
+		return actor.enemyReaction.wellPastSafe(receipt.now - start,
+			static_cast<float>(actor.managedProfiles.aggression) / 100.0f);
+	};
+	if (!pastSafe())
+		return true;
+	const auto revision = actor.executionRevision;
+	const auto full = services_->service_managedBotFullUpdateSequences()[index];
+	const auto normal = actor.managedBotStateMachines.normalStateEpoch();
+	const auto attack = actor.managedBotStateMachines.attackEntryEpoch();
+	const bool attacking = actor.managedBotStateMachines.attackOverlayActive();
+	const auto *entity = handle.entity;
+	const auto serial = entity->serialnumber;
+	const auto inventory = entity->v.weapons;
+	const auto water = entity->v.waterlevel;
+	const auto current = [&] {
+		return executionCurrent(index, receipt, revision) && handle.entity == entity && !entity->free &&
+			entity->serialnumber == serial && entity->v.weapons == inventory && entity->v.waterlevel == water &&
+			services_->service_managedBotFullUpdateSequences()[index] == full &&
+			actor.managedBotStateMachines.normalStateEpoch() == normal &&
+			actor.managedBotStateMachines.attackEntryEpoch() == attack &&
+			actor.managedBotStateMachines.attackOverlayActive() == attacking &&
+			actor.managedBotStateMachines.state() == compat::CompatibilityStateId::Hunt && pastSafe();
+	};
+	int weapon = 0;
+	const bool predicted = services_->observation_activeWeaponIdentity(handle.entity, weapon);
+	if (!current())
+		return false;
+	if (!predicted)
+	{
+		compat::PublicActorState observed{};
+		if (!services_->observation_publicObservations().read(receipt.actor, receipt.frame, &observed) || !observed.weaponKnown)
+			return true;
+		weapon = observed.weaponId;
+	}
+	if (!compat::WeaponActionPlanner::isGrenade(static_cast<std::uint16_t>(weapon)))
+		return true;
+	bool admitted = true;
+	// IsHunting tests the normal state, including a retained Hunt under Attack.
+	(void)equipBestWeapon(index, true, [&](int active, bool sent) {
+		admitted = admitted && current() && (sent || active == weapon);
+		return admitted;
+	});
+	return current() && admitted;
+}
+
 bool BotBehaviorRuntime::updateUnsafeEquipment(std::size_t index)
 {
 	const auto &config = services_->service_compatibilitySurface().configuration();

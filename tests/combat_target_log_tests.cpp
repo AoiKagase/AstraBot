@@ -376,6 +376,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool unsafeEquipmentFixture = scenario && std::strcmp(scenario, "equip-unsafe") == 0;
 	const bool rearmEquipmentFixture = scenario && std::strcmp(scenario, "equip-rearm") == 0;
 	const bool safeEquipmentFixture = scenario && std::strcmp(scenario, "equip-safe") == 0;
+	const bool huntEquipmentFixture = scenario && std::strcmp(scenario, "equip-hunt") == 0;
 	const bool plantTailFixture = scenario && std::strcmp(scenario, "plant-tail") == 0;
 	const bool clearLookFixture = scenario && std::strcmp(scenario, "clear-look") == 0;
 	const bool sharedLookFixture = scenario && std::strcmp(scenario, "shared-look") == 0;
@@ -2450,7 +2451,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		equipmentFixture = nullptr;
 		return true;
 	}
-	if (bestEquipmentFixture || underwaterEquipmentFixture || unsafeEquipmentFixture || rearmEquipmentFixture)
+	if (bestEquipmentFixture || underwaterEquipmentFixture || unsafeEquipmentFixture || rearmEquipmentFixture || huntEquipmentFixture)
 	{
 		using namespace astrabot;
 		using namespace astrabot::compat;
@@ -2480,6 +2481,136 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			if (equipmentFixture->replaceEntity) ++entity->serialnumber;
 			return 1;
 		};
+		if (huntEquipmentFixture)
+		{
+			equipmentOriginalPointer = engine.pfnCVarGetPointer;
+			engine.pfnCVarGetPointer = [](const char *name) {
+				if (std::strcmp(name, "bot_allow_rifles") == 0)
+				{
+					if (equipmentFixture->safeMutation == 3) equipmentFixture->active = 28;
+					if (equipmentFixture->safeMutation == 4) (void)equipmentFixture->machine->beginAttack(equipmentFixture->context);
+					if (equipmentFixture->safeMutation == 5) gEntities[0].v.weapons &= ~(1 << 4);
+					if (equipmentFixture->safeMutation == 6) (void)equipmentFixture->machine->transition(CompatibilityStateId::Idle,
+						StateTransitionReason::ExplicitRequest, StateTransitionId::ExplicitStateChange, equipmentFixture->context);
+				}
+				return equipmentOriginalPointer ? equipmentOriginalPointer(name) : nullptr;
+			};
+			struct Sample { const char *name; float now; int active, primaryClip, pistolClip; unsigned mutation, expected; };
+			// Pinned Update:526-529, IsHunting:425 and IsWellPastSafe:818, literal outcomes.
+			const Sample samples[] = {
+				{"Hunt HE just past safe", 25.001f, 4, 30, 20, 0, 28},
+				{"below well-past boundary", 24.999f, 4, 30, 20, 0, 0},
+				{"exact well-past boundary", 25, 4, 30, 20, 0, 0},
+				{"flash grenade", 25.125f, 25, 30, 20, 0, 28},
+				{"smoke grenade", 25.125f, 9, 30, 20, 0, 28},
+				{"Idle is not Hunt", 25.125f, 4, 30, 20, 7, 0},
+				{"Hunt retained under Attack", 25.125f, 4, 30, 20, 8, 28},
+				{"active rifle is not grenade", 25.125f, 28, 30, 20, 0, 0},
+				{"public active fallback", 25.125f, 4, 30, 20, 9, 28},
+				{"serial changes in active query", 25.125f, 4, 30, 20, 1, 0},
+				{"serial changes in ammo query", 25.125f, 4, 30, 20, 2, 0},
+				{"allowance changes active", 25.125f, 4, 30, 20, 3, 0},
+				{"allowance begins Attack", 25.125f, 4, 30, 20, 4, 0},
+				{"allowance changes inventory", 25.125f, 4, 30, 20, 5, 0},
+				{"allowance leaves Hunt", 25.125f, 4, 30, 20, 6, 0},
+				{"empty primary chooses pistol", 25.125f, 4, 0, 20, 0, 17},
+				{"empty guns choose knife", 25.125f, 4, 0, 0, 0, 29},
+				{"primary ammo unknown defers selection", 25.125f, 4, 0, 20, 10, 0},
+				{"MUST ignores recent equipment", 25.125f, 4, 30, 20, 11, 28},
+				{"command starts Attack and aborts old Hunt", 25.125f, 4, 30, 20, 12, 28},
+				{"accepted command with unchanged active starts clock", 25.125f, 4, 30, 20, 13, 28},
+				{"aggression zero exact boundary", 18.75f, 4, 30, 20, 14, 0},
+				{"aggression zero above boundary", 18.751f, 4, 30, 20, 14, 28},
+				{"nonzero freeze start exact boundary", 29, 4, 30, 20, 15, 0},
+				{"nonzero freeze start above boundary", 29.001f, 4, 30, 20, 15, 28},
+			};
+			for (const auto &sample : samples)
+			{
+				fixture = {}; fixture.active = 6;
+				fixture.primaryClip = sample.primaryClip; fixture.pistolClip = sample.pistolClip;
+				runtime.beginRoundGeneration();
+				auto &self = gEntities[0]; self.v.waterlevel = 0;
+				self.v.weapons = (1 << 28) | (1 << 17) | (1 << 29) | (1 << sample.active);
+				globals.time = sample.now - .125f;
+				stepRifle(20, 0, sample.active);
+				auto behavior = std::make_unique<metamod::BotBehaviorRuntime>();
+				behavior->bindServices(ports);
+				const auto &handle = ports.service_managedBotHandles()[0];
+				behavior->onActorRemembered(0, handle);
+				auto profile = static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0);
+				profile.aggression = sample.mutation == 14 ? 0 : 100; profile.skill = 25;
+				behavior->assignProfile(0, profile);
+				auto &state = const_cast<CompatibilityStateMachine &>(behavior->managedBotStateMachines(0));
+				StateUpdateContext context{};
+				const auto &life = ports.service_lifecycle();
+				context.actor = {handle.actor.slot, handle.actor.actorGeneration};
+				context.frame = {life.mapGeneration(), life.roundGeneration(), ports.service_adapterFrameCount()};
+				context.timestamp = globals.time;
+				context.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0];
+				context.fullUpdate = context.alive = context.roundActive = true;
+				context.lifeAvailability = context.roundAvailability = context.attackObservation = ObservationAvailability::Available;
+				state.initialize(context);
+				if (sample.mutation != 7) (void)state.transition(CompatibilityStateId::Hunt, StateTransitionReason::ExplicitRequest, StateTransitionId::ExplicitStateChange, context);
+				if (sample.mutation == 8) (void)state.beginAttack(context);
+				fixture.machine = &state; fixture.context = context;
+				fixture.active = sample.active;
+				runtime::MovementPhysicsState before{}; before.grounded = true;
+				if (sample.mutation == 11)
+				{
+					fixture.active = 29;
+					behavior->updateManagedBotCompatibilityState(0, before, false);
+					if (!check(fixture.commands == std::vector<unsigned>{28}, "recent equipment seeded by real unsafe Update")) return false;
+					fixture.active = sample.active;
+				}
+				fixture.commands.clear(); fixture.safeMutation = sample.mutation;
+				fixture.replaceOnActiveRead = sample.mutation == 1; fixture.replaceEntity = sample.mutation == 2;
+				fixture.primaryUnknown = sample.mutation == 10;
+				fixture.attackMutation = sample.mutation == 12 ? 2 : 0;
+				fixture.refuseSwitch = sample.mutation == 13;
+				const auto prediction = combatGameDll->pfnUpdateClientData;
+				if (sample.mutation == 9)
+				{
+					// Without prediction, supply inactive primary ammo through the public messages too.
+					runtime.onMessageBegin(1, 94, nullptr, &self);
+					for (int value : {0, 28, 30}) runtime.onWriteByte(value);
+					runtime.onMessageEnd();
+					combatGameDll->pfnUpdateClientData = nullptr;
+				}
+				const auto oldStart = ports.service_roundFreezeStartTime();
+				const auto oldGeneration = ports.service_roundFreezeGeneration();
+				if (sample.mutation == 15)
+				{
+					const_cast<float &>(ports.service_roundFreezeStartTime()) = 4.0f;
+					const_cast<std::uint32_t &>(ports.service_roundFreezeGeneration()) = life.roundGeneration();
+				}
+				const auto serial = self.serialnumber;
+				behavior->updateManagedBotCompatibilityState(0, before, false);
+				combatGameDll->pfnUpdateClientData = prediction;
+				const_cast<float &>(ports.service_roundFreezeStartTime()) = oldStart;
+				const_cast<std::uint32_t &>(ports.service_roundFreezeGeneration()) = oldGeneration;
+				fixture.replaceOnActiveRead = fixture.replaceEntity = false; self.serialnumber = serial;
+				const std::vector<unsigned> wanted = sample.expected ? std::vector<unsigned>{sample.expected} : std::vector<unsigned>{};
+				std::fprintf(stderr, "hunt sample=%s now=%.6f selected=%u count=%u expected=%u\n", sample.name, globals.time,
+					fixture.commands.empty() ? 0U : fixture.commands[0], static_cast<unsigned>(fixture.commands.size()), sample.expected);
+				if (!check(fixture.commands == wanted, sample.name)) return false;
+				if (sample.mutation == 12 && !check(state.state() == CompatibilityStateId::Hunt && state.attackOverlayActive(),
+					"callback Attack leaves old Hunt update unexecuted")) return false;
+				if ((sample.mutation == 0 || sample.mutation == 13) && sample.active == 4 && sample.primaryClip == 30 && sample.expected == 28)
+				{
+					const float first = globals.time;
+					for (float delta : {4.999f, 5.0f})
+					{
+						globals.time = first + delta; fixture.active = 17; fixture.commands.clear();
+						behavior->updateManagedBotCompatibilityState(0, before, false);
+						const std::vector<unsigned> timed = delta < 5 ? std::vector<unsigned>{} : std::vector<unsigned>{28};
+						if (!check(fixture.commands == timed, "Hunt MUST success updates common five-second clock")) return false;
+					}
+				}
+			}
+			engine.pfnCVarGetPointer = equipmentOriginalPointer;
+			equipmentFixture = nullptr;
+			return true;
+		}
 		if (rearmEquipmentFixture)
 		{
 			runtime.onMessageBegin(1, 105, nullptr, &gEntities[0]);

@@ -370,6 +370,7 @@ private:
 	bool equipBestWeapon(std::size_t index, bool mustEquip = false,
 		const std::function<bool(int, bool)> &admission = {});
 	bool updateUnderwaterEquipment(std::size_t index);
+	bool updateHuntEquipment(std::size_t index);
 	bool updateUnsafeEquipment(std::size_t index);
 	bool updatePistolRearm(std::size_t index);
 	bool updateIdleSafeEquipment(std::size_t index);

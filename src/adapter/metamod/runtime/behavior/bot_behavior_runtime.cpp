@@ -158,6 +158,8 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 		return;
 	if (!updateUnderwaterEquipment(index))
 		return;
+	if (!updateHuntEquipment(index))
+		return;
 	if (!updateUnsafeEquipment(index))
 		return;
 	if (!updatePistolRearm(index))

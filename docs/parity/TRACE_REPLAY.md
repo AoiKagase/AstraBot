@@ -1,5 +1,9 @@
 # P11 differential trace comparison
 
+## C03-5 Hunt/well-past-safe/grenade MUST装備（2026-11-25）
+
+Huntかつ厳密well-past-safeかつgrenadeのMUST_EQUIPを水没後/unsafe前へ接続。normal HuntのAttack重複を含み、調整済みsafeTime、公開active優先/fallback、callback失効の旧full中断、共通装備時計を保持。成立RED→Windows重点31/31・25入力、独立review指摘0。最終DLLの同じ既存as_oilrigで公開HE入力→AK47を132/132実commandで保持。dry確認、equipBest old4→28 sent1、実HLDS31604 exit0・実PID[]・core/fixture復元・保護11一致。 自然発生/全状態/profile/blind/武器/Linuxと既存C03/V02未完範囲は残し、大項目未完47を維持。[範囲と証拠](UPDATE_HUNT_EQUIPMENT_C03_5.md)。
+
 ## C03-4a Idle early-safeの一意grenade/knife選択（2026-11-25）
 
 IdleのNAV確保・zombie拒否後、safeなら一意grenadeを優先し、選べなければskill厳密>.33でknifeを選択。所持sniper拒否はactive grenade判定より先、smoke可、装備時計/cvar許可非依存。成立RED→Windows重点30/30・28入力と装備時計両方向、独立review指摘0。最終DLLの同一既存as_oilrigで非VIP Wolfを公開入力し、HEは184実command中184更新、knifeは178中178更新で選択を確認。各equipSafe old28→4/29 sent1を照合、両実exit0・PID[]・core/fixture復元/保護11一致。 複数grenadeの所持リスト先頭は公開maskだけでは確定できず、自然発生/全境界/LinuxとV02旧原因を残す。大項目未完47を維持。[範囲と証拠](IDLE_SAFE_EQUIPMENT_C03_4A.md)。
