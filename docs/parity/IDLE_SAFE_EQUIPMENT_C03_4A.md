@@ -34,4 +34,4 @@ PDB SHA256 `cdbfeda55d3d392327fa0aab8d333933d8531fadbd17fc62a114689e476ca9b5`
 
 証拠root artifacts/local/debug/csbot-idle-safe-20261125。baseline/candidate/reference、red-1/build-final/focused-final/final、live-*とreview.txtを保存。functional-final/documentation-final、統合後functional-merged/documentation-merged/preservation-mergedを照合する。製品build後の文書のみ更新はソース指紋と分離する。
 
-複数grenade順序、通常NAVでの自然装備/通常戦闘、全profile/blind/境界/Linux/長時間/多人数、C03-1/2/3の未採録範囲は残る。両OS全build/全CTest、各7export、固定履歴、広範実機回帰は大分類完了時で今回未実施。今回の部分合格でC03全体やV02を閉じない。
+複数grenade順序、通常NAVでの自然装備/通常戦闘、全profile/blind/境界/Linux/長時間/多人数、C03-1/2/3の未採録範囲は残る。固定Update:526-529のHunt＋well-past-safe＋grenadeに対するMUST_EQUIPも未接続で、今回のIdle選択では代替されないためTASKSへ明記した。両OS全build/全CTest、各7export、固定履歴、広範実機回帰は大分類完了時で今回未実施。今回の部分合格でC03全体やV02を閉じない。

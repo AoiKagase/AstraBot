@@ -123,6 +123,7 @@ C02-5a：失敗した固定ComputePathの位置書込みを実関数19対照で�
 - [x] early-safe Idleの一意grenade/knife選択を接続する（C03-4a、正規RED→30重点/28入力、NAV/zombie/sniper/skill境界・共通時計非依存・再入を確認。限定実機は[記録](docs/parity/IDLE_SAFE_EQUIPMENT_C03_4A.md)）
 - [ ] 複数種類grenadeの所持リスト先頭を公開観測で確定し、early-safe選択を実装・検証する（maskのID順を仮定しない。非sniperのactive grenadeは保持）
 - [ ] early-safe選択の自然発生・全profile/blind/境界・Linux実機を検証する（C03-4aは制御公開入力のWindows限定採録）
+- [ ] Huntかつwell-past-safe中のgrenadeにMUST_EQUIPを接続・検証する（固定Update:526-529。C03-1水没・C03-2 unsafe・C03-3 pistol・C03-4a Idleの各条件では代替されない）
 
 根拠：`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:8`、`src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp:74`、`src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp:1374`。参照：`regamedll/dlls/bot/cs_bot_update.cpp:519`、`regamedll/dlls/bot/cs_bot_update.cpp:526`、`regamedll/dlls/bot/cs_bot_update.cpp:533`、`regamedll/dlls/bot/cs_bot_update.cpp:547`、`regamedll/dlls/bot/states/cs_bot_idle.cpp:66`。
 
